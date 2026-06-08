@@ -39,18 +39,13 @@ export default function DebugPage() {
     }
 
     try {
-      // 2. Connection ping / fetch test
-      const pingStart = Date.now()
-      const pingRes = await fetch(`${url}/rest/v1/`, {
-        headers: { 'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '' }
-      })
-      const latency = Date.now() - pingStart
-
-      if (pingRes.ok || pingRes.status === 404 || pingRes.status === 400) {
-        setConnectionStatus('healthy')
-      } else {
-        setConnectionStatus('unhealthy')
-        setErrorMessage(prev => prev + `\nPing response returned HTTP ${pingRes.status}`)
+      // 2. Connection ping (Informational)
+      try {
+        await fetch(`${url}/rest/v1/`, {
+          headers: { 'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '' }
+        })
+      } catch (err: any) {
+        // Suppress ping exception in debug logs, as it is non-blocking
       }
 
       // 3. Auth session status
@@ -74,6 +69,7 @@ export default function DebugPage() {
 
       if (insertErr) {
         setDatabaseStatus(`❌ Write failed: [${insertErr.code}] ${insertErr.message}`)
+        setConnectionStatus('unhealthy')
         setErrorMessage(prev => prev + `\nDatabase write failed: ${insertErr.message}`)
       } else {
         const { data: selectData, error: selectErr } = await supabase
@@ -84,9 +80,12 @@ export default function DebugPage() {
 
         if (selectErr) {
           setDatabaseStatus(`❌ Write OK, Read failed: ${selectErr.message}`)
+          setConnectionStatus('unhealthy')
           setErrorMessage(prev => prev + `\nDatabase read-back failed: ${selectErr.message}`)
         } else {
           setDatabaseStatus(`✅ Verified (Read & Write OK). Test ID: ${selectData.id}`)
+          setConnectionStatus('healthy')
+          
           // Clean up the dummy customer row
           await supabase.from('customers').delete().eq('id', insertData.id)
         }
@@ -123,7 +122,15 @@ export default function DebugPage() {
             </p>
           </div>
           <button 
-            className="btn btn-primary btn-sm" 
+            style={{
+              padding: '0.5rem 1.25rem',
+              background: '#2563eb',
+              border: 'none',
+              borderRadius: '0.375rem',
+              color: 'white',
+              fontWeight: '600',
+              cursor: loading ? 'not-allowed' : 'pointer'
+            }}
             onClick={runDiagnostics} 
             disabled={loading}
           >
@@ -146,7 +153,7 @@ export default function DebugPage() {
           {/* Connection Status Card */}
           <div style={{ background: 'hsl(222 47% 8%)', border: '1px solid hsl(217 32% 17%)', borderRadius: '0.75rem', padding: '1.25rem' }}>
             <h3 style={{ fontSize: '0.8125rem', fontWeight: '700', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.5rem' }}>
-              Connection Health Ping
+              Connection Health Status
             </h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <div style={{
@@ -154,7 +161,7 @@ export default function DebugPage() {
                 backgroundColor: connectionStatus === 'healthy' ? 'hsl(142 71% 55%)' : connectionStatus === 'testing' ? 'hsl(38 92% 50%)' : 'hsl(0 85% 60%)'
               }} />
               <span style={{ fontWeight: '700', fontSize: '1rem' }}>
-                {connectionStatus === 'healthy' ? 'Healthy (Connected)' : connectionStatus === 'testing' ? 'Pinging REST endpoint...' : 'Unhealthy (Offline / Bad credentials)'}
+                {connectionStatus === 'healthy' ? 'Healthy (Connected)' : connectionStatus === 'testing' ? 'Verifying connectivity...' : 'Unhealthy (Offline / Bad credentials)'}
               </span>
             </div>
           </div>
