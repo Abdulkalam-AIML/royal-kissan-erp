@@ -1,11 +1,20 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import {
-  AreaChart, Area, BarChart, Bar, LineChart, Line,
-  PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend
-} from 'recharts'
+import dynamic from 'next/dynamic'
+
+const RevenueChart = dynamic(() => import('@/components/dashboard/AnalyticsCharts').then(mod => mod.RevenueChart), {
+  ssr: false,
+  loading: () => <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span className="loading-spinner" /></div>
+})
+const ProductSalesChart = dynamic(() => import('@/components/dashboard/AnalyticsCharts').then(mod => mod.ProductSalesChart), {
+  ssr: false,
+  loading: () => <div style={{ height: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span className="loading-spinner" /></div>
+})
+const ProductMixChart = dynamic(() => import('@/components/dashboard/AnalyticsCharts').then(mod => mod.ProductMixChart), {
+  ssr: false,
+  loading: () => <div style={{ height: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span className="loading-spinner" /></div>
+})
 
 const COLORS = ['hsl(217,91%,60%)', 'hsl(142,71%,45%)', 'hsl(38,92%,50%)', 'hsl(0,85%,60%)', 'hsl(270,75%,60%)', 'hsl(199,89%,48%)']
 
@@ -41,19 +50,6 @@ const expenseBreakdown = [
   { name: 'Others', value: 5000 },
 ]
 
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (active && payload && payload.length) {
-    return (
-      <div style={{ background: 'hsl(222 47% 10%)', border: '1px solid hsl(217 32% 20%)', borderRadius: '0.625rem', padding: '0.75rem 1rem', fontSize: '0.8125rem' }}>
-        <p style={{ fontWeight: '700', marginBottom: '0.5rem', color: 'hsl(210 40% 98%)' }}>{label}</p>
-        {payload.map((p: any) => (
-          <p key={p.name} style={{ color: p.color, margin: '0.125rem 0' }}>{p.name}: {typeof p.value === 'number' && p.value > 999 ? `₹${p.value.toLocaleString('en-IN')}` : p.value}</p>
-        ))}
-      </div>
-    )
-  }
-  return null
-}
 
 export default function AnalyticsPage() {
   const [filter, setFilter] = useState('monthly')
@@ -101,27 +97,8 @@ export default function AnalyticsPage() {
           <h3 className="card-title">📈 Revenue, Expense & Profit Trend</h3>
           <span className="badge badge-info">6 Months</span>
         </div>
-        <div className="card-body" style={{ padding: '1rem 0.5rem' }}>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={revenueData}>
-              <defs>
-                {['Revenue', 'Expenses', 'Profit'].map((name, i) => (
-                  <linearGradient key={name} id={`color${name}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={COLORS[i]} stopOpacity={0.3} />
-                    <stop offset="95%" stopColor={COLORS[i]} stopOpacity={0} />
-                  </linearGradient>
-                ))}
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(217 32% 20%)" />
-              <XAxis dataKey="month" stroke="hsl(215 20% 45%)" fontSize={11} />
-              <YAxis stroke="hsl(215 20% 45%)" fontSize={11} tickFormatter={v => `₹${(v/1000).toFixed(0)}k`} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend wrapperStyle={{ fontSize: '12px', color: 'hsl(215 20% 55%)' }} />
-              <Area type="monotone" dataKey="revenue" stroke={COLORS[0]} fill="url(#colorRevenue)" strokeWidth={2} name="Revenue" />
-              <Area type="monotone" dataKey="expenses" stroke={COLORS[2]} fill="url(#colorExpenses)" strokeWidth={2} name="Expenses" />
-              <Area type="monotone" dataKey="profit" stroke={COLORS[1]} fill="url(#colorProfit)" strokeWidth={2} name="Profit" />
-            </AreaChart>
-          </ResponsiveContainer>
+        <div className="card-body" style={{ padding: '1rem' }}>
+          <RevenueChart data={revenueData} />
         </div>
       </div>
 
@@ -131,19 +108,8 @@ export default function AnalyticsPage() {
           <div className="card-header">
             <h3 className="card-title">📦 Sales by Product (Weekly)</h3>
           </div>
-          <div className="card-body" style={{ padding: '1rem 0.5rem' }}>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={weeklyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(217 32% 20%)" />
-                <XAxis dataKey="day" stroke="hsl(215 20% 45%)" fontSize={11} />
-                <YAxis stroke="hsl(215 20% 45%)" fontSize={11} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend wrapperStyle={{ fontSize: '12px', color: 'hsl(215 20% 55%)' }} />
-                <Bar dataKey="cans" fill={COLORS[0]} name="Water Cans" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="packets" fill={COLORS[5]} name="Packets" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="bottles" fill={COLORS[4]} name="Bottles" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="card-body" style={{ padding: '1rem' }}>
+            <ProductSalesChart data={weeklyData} />
           </div>
         </div>
 
@@ -152,15 +118,8 @@ export default function AnalyticsPage() {
           <div className="card-header">
             <h3 className="card-title">🥧 Revenue Mix by Product</h3>
           </div>
-          <div className="card-body">
-            <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie data={productMix} cx="50%" cy="50%" outerRadius={90} dataKey="value" label={({ name, value }) => `${name} ${value}%`} labelLine={false}>
-                  {productMix.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+          <div className="card-body" style={{ padding: '1rem' }}>
+            <ProductMixChart data={productMix} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem' }}>
               {productMix.map((item, i) => (
                 <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem' }}>

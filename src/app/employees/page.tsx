@@ -50,7 +50,7 @@ export default function EmployeesPage() {
 
   async function loadEmployees() {
     try {
-      const { data } = await supabase.from('employees').select('*').order('created_at')
+      const { data } = await supabase.from('employees').select('id, name, role, phone, address, salary, join_date, is_active, created_at').order('created_at')
       setEmployees(data || [])
     } catch { 
       setEmployees([]) 

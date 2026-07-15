@@ -111,7 +111,7 @@ export default function DiagnosticsPage() {
       log('Querying "bills" table to test SELECT connectivity...')
       const { data: selectData, error: selectErr } = await supabase
         .from('bills')
-        .select('*')
+        .select('id, invoice_number, customer_name')
         .limit(1)
 
       let readOk = false

@@ -47,7 +47,7 @@ export default function StockPage() {
         calc[item.name] = { opening: 0, in: 0, out: 0, current: 0 }
       })
 
-      const { data: allTx } = await supabase.from('stock_transactions').select('*').order('created_at')
+      const { data: allTx } = await supabase.from('stock_transactions').select('transaction_type, quantity, item_name, notes, created_at').order('created_at')
       if (allTx) {
         allTx.forEach(tx => {
           // Find by item_name first, then fall back to note parsing
@@ -71,7 +71,7 @@ export default function StockPage() {
 
       const { data: recent } = await supabase
         .from('stock_transactions')
-        .select('*')
+        .select('id, created_at, transaction_type, item_name, notes, quantity, reference_type')
         .order('created_at', { ascending: false })
         .limit(30)
       setTransactions(recent || [])

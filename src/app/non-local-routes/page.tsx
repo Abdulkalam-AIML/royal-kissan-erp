@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import jsPDF from 'jspdf'
-import 'jspdf-autotable'
+
 
 interface RouteStop {
   id: string
@@ -69,8 +68,8 @@ export default function NonLocalRoutesPage() {
   async function loadInitialData() {
     setLoading(true)
     try {
-      const { data: dbRoutes } = await supabase.from('routes').select('*').order('name')
-      const { data: dbDrivers } = await supabase.from('drivers').select('*').order('name')
+      const { data: dbRoutes } = await supabase.from('routes').select('id, name, driver_id, area').order('name')
+      const { data: dbDrivers } = await supabase.from('drivers').select('id, name, phone, salary, is_active').order('name')
 
       if (dbRoutes) {
         // Filter for Non-Local Routes (does not contain 'local' in the name)
@@ -82,9 +81,9 @@ export default function NonLocalRoutesPage() {
       }
       
       if (dbDrivers) {
-        // Only show Nagaraju & Mallaya
+        // Only show Nagaraju & Driver-2
         const filtered = dbDrivers.filter(d => 
-          d.name.toLowerCase().includes('nagaraju') || d.name.toLowerCase().includes('mallaya')
+          d.name.toLowerCase().includes('nagaraju') || d.name.toLowerCase().includes('driver-2')
         )
         setDrivers(filtered)
         if (filtered.length > 0) {
@@ -102,7 +101,7 @@ export default function NonLocalRoutesPage() {
     try {
       const { data: stops } = await supabase
         .from('route_stops')
-        .select('*')
+        .select('id, route_id, name, stop_order')
         .eq('route_id', routeId)
         .order('stop_order')
 
@@ -114,7 +113,7 @@ export default function NonLocalRoutesPage() {
       // Also get route customers to default rates
       const { data: custs } = await supabase
         .from('route_customers')
-        .select('*')
+        .select('name, route_id, product_name, default_qty, default_rate')
         .eq('route_id', routeId)
 
       if (stops) {
@@ -141,13 +140,13 @@ export default function NonLocalRoutesPage() {
     try {
       const { data: sales } = await supabase
         .from('route_sales')
-        .select('*, drivers(name)')
+        .select('id, sale_date, driver_id, product_name, quantity, total_amount, due_amount, cash_paid, upi_paid, drivers(name)')
         .eq('route_id', routeId)
         .order('sale_date', { ascending: false })
       
       const { data: exps } = await supabase
         .from('route_expenses')
-        .select('*')
+        .select('expense_date, driver_id, fuel_charges, driver_bata, other_expenses')
         .eq('route_id', routeId)
 
       // Merge history logs
@@ -156,7 +155,7 @@ export default function NonLocalRoutesPage() {
         return {
           id: s.id,
           date: s.sale_date,
-          driver: s.drivers?.name || 'Nagaraju',
+          driver: (Array.isArray(s.drivers) ? s.drivers[0]?.name : (s.drivers as any)?.name) || 'Nagaraju',
           product: s.product_name,
           qty: s.quantity,
           sales: s.total_amount,
@@ -360,7 +359,9 @@ export default function NonLocalRoutesPage() {
   }
 
   // PDF Export using jsPDF
-  const exportPDF = () => {
+  const exportPDF = async () => {
+    const { default: jsPDF } = await import('jspdf')
+    await import('jspdf-autotable')
     const doc = new jsPDF()
     doc.setFontSize(18)
     doc.text(`ROYAL KISSAN - ${selectedRoute?.name?.toUpperCase()} SHEET`, 14, 20)

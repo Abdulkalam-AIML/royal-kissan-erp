@@ -17,8 +17,8 @@ export default function AttendancePage() {
   async function loadData() {
     setLoading(true)
     const [{ data: emps }, { data: att }] = await Promise.all([
-      supabase.from('employees').select('*').eq('is_active', true).order('name'),
-      supabase.from('attendance').select('*').eq('date', selectedDate),
+      supabase.from('employees').select('id, name, role, salary').eq('is_active', true).order('name'),
+      supabase.from('attendance').select('id, employee_id, status, date').eq('date', selectedDate),
     ])
     setEmployees(emps || [])
     const attMap: Record<string, AttendanceStatus> = {}

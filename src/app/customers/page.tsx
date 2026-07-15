@@ -16,7 +16,7 @@ export default function CustomersPage() {
   async function loadCustomers() {
     const { data } = await supabase
       .from('customers')
-      .select('*')
+      .select('id, name, address, phone, area, gst_number, outstanding_amount, is_active')
       .order('name')
     setCustomers(data || [])
     setLoading(false)

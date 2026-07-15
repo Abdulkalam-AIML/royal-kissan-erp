@@ -11,8 +11,8 @@ export default function SalaryPage() {
   useEffect(() => { loadData() }, [selectedMonth, selectedYear])
   async function loadData() {
     const [{ data: emps }, { data: pays }] = await Promise.all([
-      supabase.from('employees').select('*').eq('is_active', true).order('name'),
-      supabase.from('salary_payments').select('*').eq('month', selectedMonth).eq('year', selectedYear)
+      supabase.from('employees').select('id, name, role, salary').eq('is_active', true).order('name'),
+      supabase.from('salary_payments').select('id, employee_id, status, net_salary, month, year').eq('month', selectedMonth).eq('year', selectedYear)
     ])
     setEmployees(emps || [])
     setPayments(pays || [])

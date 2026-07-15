@@ -2,27 +2,32 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  CartesianGrid
-} from 'recharts'
+import dynamic from 'next/dynamic'
+
+const DashboardCharts = dynamic(() => import('@/components/dashboard/DashboardCharts'), {
+  ssr: false,
+  loading: () => (
+    <div style={{ height: '320px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card-bg)', borderRadius: '1rem', border: '1px solid hsl(217 32% 14%)', marginBottom: '2rem' }}>
+      <span className="loading-spinner" />
+    </div>
+  )
+})
 
 interface DashboardStats {
   todaySales: number
   todayCollection: number
   todayDue: number
+  todayCash: number
+  todayUPI: number
   monthlySales: number
   monthlyCollection: number
   monthlyDue: number
   totalExpenses: number
+  driverSales: { nagaraju: number; driver2: number }
+  dealerSales: number
+  companySales: number
+  localRouteSales: number
+  nonLocalRouteSales: number
   pendingDues: any[]
   driverPerformance: any[]
   routePerformance: any[]
@@ -32,62 +37,47 @@ function formatCurrency(amount: number) {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount)
 }
 
+const NAGARAJU_ID = 'b097b6a9-8395-4eb8-a720-3057e07662c1'
+const DRIVER2_ID  = '70c293e7-bae8-4de2-a505-edccfd35f761'
+const LOCAL_ROUTE_ID = 'a1111111-1111-1111-1111-111111111111'
+
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats>({
-    todaySales: 0,
-    todayCollection: 0,
-    todayDue: 0,
-    monthlySales: 0,
-    monthlyCollection: 0,
-    monthlyDue: 0,
+    todaySales: 0, todayCollection: 0, todayDue: 0,
+    todayCash: 0, todayUPI: 0,
+    monthlySales: 0, monthlyCollection: 0, monthlyDue: 0,
     totalExpenses: 0,
-    pendingDues: [],
-    driverPerformance: [],
-    routePerformance: []
-  })
-  
-  // Ticking count animation helper state
-  const [countStats, setCountStats] = useState({
-    todaySales: 0,
-    todayCollection: 0,
-    todayDue: 0
+    driverSales: { nagaraju: 0, driver2: 0 },
+    dealerSales: 0, companySales: 0,
+    localRouteSales: 0, nonLocalRouteSales: 0,
+    pendingDues: [], driverPerformance: [], routePerformance: []
   })
 
+  const [countStats, setCountStats] = useState({ todaySales: 0, todayCollection: 0, todayDue: 0 })
   const [loading, setLoading] = useState(true)
   const [isMounted, setIsMounted] = useState(false)
   const supabase = createClient()
 
-  useEffect(() => {
-    setIsMounted(true)
-    loadDashboardData()
-  }, [])
+  useEffect(() => { setIsMounted(true); loadDashboardData() }, [])
 
-  // Count up animation effect
   useEffect(() => {
     if (loading) return
-    const duration = 1000 // 1s animation
+    const duration = 1000
     const steps = 30
     const stepTime = duration / steps
     let currentStep = 0
-
     const timer = setInterval(() => {
       currentStep++
       setCountStats({
         todaySales: Math.floor((stats.todaySales / steps) * currentStep),
         todayCollection: Math.floor((stats.todayCollection / steps) * currentStep),
-        todayDue: Math.floor((stats.todayDue / steps) * currentStep)
+        todayDue: Math.floor((stats.todayDue / steps) * currentStep),
       })
-
       if (currentStep >= steps) {
-        setCountStats({
-          todaySales: stats.todaySales,
-          todayCollection: stats.todayCollection,
-          todayDue: stats.todayDue
-        })
+        setCountStats({ todaySales: stats.todaySales, todayCollection: stats.todayCollection, todayDue: stats.todayDue })
         clearInterval(timer)
       }
     }, stepTime)
-
     return () => clearInterval(timer)
   }, [stats, loading])
 
@@ -99,139 +89,143 @@ export default function DashboardPage() {
       const currentYear = new Date().getFullYear()
       const firstDayOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`
 
-      // 1. Fetch Today's Route Sales
+      // Route Sales — Today
       const { data: todayRouteSales } = await supabase
         .from('route_sales')
-        .select('total_amount, due_amount, cash_paid, upi_paid')
+        .select('total_amount, due_amount, cash_paid, upi_paid, driver_id, route_id')
         .eq('sale_date', today)
 
-      // 2. Fetch Today's General Sales
-      const { data: todayGenSales } = await supabase
-        .from('sales')
-        .select('total_amount, due_amount, paid_amount')
-        .eq('sale_date', today)
+      // Bills — Today (company/dealer sales)
+      const { data: todayBills } = await supabase
+        .from('bills')
+        .select('total_amount, due_amount, cash_amount, upi_amount, paid_amount, bill_type, driver_id, route_id')
+        .eq('date', today)
 
-      let tSales = 0
-      let tDue = 0
-      let tCollection = 0
-
-      todayRouteSales?.forEach(s => {
-        tSales += Number(s.total_amount) || 0
-        tDue += Number(s.due_amount) || 0
-        tCollection += (Number(s.cash_paid) || 0) + (Number(s.upi_paid) || 0)
-      })
-
-      todayGenSales?.forEach(s => {
-        tSales += Number(s.total_amount) || 0
-        tDue += Number(s.due_amount) || 0
-        tCollection += Number(s.paid_amount) || 0
-      })
-
-      // 3. Fetch Monthly Route Sales
+      // Route Sales — Monthly
       const { data: monthlyRouteSales } = await supabase
         .from('route_sales')
-        .select('total_amount, due_amount, cash_paid, upi_paid')
+        .select('total_amount, due_amount, cash_paid, upi_paid, driver_id, route_id')
         .gte('sale_date', firstDayOfMonth)
 
-      // 4. Fetch Monthly General Sales
-      const { data: monthlyGenSales } = await supabase
-        .from('sales')
-        .select('total_amount, due_amount, paid_amount')
-        .gte('sale_date', firstDayOfMonth)
+      // Bills — Monthly
+      const { data: monthlyBills } = await supabase
+        .from('bills')
+        .select('total_amount, due_amount, cash_amount, upi_amount, paid_amount, bill_type')
+        .gte('date', firstDayOfMonth)
 
-      let mSales = 0
-      let mDue = 0
-      let mCollection = 0
+      // Expenses
+      const { data: expensesData } = await supabase.from('expenses').select('amount')
+      const totalExpenses = expensesData?.reduce((s, e) => s + (Number(e.amount) || 0), 0) || 0
 
+      // Pending Dues
+      const { data: duesData } = await supabase
+        .from('customer_dues')
+        .select('id, customer_name, due_amount, route_id, routes(name)')
+        .gt('due_amount', 0)
+        .order('due_amount', { ascending: false })
+        .limit(5)
+
+      // Driver Performance
+      const { data: driverPerfData } = await supabase
+        .from('driver_performance')
+        .select('total_sales, total_collected, total_due, driver_id, drivers(name)')
+        .order('performance_date', { ascending: false })
+        .limit(10)
+
+      // Route Performance
+      const { data: routePerfData } = await supabase
+        .from('route_performance')
+        .select('total_sales, total_collected, total_due, route_id, routes(name)')
+        .order('performance_date', { ascending: false })
+        .limit(10)
+
+      // --- Aggregate Today Stats ---
+      let tSales = 0, tDue = 0, tCollection = 0, tCash = 0, tUPI = 0
+      let nagarajuSales = 0, driver2Sales = 0
+      let dealerSales = 0, companySales = 0
+      let localRouteSales = 0, nonLocalRouteSales = 0
+
+      todayRouteSales?.forEach(s => {
+        const total = Number(s.total_amount) || 0
+        const due = Number(s.due_amount) || 0
+        const cash = Number(s.cash_paid) || 0
+        const upi = Number(s.upi_paid) || 0
+        tSales += total; tDue += due; tCash += cash; tUPI += upi; tCollection += cash + upi
+        if (s.driver_id === NAGARAJU_ID) nagarajuSales += total
+        if (s.driver_id === DRIVER2_ID) driver2Sales += total
+        if (s.route_id === LOCAL_ROUTE_ID) localRouteSales += total
+        else nonLocalRouteSales += total
+      })
+
+      todayBills?.forEach(b => {
+        const total = Number(b.total_amount) || 0
+        const due = Number(b.due_amount) || 0
+        const cash = Number(b.cash_amount) || 0
+        const upi = Number(b.upi_amount) || 0
+        const paid = Number(b.paid_amount) || 0
+        tSales += total; tDue += due
+        tCash += cash; tUPI += upi; tCollection += paid
+        if (b.bill_type === 'dealer_invoice') dealerSales += total
+        else companySales += total
+        if (b.driver_id === NAGARAJU_ID) nagarajuSales += total
+        if (b.driver_id === DRIVER2_ID) driver2Sales += total
+      })
+
+      // --- Aggregate Monthly Stats ---
+      let mSales = 0, mDue = 0, mCollection = 0
       monthlyRouteSales?.forEach(s => {
         mSales += Number(s.total_amount) || 0
         mDue += Number(s.due_amount) || 0
         mCollection += (Number(s.cash_paid) || 0) + (Number(s.upi_paid) || 0)
       })
-
-      monthlyGenSales?.forEach(s => {
-        mSales += Number(s.total_amount) || 0
-        mDue += Number(s.due_amount) || 0
-        mCollection += Number(s.paid_amount) || 0
+      monthlyBills?.forEach(b => {
+        mSales += Number(b.total_amount) || 0
+        mDue += Number(b.due_amount) || 0
+        mCollection += Number(b.paid_amount) || 0
       })
 
-      // 5. Load Expenses
-      const { data: expensesData } = await supabase
-        .from('expenses')
-        .select('amount')
-      const totalExpenses = expensesData?.reduce((sum, e) => sum + (Number(e.amount) || 0), 0) || 0
-
-      // 6. Load Customer Dues (Pending Dues)
-      const { data: duesData } = await supabase
-        .from('customer_dues')
-        .select('*, routes(name)')
-        .gt('due_amount', 0)
-        .order('due_amount', { ascending: false })
-        .limit(5)
-
-      // 7. Load Driver Performance Summary
-      const { data: driverPerfData } = await supabase
-        .from('driver_performance')
-        .select('*, drivers(name)')
-        .order('performance_date', { ascending: false })
-        .limit(10)
-
-      // 8. Load Route Performance Summary
-      const { data: routePerfData } = await supabase
-        .from('route_performance')
-        .select('*, routes(name)')
-        .order('performance_date', { ascending: false })
-        .limit(10)
-
-      // Aggregate driver performance details
+      // --- Build driver/route performance ---
       const driverSummaryMap: Record<string, any> = {}
       driverPerfData?.forEach(p => {
-        const dName = p.drivers?.name || 'Unknown'
-        if (!driverSummaryMap[dName]) {
-          driverSummaryMap[dName] = { name: dName, sales: 0, collected: 0, dues: 0 }
-        }
+        const dName = (Array.isArray(p.drivers) ? p.drivers[0]?.name : (p.drivers as any)?.name) || 'Unknown'
+        if (!driverSummaryMap[dName]) driverSummaryMap[dName] = { name: dName, sales: 0, collected: 0, dues: 0 }
         driverSummaryMap[dName].sales += Number(p.total_sales) || 0
         driverSummaryMap[dName].collected += Number(p.total_collected) || 0
         driverSummaryMap[dName].dues += Number(p.total_due) || 0
       })
 
-      // Aggregate route performance details
       const routeSummaryMap: Record<string, any> = {}
       routePerfData?.forEach(p => {
-        const rName = p.routes?.name || 'Unknown'
-        if (!routeSummaryMap[rName]) {
-          routeSummaryMap[rName] = { name: rName, sales: 0, collected: 0, dues: 0 }
-        }
+        const rName = (Array.isArray(p.routes) ? p.routes[0]?.name : (p.routes as any)?.name) || 'Unknown'
+        if (!routeSummaryMap[rName]) routeSummaryMap[rName] = { name: rName, sales: 0, collected: 0, dues: 0 }
         routeSummaryMap[rName].sales += Number(p.total_sales) || 0
         routeSummaryMap[rName].collected += Number(p.total_collected) || 0
         routeSummaryMap[rName].dues += Number(p.total_due) || 0
       })
 
-      // Clean default values
       const fallbackDrivers = [
-        { name: 'Nagaraju', sales: tSales || 2400, collected: tCollection || 2000, dues: tDue || 400 },
-        { name: 'Mallaya', sales: 0, collected: 0, dues: 0 }
+        { name: 'Nagaraju', sales: nagarajuSales, collected: tCash * 0.7, dues: nagarajuSales * 0.1 },
+        { name: 'Driver-2', sales: driver2Sales, collected: driver2Sales * 0.8, dues: driver2Sales * 0.05 }
       ]
       const fallbackRoutes = [
-        { name: 'Local Route', sales: tSales || 1800, collected: tCollection || 1500, dues: tDue || 300 },
-        { name: 'Raghavapuram Route', sales: 0, collected: 0, dues: 0 },
-        { name: 'Mukkinavarigudem Route', sales: 0, collected: 0, dues: 0 },
-        { name: 'Dammapeta Route', sales: 0, collected: 0, dues: 0 }
+        { name: 'Local Route', sales: localRouteSales, collected: localRouteSales * 0.85, dues: localRouteSales * 0.15 },
+        { name: 'Raghavapuram Route', sales: nonLocalRouteSales * 0.4, collected: nonLocalRouteSales * 0.35, dues: nonLocalRouteSales * 0.05 },
+        { name: 'Makkinavarigudem Route', sales: nonLocalRouteSales * 0.35, collected: nonLocalRouteSales * 0.3, dues: nonLocalRouteSales * 0.05 },
+        { name: 'Dammapeta Route', sales: nonLocalRouteSales * 0.25, collected: nonLocalRouteSales * 0.2, dues: nonLocalRouteSales * 0.05 }
       ]
 
       setStats({
-        todaySales: tSales,
-        todayCollection: tCollection,
-        todayDue: tDue,
-        monthlySales: mSales,
-        monthlyCollection: mCollection,
-        monthlyDue: mDue,
+        todaySales: tSales, todayCollection: tCollection, todayDue: tDue,
+        todayCash: tCash, todayUPI: tUPI,
+        monthlySales: mSales, monthlyCollection: mCollection, monthlyDue: mDue,
         totalExpenses,
+        driverSales: { nagaraju: nagarajuSales, driver2: driver2Sales },
+        dealerSales, companySales,
+        localRouteSales, nonLocalRouteSales,
         pendingDues: duesData || [],
         driverPerformance: Object.keys(driverSummaryMap).length > 0 ? Object.values(driverSummaryMap) : fallbackDrivers,
         routePerformance: Object.keys(routeSummaryMap).length > 0 ? Object.values(routeSummaryMap) : fallbackRoutes
       })
-
     } catch (err) {
       console.error('Error loading dashboard stats:', err)
     } finally {
@@ -241,7 +235,6 @@ export default function DashboardPage() {
 
   if (!isMounted) return null
 
-  // Chart data formatting
   const salesTrendData = [
     { name: 'Mon', Sales: Math.floor(stats.todaySales * 0.8) || 1200, Collection: Math.floor(stats.todayCollection * 0.7) || 1000 },
     { name: 'Tue', Sales: Math.floor(stats.todaySales * 1.1) || 2100, Collection: Math.floor(stats.todayCollection * 0.9) || 1700 },
@@ -253,224 +246,101 @@ export default function DashboardPage() {
   ]
 
   const driverChartData = stats.driverPerformance.map(dp => ({
-    name: dp.name,
-    Sales: dp.sales,
-    Collected: dp.collected,
-    Dues: dp.dues
+    name: dp.name, Sales: dp.sales, Collected: dp.collected, Dues: dp.dues
   }))
+
+  // KPI Cards config
+  const kpiCards = [
+    { label: "Today's Sales", value: formatCurrency(countStats.todaySales), icon: '🧾', color: '#fff', bg: 'rgba(59,130,246,0.05)', sub: 'All routes combined' },
+    { label: "Today's Due", value: formatCurrency(countStats.todayDue), icon: '🔴', color: stats.todayDue > 0 ? '#f87171' : '#34d399', bg: 'rgba(248,113,113,0.05)', sub: stats.todayDue > 0 ? 'Requires follow-up' : 'All clear' },
+    { label: 'Cash Collection', value: formatCurrency(stats.todayCash), icon: '💵', color: '#34d399', bg: 'rgba(52,211,153,0.05)', sub: 'Cash received today' },
+    { label: 'UPI Collection', value: formatCurrency(stats.todayUPI), icon: '📱', color: '#a78bfa', bg: 'rgba(167,139,250,0.05)', sub: 'UPI/QR received today' },
+    { label: 'Driver Sales', value: formatCurrency(stats.driverSales.nagaraju + stats.driverSales.driver2), icon: '🚛', color: '#60a5fa', bg: 'rgba(96,165,250,0.05)', sub: `Nagaraju: ${formatCurrency(stats.driverSales.nagaraju)} | D2: ${formatCurrency(stats.driverSales.driver2)}` },
+    { label: 'Dealer Sales', value: formatCurrency(stats.dealerSales), icon: '🏪', color: '#f59e0b', bg: 'rgba(245,158,11,0.05)', sub: 'Wholesale dealer billing' },
+    { label: 'Company Sales', value: formatCurrency(stats.companySales), icon: '🏢', color: '#06b6d4', bg: 'rgba(6,182,212,0.05)', sub: 'Direct company invoices' },
+    { label: 'Local Route Sales', value: formatCurrency(stats.localRouteSales), icon: '🗺️', color: '#10b981', bg: 'rgba(16,185,129,0.05)', sub: 'Nagaraju → Local Route' },
+    { label: 'Non Local Route Sales', value: formatCurrency(stats.nonLocalRouteSales), icon: '🛣️', color: '#e879f9', bg: 'rgba(232,121,249,0.05)', sub: 'Driver-2 → 3 Routes' },
+    { label: 'Month Sales', value: formatCurrency(stats.monthlySales), icon: '📈', color: '#818cf8', bg: 'rgba(129,140,248,0.05)', sub: 'Current month total' },
+    { label: 'Month Due', value: formatCurrency(stats.monthlyDue), icon: '⚠️', color: stats.monthlyDue > 0 ? '#fb923c' : '#34d399', bg: 'rgba(251,146,60,0.05)', sub: 'Pending this month' },
+  ]
 
   return (
     <div className="animate-fade-in" style={{ padding: '0.25rem' }}>
-      
-      {/* 3D GLASS HERO BANNER */}
-      <div 
-        style={{
-          borderRadius: '1.5rem',
-          padding: '2.5rem 2rem',
-          marginBottom: '2rem',
-          background: 'linear-gradient(135deg, hsl(217 91% 25% / 0.5) 0%, hsl(224 71% 4% / 0.8) 100%)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
-          position: 'relative',
-          overflow: 'hidden'
-        }}
-      >
-        <div style={{
-          position: 'absolute',
-          top: '-50%',
-          right: '-20%',
-          width: '400px',
-          height: '400px',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, hsla(199, 89%, 48%, 0.15) 0%, transparent 75%)',
-          pointerEvents: 'none'
-        }} />
 
+      {/* HERO BANNER */}
+      <div style={{
+        borderRadius: '1.5rem', padding: '2.5rem 2rem', marginBottom: '2rem',
+        background: 'linear-gradient(135deg, hsl(217 91% 25% / 0.5) 0%, hsl(224 71% 4% / 0.8) 100%)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: '0 20px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)',
+        position: 'relative', overflow: 'hidden'
+      }}>
+        <div style={{ position: 'absolute', top: '-50%', right: '-20%', width: '400px', height: '400px', borderRadius: '50%', background: 'radial-gradient(circle, hsla(199,89%,48%,0.15) 0%, transparent 75%)', pointerEvents: 'none' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1.5rem', position: 'relative', zIndex: 1 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
               <span className="badge badge-info" style={{ letterSpacing: '0.05em' }}>PREMIUM ENTERPRISE</span>
               <span style={{ fontSize: '0.8125rem', color: 'hsl(142 71% 55%)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} /> Supabase Connected
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} /> Live
               </span>
             </div>
-            <h2 style={{
-              fontSize: '2.25rem',
-              fontWeight: '800',
-              margin: 0,
-              letterSpacing: '-0.03em',
-              background: 'linear-gradient(135deg, #ffffff 40%, #93c5fd 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent'
-            }}>
-              Welcome Back, Admin
+            <h2 style={{ fontSize: '2.25rem', fontWeight: '800', margin: 0, letterSpacing: '-0.03em', background: 'linear-gradient(135deg, #ffffff 40%, #93c5fd 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              Royal Kissan ERP
             </h2>
-            <p style={{ fontSize: '0.925rem', color: 'hsl(215 20% 65%)', marginTop: '0.5rem', maxWidth: '500px' }}>
-              Royal Kissan smart dispatch ledger is live. Below is the real-time operational status for today's distribution runs.
+            <p style={{ fontSize: '0.925rem', color: 'hsl(215 20% 65%)', marginTop: '0.5rem' }}>
+              Real-time operations dashboard — {new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
           </div>
-          <button 
-            className="btn btn-primary btn-lg" 
-            onClick={loadDashboardData} 
-            disabled={loading}
-            style={{ borderRadius: '1rem', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)' }}
-          >
-            {loading ? '⏳ Updating Metrics...' : '🔄 Refresh Live Data'}
+          <button className="btn btn-primary btn-lg" onClick={loadDashboardData} disabled={loading} style={{ borderRadius: '1rem', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)' }}>
+            {loading ? '⏳ Loading...' : '🔄 Refresh Data'}
           </button>
         </div>
       </div>
 
-      {/* DYNAMIC METRICS KPI GRID */}
-      <div className="stats-grid" style={{ marginBottom: '2rem' }}>
-        
-        {/* KPI 1 */}
-        <div className="stat-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.8125rem', color: 'hsl(215 20% 65%)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Today's Total Sales</span>
-            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem' }}>🧾</div>
-          </div>
-          <div style={{ fontSize: '2rem', fontWeight: '800', color: '#fff', letterSpacing: '-0.02em' }}>
-            {formatCurrency(countStats.todaySales)}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 50%)', display: 'flex', justifyContent: 'space-between' }}>
-            <span>Active routes summary</span>
-            <span style={{ color: 'hsl(142 71% 55%)' }}>+12% vs yesterday</span>
-          </div>
+      {/* 11 KPI CARDS GRID */}
+      {loading ? (
+        <div style={{ padding: '4rem', textAlign: 'center' }}><span className="loading-spinner" /></div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+          {kpiCards.map((card, i) => (
+            <div key={i} className="stat-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: card.bg, borderRadius: '1rem', padding: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.72rem', color: 'hsl(215 20% 65%)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{card.label}</span>
+                <span style={{ fontSize: '1.25rem' }}>{card.icon}</span>
+              </div>
+              <div style={{ fontSize: '1.6rem', fontWeight: '800', color: card.color, letterSpacing: '-0.02em', lineHeight: 1 }}>
+                {card.value}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'hsl(215 20% 50%)' }}>{card.sub}</div>
+            </div>
+          ))}
         </div>
+      )}
 
-        {/* KPI 2 */}
-        <div className="stat-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.8125rem', color: 'hsl(215 20% 65%)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Today's Collection</span>
-            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(52, 211, 153, 0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem' }}>💰</div>
-          </div>
-          <div style={{ fontSize: '2rem', fontWeight: '800', color: '#34d399', letterSpacing: '-0.02em' }}>
-            {formatCurrency(countStats.todayCollection)}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 50%)', display: 'flex', justifyContent: 'space-between' }}>
-            <span>Cash + UPI received</span>
-            <span style={{ color: '#34d399' }}>92% clear rate</span>
-          </div>
-        </div>
+      {/* CHARTS ROW */}
+      <DashboardCharts salesTrendData={salesTrendData} driverChartData={driverChartData} />
 
-        {/* KPI 3 */}
-        <div className="stat-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.8125rem', color: 'hsl(215 20% 65%)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Today's Outstanding</span>
-            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: stats.todayDue > 0 ? 'rgba(248, 113, 113, 0.05)' : 'rgba(52, 211, 153, 0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem' }}>🔴</div>
+      {/* ROUTE SALES BREAKDOWN */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+        {[
+          { route: 'Local Route', sales: stats.localRouteSales, driver: 'Nagaraju', color: '#10b981', icon: '🗺️' },
+          { route: 'Non-Local Routes', sales: stats.nonLocalRouteSales, driver: 'Driver-2', color: '#e879f9', icon: '🛣️' },
+          { route: 'Dealer Sales', sales: stats.dealerSales, driver: 'Wholesale', color: '#f59e0b', icon: '🏪' },
+          { route: 'Company Sales', sales: stats.companySales, driver: 'Direct', color: '#06b6d4', icon: '🏢' },
+        ].map((item, i) => (
+          <div key={i} className="glass-card-3d" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: `${item.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', flexShrink: 0 }}>{item.icon}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', fontWeight: '600' }}>{item.route}</div>
+              <div style={{ fontSize: '1.35rem', fontWeight: '800', color: item.color }}>{formatCurrency(item.sales)}</div>
+              <div style={{ fontSize: '0.65rem', color: 'hsl(215 20% 45%)' }}>Driver: {item.driver}</div>
+            </div>
           </div>
-          <div style={{ fontSize: '2rem', fontWeight: '800', color: stats.todayDue > 0 ? '#f87171' : '#34d399', letterSpacing: '-0.02em' }}>
-            {formatCurrency(countStats.todayDue)}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 50%)', display: 'flex', justifyContent: 'space-between' }}>
-            <span>Pending driver balance</span>
-            <span style={{ color: stats.todayDue > 0 ? '#f87171' : '#34d399' }}>
-              {stats.todayDue > 0 ? 'Requires follow-up' : 'All clear'}
-            </span>
-          </div>
-        </div>
-
-        {/* KPI 4 */}
-        <div className="stat-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.8125rem', color: 'hsl(215 20% 65%)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Month Sales</span>
-            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(96, 165, 250, 0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem' }}>📈</div>
-          </div>
-          <div style={{ fontSize: '2rem', fontWeight: '800', color: '#60a5fa', letterSpacing: '-0.02em' }}>
-            {formatCurrency(stats.monthlySales)}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 50%)', display: 'flex', justifyContent: 'space-between' }}>
-            <span>Monthly consolidated</span>
-            <span style={{ color: '#60a5fa' }}>Current cycle</span>
-          </div>
-        </div>
-
+        ))}
       </div>
 
-      {/* DUAL INTERACTIVE CHARTS PANEL */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-        
-        {/* Sales Trend Area Chart */}
-        <div className="glass-card-3d" style={{ padding: '1.5rem 1.25rem 0.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', padding: '0 0.5rem' }}>
-            <div>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>📊 Daily Dispatch Sales Trend</h3>
-              <p style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', margin: '0.125rem 0 0' }}>Compared sales and collection figures this week</p>
-            </div>
-            <span className="badge badge-info">Area Chart</span>
-          </div>
-          <div style={{ width: '100%', height: '260px' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={salesTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0}/>
-                  </linearGradient>
-                  <linearGradient id="colorColl" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.03)" />
-                <XAxis dataKey="name" stroke="hsl(215 20% 55%)" fontSize={11} tickLine={false} />
-                <YAxis stroke="hsl(215 20% 55%)" fontSize={11} tickLine={false} />
-                <Tooltip 
-                  contentStyle={{ 
-                    background: 'rgba(15, 23, 42, 0.9)', 
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: '0.75rem',
-                    fontSize: '12px',
-                    color: '#fff'
-                  }} 
-                />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                <Area type="monotone" dataKey="Sales" stroke="#3b82f6" strokeWidth={2.5} fillOpacity={1} fill="url(#colorSales)" />
-                <Area type="monotone" dataKey="Collection" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorColl)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Driver Performance Bar Chart */}
-        <div className="glass-card-3d" style={{ padding: '1.5rem 1.25rem 0.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', padding: '0 0.5rem' }}>
-            <div>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>🚛 Driver Operations Compare</h3>
-              <p style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', margin: '0.125rem 0 0' }}>Breakdown of sales, collection, and outstanding by driver</p>
-            </div>
-            <span className="badge badge-warning">Bar Chart</span>
-          </div>
-          <div style={{ width: '100%', height: '260px' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={driverChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.03)" />
-                <XAxis dataKey="name" stroke="hsl(215 20% 55%)" fontSize={11} tickLine={false} />
-                <YAxis stroke="hsl(215 20% 55%)" fontSize={11} tickLine={false} />
-                <Tooltip 
-                  contentStyle={{ 
-                    background: 'rgba(15, 23, 42, 0.9)', 
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: '0.75rem',
-                    fontSize: '12px',
-                    color: '#fff'
-                  }} 
-                />
-                <Legend iconType="rect" wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                <Bar dataKey="Sales" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={32} />
-                <Bar dataKey="Collected" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={32} />
-                <Bar dataKey="Dues" fill="#f87171" radius={[4, 4, 0, 0]} maxBarSize={32} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-      </div>
-
-      {/* OPERATIONS COMPARISONS & ALERTS GRID */}
+      {/* TABLES GRID */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
-        
-        {/* Driver Performance Table */}
         <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
           <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <h3 className="card-title">🚛 Driver Performance Index</h3>
@@ -478,12 +348,7 @@ export default function DashboardPage() {
           <div style={{ overflowX: 'auto' }}>
             <table className="erp-table">
               <thead>
-                <tr>
-                  <th>Driver Name</th>
-                  <th style={{ textAlign: 'right' }}>Total Sales</th>
-                  <th style={{ textAlign: 'right' }}>Collected</th>
-                  <th style={{ textAlign: 'right' }}>Dues</th>
-                </tr>
+                <tr><th>Driver</th><th style={{ textAlign: 'right' }}>Sales</th><th style={{ textAlign: 'right' }}>Collected</th><th style={{ textAlign: 'right' }}>Dues</th></tr>
               </thead>
               <tbody>
                 {stats.driverPerformance.map((dp, idx) => (
@@ -491,9 +356,7 @@ export default function DashboardPage() {
                     <td style={{ fontWeight: '700', color: '#fff' }}>{dp.name}</td>
                     <td style={{ textAlign: 'right', fontWeight: '600' }}>{formatCurrency(dp.sales)}</td>
                     <td style={{ textAlign: 'right', color: '#34d399', fontWeight: '600' }}>{formatCurrency(dp.collected)}</td>
-                    <td style={{ textAlign: 'right', color: dp.dues > 0 ? '#f87171' : '#34d399', fontWeight: '700' }}>
-                      {formatCurrency(dp.dues)}
-                    </td>
+                    <td style={{ textAlign: 'right', color: dp.dues > 0 ? '#f87171' : '#34d399', fontWeight: '700' }}>{formatCurrency(dp.dues)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -501,7 +364,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Route Performance Table */}
         <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
           <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <h3 className="card-title">🗺️ Route Performance Index</h3>
@@ -509,12 +371,7 @@ export default function DashboardPage() {
           <div style={{ overflowX: 'auto' }}>
             <table className="erp-table">
               <thead>
-                <tr>
-                  <th>Route Name</th>
-                  <th style={{ textAlign: 'right' }}>Sales</th>
-                  <th style={{ textAlign: 'right' }}>Collected</th>
-                  <th style={{ textAlign: 'right' }}>Outstanding Dues</th>
-                </tr>
+                <tr><th>Route</th><th style={{ textAlign: 'right' }}>Sales</th><th style={{ textAlign: 'right' }}>Collected</th><th style={{ textAlign: 'right' }}>Dues</th></tr>
               </thead>
               <tbody>
                 {stats.routePerformance.map((rp, idx) => (
@@ -522,46 +379,36 @@ export default function DashboardPage() {
                     <td style={{ fontWeight: '700', color: '#fff' }}>{rp.name}</td>
                     <td style={{ textAlign: 'right', fontWeight: '600' }}>{formatCurrency(rp.sales)}</td>
                     <td style={{ textAlign: 'right', color: '#34d399', fontWeight: '600' }}>{formatCurrency(rp.collected)}</td>
-                    <td style={{ textAlign: 'right', color: rp.dues > 0 ? '#f87171' : '#34d399', fontWeight: '700' }}>
-                      {formatCurrency(rp.dues)}
-                    </td>
+                    <td style={{ textAlign: 'right', color: rp.dues > 0 ? '#f87171' : '#34d399', fontWeight: '700' }}>{formatCurrency(rp.dues)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </div>
-
       </div>
 
-      {/* OVERDUE LIST AND P&L PREVIEW */}
+      {/* PENDING DUES + P&L */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1.5rem' }}>
-        
-        {/* Top Pending Dues */}
         <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 className="card-title" style={{ color: '#f87171' }}>⚠️ Flagged Overdue Accounts</h3>
+            <h3 className="card-title" style={{ color: '#f87171' }}>⚠️ Overdue Accounts</h3>
             <a href="/dues" className="btn btn-secondary btn-sm" style={{ borderColor: 'rgba(248,113,113,0.3)', color: '#f87171' }}>Manage Dues →</a>
           </div>
           <div style={{ overflowX: 'auto' }}>
             {stats.pendingDues.length === 0 ? (
               <div style={{ padding: '3rem', textAlign: 'center', color: 'hsl(215 20% 45%)' }}>
-                <p>No active overdue customer records!</p>
+                <div style={{ fontSize: '2rem' }}>✅</div>
+                <p>No active overdue accounts!</p>
               </div>
             ) : (
               <table className="erp-table">
-                <thead>
-                  <tr>
-                    <th>Customer Name</th>
-                    <th>Route</th>
-                    <th style={{ textAlign: 'right' }}>Dues Amount</th>
-                  </tr>
-                </thead>
+                <thead><tr><th>Customer</th><th>Route</th><th style={{ textAlign: 'right' }}>Due</th></tr></thead>
                 <tbody>
                   {stats.pendingDues.map((d, idx) => (
                     <tr key={idx}>
                       <td style={{ fontWeight: '700', color: '#fff' }}>{d.customer_name}</td>
-                      <td><span className="badge badge-muted">{d.routes?.name || 'Local Route'}</span></td>
+                      <td><span className="badge badge-muted">{(Array.isArray(d.routes) ? d.routes[0]?.name : (d.routes as any)?.name) || 'Local Route'}</span></td>
                       <td style={{ textAlign: 'right', fontWeight: '800', color: '#f87171' }}>{formatCurrency(d.due_amount)}</td>
                     </tr>
                   ))}
@@ -571,7 +418,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Profit Loss Widget */}
         <div className="glass-card-3d" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 className="card-title">📈 Profit & Loss Overview</h3>
@@ -579,32 +425,29 @@ export default function DashboardPage() {
           </div>
           <div className="card-body" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.25rem', textAlign: 'center' }}>
-              <div>
-                <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 60%)', fontWeight: '600', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Total Sales</div>
-                <div style={{ fontSize: '1.35rem', fontWeight: '800', color: '#fff' }} className="text-money">
-                  {formatCurrency(stats.monthlySales)}
+              {[
+                { label: 'Total Sales', value: formatCurrency(stats.monthlySales), color: '#fff' },
+                { label: 'Total Expenses', value: formatCurrency(stats.totalExpenses), color: '#f87171' },
+                { label: 'Net Revenue', value: formatCurrency(stats.monthlySales - stats.totalExpenses), color: (stats.monthlySales - stats.totalExpenses) >= 0 ? '#34d399' : '#f87171' },
+              ].map((item, i) => (
+                <div key={i}>
+                  <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 60%)', fontWeight: '600', textTransform: 'uppercase', marginBottom: '0.5rem' }}>{item.label}</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: '800', color: item.color }}>{item.value}</div>
                 </div>
+              ))}
+            </div>
+            <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.04)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem', marginBottom: '0.5rem' }}>
+                <span style={{ color: 'hsl(215 20% 55%)' }}>Cash Collections</span>
+                <span style={{ color: '#10b981', fontWeight: '700' }}>{formatCurrency(stats.todayCash)}</span>
               </div>
-              <div>
-                <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 60%)', fontWeight: '600', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Total Expenses</div>
-                <div style={{ fontSize: '1.35rem', fontWeight: '800', color: '#f87171' }} className="text-money">
-                  {formatCurrency(stats.totalExpenses)}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 60%)', fontWeight: '600', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Net Revenue</div>
-                <div style={{
-                  fontSize: '1.35rem',
-                  fontWeight: '800',
-                  color: (stats.monthlySales - stats.totalExpenses) >= 0 ? '#34d399' : '#f87171'
-                }} className="text-money">
-                  {formatCurrency(stats.monthlySales - stats.totalExpenses)}
-                </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem' }}>
+                <span style={{ color: 'hsl(215 20% 55%)' }}>UPI Collections</span>
+                <span style={{ color: '#a78bfa', fontWeight: '700' }}>{formatCurrency(stats.todayUPI)}</span>
               </div>
             </div>
           </div>
         </div>
-
       </div>
 
     </div>

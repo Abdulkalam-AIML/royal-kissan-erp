@@ -16,7 +16,7 @@ export default function ExpensesPage() {
   useEffect(() => { loadExpenses() }, [])
 
   async function loadExpenses() {
-    const { data } = await supabase.from('expenses').select('*').order('expense_date', { ascending: false }).limit(50)
+    const { data } = await supabase.from('expenses').select('id, expense_date, category_name, description, payment_mode, amount').order('expense_date', { ascending: false }).limit(50)
     setExpenses(data || [])
     setLoading(false)
   }

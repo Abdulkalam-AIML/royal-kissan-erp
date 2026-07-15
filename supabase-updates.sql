@@ -59,7 +59,7 @@ INSERT INTO products (name, category, unit, default_rate, gst_rate, hsn_code, is
   ('250ml Bottle Case',   'bottle', 'case', 150.00,  18.00, '2201', TRUE),
   ('1L Bottle Case',      'bottle', 'case', 120.00,  18.00, '2201', TRUE),
   ('2L Bottle Case',      'bottle', 'case', 150.00,  18.00, '2201', TRUE)
-ON CONFLICT DO NOTHING;
+ON CONFLICT (name) DO NOTHING;
 
 -- 5. ADD INVOICE_TYPE COLUMN TO SALES TABLE
 ALTER TABLE sales
@@ -116,19 +116,24 @@ ALTER TABLE customers
 
 -- 10. ADD EMPLOYEES FROM SEED LIST (with phone numbers where known)
 -- NOTE: Only run if employees table is empty or missing these records
-INSERT INTO employees (name, role, salary, is_active, phone) VALUES
-  ('Arifa',         'manager',   0,     true, NULL),
-  ('Akhila',        'worker',    0,     true, NULL),
-  ('Lakshmi',       'worker',    0,     true, NULL),
-  ('Dhana Lakshmi', 'worker',    0,     true, NULL),
-  ('Parvathi',      'worker',    0,     true, NULL),
-  ('Swarna Latha',  'worker',    0,     true, NULL),
-  ('Rama Devi',     'worker',    0,     true, NULL),
-  ('Mallika',       'worker',    0,     true, NULL),
-  ('Sirisha',       'worker',    0,     true, NULL),
-  ('Nagaraju',      'driver',  12000,  true, '8184918757'),
-  ('Mallaya',       'driver',  16000,  true, NULL),
-  ('Sai Kumar',     'operator', 20000, true, NULL),
-  ('Deepak',        'operator', 28000, true, NULL),
-  ('Prasad',        'marketing',18000, true, NULL)
-ON CONFLICT DO NOTHING;
+INSERT INTO employees (name, role, salary, is_active, phone)
+SELECT name, role, salary, is_active, phone
+FROM (VALUES
+  ('Arifa',         'manager',   0::numeric,     true, NULL::text),
+  ('Akhila',        'worker',    0::numeric,     true, NULL::text),
+  ('Lakshmi',       'worker',    0::numeric,     true, NULL::text),
+  ('Dhana Lakshmi', 'worker',    0::numeric,     true, NULL::text),
+  ('Parvathi',      'worker',    0::numeric,     true, NULL::text),
+  ('Swarna Latha',  'worker',    0::numeric,     true, NULL::text),
+  ('Rama Devi',     'worker',    0::numeric,     true, NULL::text),
+  ('Mallika',       'worker',    0::numeric,     true, NULL::text),
+  ('Sirisha',       'worker',    0::numeric,     true, NULL::text),
+  ('Nagaraju',      'driver',  12000::numeric,  true, '8184918757'::text),
+  ('Driver-2',      'driver',  16000::numeric,  true, NULL::text),
+  ('Sai Kumar',     'operator', 20000::numeric, true, NULL::text),
+  ('Deepak',        'operator', 28000::numeric, true, NULL::text),
+  ('Prasad',        'marketing',18000::numeric, true, NULL::text)
+) AS new_emps(name, role, salary, is_active, phone)
+WHERE NOT EXISTS (
+  SELECT 1 FROM employees WHERE employees.name = new_emps.name
+);

@@ -136,7 +136,7 @@ INSERT INTO products (name, category, unit, default_rate, hsn_code) VALUES
   ('500ml Bottle', 'bottle', 'piece', 0, '2201'),
   ('1L Bottle', 'bottle', 'piece', 0, '2201'),
   ('2L Bottle', 'bottle', 'piece', 0, '2201')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (name) DO NOTHING;
 
 -- ============================================================
 -- STOCK TABLE

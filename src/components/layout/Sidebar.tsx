@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -74,6 +74,16 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
+  const navRef = useRef<HTMLElement>(null)
+
+  // Maintained scroll position by not resetting it to 0 on pathname changes.
+  useEffect(() => {
+    // If the active item is not visible in the viewport, optionally scroll it into view.
+    const activeEl = navRef.current?.querySelector('.sidebar-nav-item.active');
+    if (activeEl) {
+      activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [pathname])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -154,12 +164,16 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
       </div>
 
       {/* Nav */}
-      <nav style={{
-        flex: 1,
-        overflowY: 'auto',
-        overflowX: 'hidden',
-        padding: '0.5rem 0',
-      }}>
+      <nav
+        ref={navRef}
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: '0.5rem 0',
+          scrollBehavior: 'smooth',
+        }}
+      >
         {navItems.map((group) => (
           <div key={group.group}>
             {!collapsed && (

@@ -32,7 +32,7 @@ export default function ProductsPage() {
 
   async function loadProducts() {
     try {
-      const { data } = await supabase.from('products').select('*').order('name')
+      const { data } = await supabase.from('products').select('id, name, category, default_rate, gst_rate, hsn_code, is_active, unit').order('name')
       if (data && data.length > 0) setProducts(data)
     } catch { /* use defaults */ }
   }

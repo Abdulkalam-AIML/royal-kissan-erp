@@ -498,14 +498,62 @@
 /* ===== PRINT STYLES ===== */
 @media print {
   .no-print { display: none !important; }
-  body { background: white !important; color: black !important; }
-  .invoice-container {
+  
+  body {
+    background: white !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ── A4 page ── */
+  .print-a4 {
     width: 210mm;
     min-height: 297mm;
-    margin: 0;
-    padding: 10mm;
-    background: white;
-    color: black;
+    padding: 10mm 15mm;
+    margin: 0 !important;
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    page-break-after: auto;
+  }
+
+  /* ── 80mm thermal ── */
+  .print-80mm {
+    width: 80mm;
+    max-width: 80mm;
+    padding: 3mm;
+    margin: 0 !important;
+    font-size: 11px;
+    font-family: 'Courier New', monospace;
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+  }
+
+  /* ── 58mm thermal ── */
+  .print-58mm {
+    width: 58mm;
+    max-width: 58mm;
+    padding: 2mm;
+    margin: 0 !important;
+    font-size: 9px;
+    font-family: 'Courier New', monospace;
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+  }
+
+  /* Ensure images (logo) print correctly */
+  img { max-width: 100% !important; }
+
+  /* A4 print page settings */
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
   }
 }
 

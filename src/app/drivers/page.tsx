@@ -6,45 +6,79 @@ import { createClient } from '@/lib/supabase/client'
 // Fallback preseeded data for drivers
 const FALLBACK_DRIVERS = [
   { id: 'b097b6a9-8395-4eb8-a720-3057e07662c1', name: 'Nagaraju', phone: '8184918757', salary: 12000, is_active: true },
-  { id: 'c097b6a9-8395-4eb8-a720-3057e07662c2', name: 'Mallaya', phone: '9876543210', salary: 16000, is_active: true }
+  { id: '70c293e7-bae8-4de2-a505-edccfd35f761', name: 'Driver-2', phone: '9999988888', salary: 14000, is_active: true }
 ]
 
 const FALLBACK_ROUTES = [
   { id: 'a1111111-1111-1111-1111-111111111111', name: 'Local Route', driver_id: 'b097b6a9-8395-4eb8-a720-3057e07662c1', area: 'Local Area' },
-  { id: 'a2222222-2222-2222-2222-222222222222', name: 'Raghavapuram Route', driver_id: 'c097b6a9-8395-4eb8-a720-3057e07662c2', area: 'Raghavapuram' },
-  { id: 'a3333333-3333-3333-3333-333333333333', name: 'Mukkinavarigudem Route', driver_id: 'c097b6a9-8395-4eb8-a720-3057e07662c2', area: 'Mukkinavarigudem' },
-  { id: 'a4444444-4444-4444-4444-444444444444', name: 'Dammapeta Route', driver_id: 'c097b6a9-8395-4eb8-a720-3057e07662c2', area: 'Dammapeta' }
+  { id: 'a2222222-2222-2222-2222-222222222222', name: 'Raghavapuram Route', driver_id: '70c293e7-bae8-4de2-a505-edccfd35f761', area: 'Raghavapuram' },
+  { id: 'a3333333-3333-3333-3333-333333333333', name: 'Mukkinavarigudem Route', driver_id: '70c293e7-bae8-4de2-a505-edccfd35f761', area: 'Mukkinavarigudem' },
+  { id: 'a4444444-4444-4444-4444-444444444444', name: 'Dammapeta Route', driver_id: '70c293e7-bae8-4de2-a505-edccfd35f761', area: 'Dammapeta' }
 ]
 
 const FALLBACK_CUSTOMERS: Record<string, Array<{ name: string; section: 'cans' | 'bags' | 'bottles'; default_qty: number; default_rate: number; product_name: string }>> = {
-  // Local route
+  // LOCAL ROUTE — Nagaraju's route only
   'a1111111-1111-1111-1111-111111111111': [
-    { name: 'Bismillah Dhaba', section: 'cans', default_qty: 15, default_rate: 15.00, product_name: 'Water Can (20L)' },
-    { name: 'Vamsi Mess', section: 'cans', default_qty: 15, default_rate: 15.00, product_name: 'Water Can (20L)' },
-    { name: 'Lithu', section: 'cans', default_qty: 15, default_rate: 15.00, product_name: 'Water Can (20L)' },
+    // CANS @ ₹15
+    { name: 'Bismillah Daba', section: 'cans', default_qty: 10, default_rate: 15.00, product_name: 'Water Can (20L)' },
+    { name: 'Vamsi Mess', section: 'cans', default_qty: 10, default_rate: 15.00, product_name: 'Water Can (20L)' },
+    { name: 'Lithu', section: 'cans', default_qty: 5, default_rate: 15.00, product_name: 'Water Can (20L)' },
     { name: 'Tiffin Center-1', section: 'cans', default_qty: 4, default_rate: 15.00, product_name: 'Water Can (20L)' },
     { name: 'Tea Stall', section: 'cans', default_qty: 5, default_rate: 15.00, product_name: 'Water Can (20L)' },
-    { name: 'Juices Point', section: 'cans', default_qty: 20, default_rate: 15.00, product_name: 'Water Can (20L)' },
-    { name: 'Surendra Juices Point', section: 'cans', default_qty: 20, default_rate: 20.00, product_name: 'Water Can (20L)' },
+    { name: 'Juice Point', section: 'cans', default_qty: 10, default_rate: 15.00, product_name: 'Water Can (20L)' },
+    // CANS @ ₹20
+    { name: 'Surendra Juice Point', section: 'cans', default_qty: 10, default_rate: 20.00, product_name: 'Water Can (20L)' },
+    // CANS @ ₹30 (House Points)
     { name: 'House Point 1', section: 'cans', default_qty: 1, default_rate: 30.00, product_name: 'Water Can (20L)' },
     { name: 'House Point 2', section: 'cans', default_qty: 1, default_rate: 30.00, product_name: 'Water Can (20L)' },
-    { name: 'House Point 3', section: 'cans', default_qty: 1, default_rate: 30.00, product_name: 'Water Can (20L)' }
+    { name: 'House Point 3', section: 'cans', default_qty: 1, default_rate: 30.00, product_name: 'Water Can (20L)' },
+    { name: 'House Point 4', section: 'cans', default_qty: 1, default_rate: 30.00, product_name: 'Water Can (20L)' },
+    { name: 'House Point 5', section: 'cans', default_qty: 1, default_rate: 30.00, product_name: 'Water Can (20L)' },
+    // CANS manual rate
+    { name: 'SBI', section: 'cans', default_qty: 1, default_rate: 0, product_name: 'Water Can (20L)' },
+    { name: 'Fire Station', section: 'cans', default_qty: 1, default_rate: 0, product_name: 'Water Can (20L)' },
+    // BAGS
+    { name: 'Amaravati Wines', section: 'bags', default_qty: 5, default_rate: 75.00, product_name: 'Bags (100 Pack)' },
+    { name: 'Balaji Wines', section: 'bags', default_qty: 5, default_rate: 80.00, product_name: 'Bags (100 Pack)' },
+    { name: 'Shop 1', section: 'bags', default_qty: 5, default_rate: 100.00, product_name: 'Bags (100 Pack)' },
+    { name: 'Bala Sundari Shop', section: 'bags', default_qty: 5, default_rate: 95.00, product_name: 'Bags (100 Pack)' },
+    { name: 'Shop 2', section: 'bags', default_qty: 5, default_rate: 90.00, product_name: 'Bags (100 Pack)' },
+    { name: 'Shop 3', section: 'bags', default_qty: 5, default_rate: 90.00, product_name: 'Bags (100 Pack)' },
+    { name: 'Shop 4', section: 'bags', default_qty: 5, default_rate: 90.00, product_name: 'Bags (100 Pack)' },
+    { name: 'Route Sale', section: 'bags', default_qty: 10, default_rate: 100.00, product_name: 'Bags (100 Pack)' },
+    // BOTTLES
+    { name: 'Healthy Plate', section: 'bottles', default_qty: 5, default_rate: 140.00, product_name: '500ml Bottle Case' },
+    { name: 'Bismillah Daba', section: 'bottles', default_qty: 5, default_rate: 145.00, product_name: '500ml Bottle Case' },
+    { name: 'Bismillah Daba', section: 'bottles', default_qty: 5, default_rate: 130.00, product_name: '1L Bottle Case' },
+    { name: 'Tiffin Shop', section: 'bottles', default_qty: 5, default_rate: 145.00, product_name: '500ml Bottle Case' },
+    { name: 'Tiffin Shop', section: 'bottles', default_qty: 5, default_rate: 130.00, product_name: '1L Bottle Case' },
+    { name: 'Bottle Shop 1', section: 'bottles', default_qty: 5, default_rate: 140.00, product_name: '500ml Bottle Case' },
+    { name: 'Bottle Shop 4', section: 'bottles', default_qty: 5, default_rate: 150.00, product_name: '500ml Bottle Case' },
+    { name: 'Bottle Shop 4', section: 'bottles', default_qty: 5, default_rate: 135.00, product_name: '1L Bottle Case' }
   ],
-  // Raghavapuram
+  // RAGHAVAPURAM ROUTE — Driver-2 only
   'a2222222-2222-2222-2222-222222222222': [
-    { name: 'Raghavapuram Wines', section: 'bags', default_qty: 12, default_rate: 80.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Gandicherla Shop', section: 'bags', default_qty: 8, default_rate: 90.00, product_name: 'Bags (100 Pack)' },
-    { name: 'DN Rao Peta Store', section: 'bags', default_qty: 5, default_rate: 90.00, product_name: 'Bags (100 Pack)' }
+    { name: 'Raghavapuram Wines', section: 'bags', default_qty: 10, default_rate: 80.00, product_name: 'Bags (100 Pack)' },
+    { name: 'Gandicherla', section: 'bags', default_qty: 8, default_rate: 90.00, product_name: 'Bags (100 Pack)' },
+    { name: 'DN Rao Peta', section: 'bags', default_qty: 8, default_rate: 90.00, product_name: 'Bags (100 Pack)' },
+    { name: 'Route Sale-1', section: 'bags', default_qty: 10, default_rate: 100.00, product_name: 'Bags (100 Pack)' },
+    { name: 'Route Sale-2', section: 'bags', default_qty: 10, default_rate: 90.00, product_name: 'Bags (100 Pack)' },
+    { name: 'Raghavapuram Can Customer', section: 'cans', default_qty: 5, default_rate: 30.00, product_name: 'Water Can (20L)' },
+    { name: 'Raghavapuram Bottle', section: 'bottles', default_qty: 5, default_rate: 120.00, product_name: '1L Bottle Case' },
+    { name: 'Raghavapuram Bottle', section: 'bottles', default_qty: 5, default_rate: 140.00, product_name: '500ml Bottle Case' }
   ],
-  // Mukkinavarigudem
+  // MAKKINAVARIGUDEM ROUTE — Driver-2 only
   'a3333333-3333-3333-3333-333333333333': [
-    { name: 'Makkinavarigudem Wines', section: 'bags', default_qty: 15, default_rate: 75.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Aunty Shop (Bags)', section: 'bags', default_qty: 10, default_rate: 80.00, product_name: 'Bags (100 Pack)' }
+    { name: 'Wine Shop', section: 'bags', default_qty: 10, default_rate: 75.00, product_name: 'Bags (100 Pack)' },
+    { name: 'Aunty Shop', section: 'bags', default_qty: 10, default_rate: 80.00, product_name: 'Bags (100 Pack)' },
+    { name: 'Wine Shop', section: 'bottles', default_qty: 5, default_rate: 110.00, product_name: '1L Bottle Case' },
+    { name: 'Aunty Shop', section: 'bottles', default_qty: 5, default_rate: 120.00, product_name: '1L Bottle Case' }
   ],
-  // Dammapeta
+  // DAMMAPETA ROUTE — Driver-2 only
   'a4444444-4444-4444-4444-444444444444': [
-    { name: 'Wine Shop-1', section: 'bags', default_qty: 20, default_rate: 75.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Wine Shop-2', section: 'bags', default_qty: 15, default_rate: 75.00, product_name: 'Bags (100 Pack)' }
+    { name: 'Wine Shop 1', section: 'bags', default_qty: 10, default_rate: 75.00, product_name: 'Bags (100 Pack)' },
+    { name: 'Wine Shop 2', section: 'bags', default_qty: 10, default_rate: 80.00, product_name: 'Bags (100 Pack)' },
+    { name: 'Wine Shop 3', section: 'bags', default_qty: 10, default_rate: 75.00, product_name: 'Bags (100 Pack)' }
   ]
 }
 
@@ -89,7 +123,7 @@ export default function DriversPage() {
     collection: number, due: number, sales: number, mSales: number, mCollection: number 
   }>>({
     'b097b6a9-8395-4eb8-a720-3057e07662c1': { collection: 2500, due: 800, sales: 3300, mSales: 48000, mCollection: 42000 },
-    'c097b6a9-8395-4eb8-a720-3057e07662c2': { collection: 0, due: 0, sales: 0, mSales: 0, mCollection: 0 }
+    '70c293e7-bae8-4de2-a505-edccfd35f761': { collection: 0, due: 0, sales: 0, mSales: 0, mCollection: 0 }
   })
 
   // History tables
@@ -105,13 +139,13 @@ export default function DriversPage() {
 
   async function loadDriversAndRoutes() {
     try {
-      const { data: dbDrivers } = await supabase.from('drivers').select('*').order('name')
-      const { data: dbRoutes } = await supabase.from('routes').select('*').order('name')
+      const { data: dbDrivers } = await supabase.from('drivers').select('id, name, phone, salary, is_active').order('name')
+      const { data: dbRoutes } = await supabase.from('routes').select('id, name, driver_id, area').order('name')
       
       // Filter out any other drivers
       if (dbDrivers && dbDrivers.length > 0) {
         const filteredDrivers = dbDrivers.filter(d => 
-          d.name.toLowerCase().includes('nagaraju') || d.name.toLowerCase().includes('mallaya')
+          d.name.toLowerCase().includes('nagaraju') || d.name.toLowerCase().includes('driver-2')
         )
         setDrivers(filteredDrivers)
       }
@@ -126,18 +160,18 @@ export default function DriversPage() {
       // Retrieve today sales
       const { data: todaySales } = await supabase
         .from('route_sales')
-        .select('*')
+        .select('driver_id, total_amount, cash_paid, upi_paid, due_amount')
         .eq('sale_date', today)
 
       // Retrieve month sales
       const { data: monthSales } = await supabase
         .from('route_sales')
-        .select('*')
+        .select('driver_id, total_amount, cash_paid, upi_paid, due_amount')
         .gte('sale_date', firstOfMonth)
 
       const statsMap = {
         'b097b6a9-8395-4eb8-a720-3057e07662c1': { collection: 2500, due: 800, sales: 3300, mSales: 48000, mCollection: 42000 },
-        'c097b6a9-8395-4eb8-a720-3057e07662c2': { collection: 0, due: 0, sales: 0, mSales: 0, mCollection: 0 }
+        '70c293e7-bae8-4de2-a505-edccfd35f761': { collection: 0, due: 0, sales: 0, mSales: 0, mCollection: 0 }
       } as any
 
       if (todaySales) {
@@ -185,7 +219,7 @@ export default function DriversPage() {
       // 1. Fetch Today Sales
       const { data: dSales } = await supabase
         .from('route_sales')
-        .select('*')
+        .select('id, invoice_number, customer_name, product_name, quantity, rate, total_amount, cash_paid, upi_paid, due_amount, payment_status, sale_date')
         .eq('driver_id', driverId)
         .eq('sale_date', today)
       setDailySalesList(dSales || [])
@@ -193,7 +227,7 @@ export default function DriversPage() {
       // 2. Fetch Monthly Sales
       const { data: mSales } = await supabase
         .from('route_sales')
-        .select('*')
+        .select('id, invoice_number, customer_name, product_name, quantity, rate, total_amount, cash_paid, upi_paid, due_amount, payment_status, sale_date')
         .eq('driver_id', driverId)
         .gte('sale_date', firstOfMonth)
       setMonthlySalesList(mSales || [])
@@ -201,7 +235,7 @@ export default function DriversPage() {
       // 3. Fetch Expenses
       const { data: exp } = await supabase
         .from('route_expenses')
-        .select('*')
+        .select('id, expense_date, fuel_charges, driver_bata, other_expenses, notes, created_at')
         .eq('driver_id', driverId)
         .order('created_at', { ascending: false })
       setExpensesList(exp || [])
@@ -222,7 +256,7 @@ export default function DriversPage() {
     try {
       const { data: dbCustomers } = await supabase
         .from('route_customers')
-        .select('*')
+        .select('id, route_id, name, section, default_qty, default_rate, product_name')
         .eq('route_id', route.id)
 
       if (dbCustomers && dbCustomers.length > 0) {
@@ -386,10 +420,14 @@ export default function DriversPage() {
     window.print()
   }
 
-  // Filter routes for driver
-  const driverRoutes = routes.filter(r => r.driver_id === selectedDriver?.id || r.driver_id === null)
-  const localRoutes = driverRoutes.filter(r => r.name.toLowerCase().includes('local'))
-  const nonLocalRoutes = driverRoutes.filter(r => !r.name.toLowerCase().includes('local'))
+  // Filter routes STRICTLY by driver_id (no fallback to driver_id===null)
+  const driverRoutes = routes.filter(r => r.driver_id === selectedDriver?.id)
+  const localRoutes = driverRoutes.filter(r => r.name.toLowerCase().includes('local') && !r.name.toLowerCase().includes('non'))
+  const nonLocalRoutes = driverRoutes.filter(r => !r.name.toLowerCase().includes('local') || r.name.toLowerCase().includes('non'))
+
+  // Nagaraju (b097b6...) only has Local Route; Driver-2 (70c293...) only has Non-Local routes
+  const isNagaraju = selectedDriver?.id === 'b097b6a9-8395-4eb8-a720-3057e07662c1'
+  const isDriver2  = selectedDriver?.id === '70c293e7-bae8-4de2-a505-edccfd35f761'
 
   return (
     <div style={{ padding: '0.25rem' }}>
@@ -688,8 +726,9 @@ export default function DriversPage() {
             borderBottom: '1px solid rgba(255,255,255,0.06)' 
           }}>
             {[
-              { id: 'local', label: 'Local Routes', icon: '🗺️' },
-              { id: 'non-local', label: 'Non Local Routes', icon: '🛣️' },
+              // Nagaraju: Local Route tab; Driver-2: Non-Local Routes tab; both get rest
+              ...(isNagaraju ? [{ id: 'local', label: 'Local Route', icon: '🗺️' }] : []),
+              ...(isDriver2  ? [{ id: 'non-local', label: 'Non Local Routes', icon: '🛣️' }] : []),
               { id: 'collections', label: 'Collections', icon: '💰' },
               { id: 'dues', label: 'Due Reports', icon: '🔴' },
               { id: 'daily', label: 'Daily Sales', icon: '📅' },
