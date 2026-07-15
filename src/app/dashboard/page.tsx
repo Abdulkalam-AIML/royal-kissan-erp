@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
+import ErrorBoundary from '@/components/common/ErrorBoundary'
 
 const DashboardCharts = dynamic(() => import('@/components/dashboard/DashboardCharts'), {
   ssr: false,
@@ -273,7 +274,8 @@ export default function DashboardPage() {
   ]
 
   return (
-    <div className="animate-fade-in" style={{ padding: '0.25rem' }}>
+    <ErrorBoundary>
+      <div className="animate-fade-in" style={{ padding: '0.25rem' }}>
 
       {/* HERO BANNER */}
       <div style={{
@@ -459,5 +461,6 @@ export default function DashboardPage() {
       </div>
 
     </div>
+    </ErrorBoundary>
   )
 }
