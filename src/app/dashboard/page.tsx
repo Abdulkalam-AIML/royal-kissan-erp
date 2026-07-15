@@ -90,54 +90,62 @@ export default function DashboardPage() {
       const firstDayOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`
 
       // Route Sales — Today
-      const { data: todayRouteSales } = await supabase
+      const { data: todayRouteSales, error: err1 } = await supabase
         .from('route_sales')
         .select('total_amount, due_amount, cash_paid, upi_paid, driver_id, route_id')
         .eq('sale_date', today)
+      console.log('todayRouteSales:', { data: todayRouteSales, error: err1 })
 
       // Bills — Today (company/dealer sales)
-      const { data: todayBills } = await supabase
+      const { data: todayBills, error: err2 } = await supabase
         .from('bills')
         .select('total_amount, due_amount, cash_amount, upi_amount, paid_amount, bill_type, driver_id, route_id')
         .eq('date', today)
+      console.log('todayBills:', { data: todayBills, error: err2 })
 
       // Route Sales — Monthly
-      const { data: monthlyRouteSales } = await supabase
+      const { data: monthlyRouteSales, error: err3 } = await supabase
         .from('route_sales')
         .select('total_amount, due_amount, cash_paid, upi_paid, driver_id, route_id')
         .gte('sale_date', firstDayOfMonth)
+      console.log('monthlyRouteSales:', { data: monthlyRouteSales, error: err3 })
 
       // Bills — Monthly
-      const { data: monthlyBills } = await supabase
+      const { data: monthlyBills, error: err4 } = await supabase
         .from('bills')
         .select('total_amount, due_amount, cash_amount, upi_amount, paid_amount, bill_type')
         .gte('date', firstDayOfMonth)
+      console.log('monthlyBills:', { data: monthlyBills, error: err4 })
 
       // Expenses
-      const { data: expensesData } = await supabase.from('expenses').select('amount')
+      const { data: expensesData, error: err5 } = await supabase.from('expenses').select('amount')
+      console.log('expensesData:', { data: expensesData, error: err5 })
       const totalExpenses = expensesData?.reduce((s, e) => s + (Number(e.amount) || 0), 0) || 0
 
       // Pending Dues
-      const { data: duesData } = await supabase
+      const { data: duesData, error: err6 } = await supabase
         .from('customer_dues')
         .select('id, customer_name, due_amount, route_id, routes(name)')
         .gt('due_amount', 0)
         .order('due_amount', { ascending: false })
         .limit(5)
+      console.log('duesData:', { data: duesData, error: err6 })
 
       // Driver Performance
-      const { data: driverPerfData } = await supabase
+      const { data: driverPerfData, error: err7 } = await supabase
         .from('driver_performance')
         .select('total_sales, total_collected, total_due, driver_id, drivers(name)')
         .order('performance_date', { ascending: false })
         .limit(10)
+      console.log('driverPerfData:', { data: driverPerfData, error: err7 })
 
       // Route Performance
-      const { data: routePerfData } = await supabase
+      const { data: routePerfData, error: err8 } = await supabase
         .from('route_performance')
         .select('total_sales, total_collected, total_due, route_id, routes(name)')
         .order('performance_date', { ascending: false })
         .limit(10)
+      console.log('routePerfData:', { data: routePerfData, error: err8 })
 
       // --- Aggregate Today Stats ---
       let tSales = 0, tDue = 0, tCollection = 0, tCash = 0, tUPI = 0
