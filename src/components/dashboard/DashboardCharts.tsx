@@ -27,7 +27,7 @@ export default function DashboardCharts({ salesTrendData, driverChartData }: Das
           <p style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', margin: '0.125rem 0 0' }}>Sales vs collections this week</p>
         </div>
         <div style={{ width: '100%', height: '260px' }}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height={260}>
             <AreaChart data={salesTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
@@ -57,7 +57,7 @@ export default function DashboardCharts({ salesTrendData, driverChartData }: Das
           <p style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', margin: '0.125rem 0 0' }}>Nagaraju vs Driver-2 breakdown</p>
         </div>
         <div style={{ width: '100%', height: '260px' }}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height={260}>
             <BarChart data={driverChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
               <XAxis dataKey="name" stroke="hsl(215 20% 55%)" fontSize={11} tickLine={false} />

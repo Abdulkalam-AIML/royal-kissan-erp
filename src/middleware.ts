@@ -35,7 +35,9 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/health') ||
     pathname.startsWith('/debug') ||
     pathname.startsWith('/diagnostics') ||
-    pathname.startsWith('/api/')
+    pathname.startsWith('/api/') ||
+    pathname === '/manifest.json' ||
+    pathname === '/favicon.ico'
 
   // If not authenticated and trying to access a protected route, redirect to login
   if (!user && !isPublicRoute) {
