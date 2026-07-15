@@ -1,0 +1,120 @@
+npm warn exec The following package was not found and will be installed: ts-prune@0.10.3
+next.config.ts:67 - default
+src/middleware.ts:4 - middleware
+src/middleware.ts:54 - config
+.next/types/routes.d.ts:46 - ParamsOf
+.next/types/routes.d.ts:76 - PageRoutes (used in module)
+.next/types/routes.d.ts:76 - RedirectRoutes (used in module)
+.next/types/routes.d.ts:76 - RewriteRoutes (used in module)
+src/app/error.tsx:5 - default
+src/app/global-error.tsx:3 - default
+src/app/loading.tsx:1 - default
+src/app/not-found.tsx:3 - default
+.next/types/app/layout.ts:54 - PageProps
+.next/types/app/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/page.ts:54 - PageProps (used in module)
+.next/types/app/page.ts:58 - LayoutProps
+src/utils/supabase/middleware.ts:7 - createClient
+src/utils/supabase/server.ts:7 - createClient
+.next/types/app/ai-assistant/layout.ts:54 - PageProps
+.next/types/app/ai-assistant/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/ai-assistant/page.ts:54 - PageProps (used in module)
+.next/types/app/ai-assistant/page.ts:58 - LayoutProps
+.next/types/app/analytics/layout.ts:54 - PageProps
+.next/types/app/analytics/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/analytics/page.ts:54 - PageProps (used in module)
+.next/types/app/analytics/page.ts:58 - LayoutProps
+.next/types/app/attendance/layout.ts:54 - PageProps
+.next/types/app/attendance/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/attendance/page.ts:54 - PageProps (used in module)
+.next/types/app/attendance/page.ts:58 - LayoutProps
+.next/types/app/billing/layout.ts:54 - PageProps
+.next/types/app/billing/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/billing/page.ts:54 - PageProps (used in module)
+.next/types/app/billing/page.ts:58 - LayoutProps
+.next/types/app/collections/layout.ts:54 - PageProps
+.next/types/app/collections/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/collections/page.ts:54 - PageProps (used in module)
+.next/types/app/collections/page.ts:58 - LayoutProps
+.next/types/app/customers/layout.ts:54 - PageProps
+.next/types/app/customers/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/customers/page.ts:54 - PageProps (used in module)
+.next/types/app/customers/page.ts:58 - LayoutProps
+.next/types/app/dashboard/layout.ts:54 - PageProps
+.next/types/app/dashboard/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/dashboard/page.ts:54 - PageProps (used in module)
+.next/types/app/dashboard/page.ts:58 - LayoutProps
+.next/types/app/dealers/layout.ts:54 - PageProps
+.next/types/app/dealers/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/dealers/page.ts:54 - PageProps (used in module)
+.next/types/app/dealers/page.ts:58 - LayoutProps
+.next/types/app/debug/layout.ts:54 - PageProps
+.next/types/app/debug/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/debug/page.ts:54 - PageProps (used in module)
+.next/types/app/debug/page.ts:58 - LayoutProps
+.next/types/app/deliveries/layout.ts:54 - PageProps
+.next/types/app/deliveries/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/deliveries/page.ts:54 - PageProps (used in module)
+.next/types/app/deliveries/page.ts:58 - LayoutProps
+.next/types/app/diagnostics/page.ts:54 - PageProps (used in module)
+.next/types/app/diagnostics/page.ts:58 - LayoutProps
+.next/types/app/drivers/layout.ts:54 - PageProps
+.next/types/app/drivers/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/drivers/page.ts:54 - PageProps (used in module)
+.next/types/app/drivers/page.ts:58 - LayoutProps
+.next/types/app/dues/layout.ts:54 - PageProps
+.next/types/app/dues/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/dues/page.ts:54 - PageProps (used in module)
+.next/types/app/dues/page.ts:58 - LayoutProps
+.next/types/app/employees/layout.ts:54 - PageProps
+.next/types/app/employees/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/employees/page.ts:54 - PageProps (used in module)
+.next/types/app/employees/page.ts:58 - LayoutProps
+.next/types/app/expenses/layout.ts:54 - PageProps
+.next/types/app/expenses/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/expenses/page.ts:54 - PageProps (used in module)
+.next/types/app/expenses/page.ts:58 - LayoutProps
+.next/types/app/health/layout.ts:54 - PageProps
+.next/types/app/health/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/health/page.ts:54 - PageProps (used in module)
+.next/types/app/health/page.ts:58 - LayoutProps
+.next/types/app/login/page.ts:54 - PageProps (used in module)
+.next/types/app/login/page.ts:58 - LayoutProps
+.next/types/app/non-local-routes/page.ts:54 - PageProps (used in module)
+.next/types/app/non-local-routes/page.ts:58 - LayoutProps
+.next/types/app/products/layout.ts:54 - PageProps
+.next/types/app/products/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/products/page.ts:54 - PageProps (used in module)
+.next/types/app/products/page.ts:58 - LayoutProps
+.next/types/app/profit-loss/layout.ts:54 - PageProps
+.next/types/app/profit-loss/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/profit-loss/page.ts:54 - PageProps (used in module)
+.next/types/app/profit-loss/page.ts:58 - LayoutProps
+.next/types/app/reports/layout.ts:54 - PageProps
+.next/types/app/reports/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/reports/page.ts:54 - PageProps (used in module)
+.next/types/app/reports/page.ts:58 - LayoutProps
+.next/types/app/routes/layout.ts:54 - PageProps
+.next/types/app/routes/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/routes/page.ts:54 - PageProps (used in module)
+.next/types/app/routes/page.ts:58 - LayoutProps
+.next/types/app/salary/layout.ts:54 - PageProps
+.next/types/app/salary/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/salary/page.ts:54 - PageProps (used in module)
+.next/types/app/salary/page.ts:58 - LayoutProps
+.next/types/app/sales/layout.ts:54 - PageProps
+.next/types/app/sales/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/sales/page.ts:54 - PageProps (used in module)
+.next/types/app/sales/page.ts:58 - LayoutProps
+.next/types/app/settings/layout.ts:54 - PageProps
+.next/types/app/settings/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/settings/page.ts:54 - PageProps (used in module)
+.next/types/app/settings/page.ts:58 - LayoutProps
+.next/types/app/stock/layout.ts:54 - PageProps
+.next/types/app/stock/layout.ts:58 - LayoutProps (used in module)
+.next/types/app/stock/page.ts:54 - PageProps (used in module)
+.next/types/app/stock/page.ts:58 - LayoutProps
+.next/types/app/todos/page.ts:54 - PageProps (used in module)
+.next/types/app/todos/page.ts:58 - LayoutProps
+.next/types/app/api/ai/route.ts:313 - PageProps
+.next/types/app/api/ai/route.ts:317 - LayoutProps

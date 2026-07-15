@@ -1,0 +1,90 @@
+npm warn exec The following package was not found and will be installed: knip@5.88.1
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'walk-up-path@4.0.0',
+npm warn EBADENGINE   required: { node: '20 || >=22' },
+npm warn EBADENGINE   current: { node: 'v18.20.8', npm: '10.8.2' }
+npm warn EBADENGINE }
+Unused files (53)
+scratch/add_missing_bills_columns.js
+scratch/apply_sql.js                
+scratch/audit_details.js            
+scratch/check_all_db_relations.js   
+scratch/check_all_tables_complete.js
+scratch/check_bills_schema.js       
+scratch/check_crud_all.js           
+scratch/check_customer_dues.js      
+scratch/check_duplicates.js         
+scratch/check_remaining.js          
+scratch/check_stock_cols.js         
+scratch/create_bill_cancel.js       
+scratch/create_missing_tables.js    
+scratch/create_reset_functions.js   
+scratch/db_audit.js                 
+scratch/db_health_audit.js          
+scratch/delete_mallaya.js           
+scratch/dns_cname.js                
+scratch/dns_lookup_all.js           
+scratch/dns_rest.js                 
+scratch/execute_migration.js        
+scratch/fetch_openapi.js            
+scratch/fetch_table_metadata.js     
+scratch/find_db_region_all_ports.js 
+scratch/fix_on_conflict.js          
+scratch/fix_uuids.js                
+scratch/get_db_details.js           
+scratch/get_headers.js              
+scratch/get_openapi.js              
+scratch/inspect_bills_schema.js     
+scratch/inspect_db_schema.js        
+scratch/inspect_references.js       
+scratch/list_rpcs.js                
+scratch/run_billing_migration.js    
+scratch/run_bills_migration.js      
+scratch/schema_audit.js             
+scratch/test_all_modules.js         
+scratch/test_bill_insert.js         
+scratch/test_db_host_v2.js          
+scratch/test_db_host.js             
+scratch/test_delete.js              
+scratch/test_openapi_header.js      
+scratch/test_options.js             
+scratch/test_regions_deep.js        
+scratch/test_tables_list.js         
+scratch/try_aws_1.js                
+scratch/try_direct_db.js            
+scratch/try_direct_ipv6.js          
+scratch/try_hyderabad.js            
+scratch/try_pooler_diff_user.js     
+scratch/try_pooler_options.js       
+src/utils/supabase/middleware.ts    
+src/utils/supabase/server.ts        
+Unused dependencies (23)
+@google/generative-ai          package.json:12:6
+@radix-ui/react-avatar         package.json:13:6
+@radix-ui/react-checkbox       package.json:14:6
+@radix-ui/react-dialog         package.json:15:6
+@radix-ui/react-dropdown-menu  package.json:16:6
+@radix-ui/react-label          package.json:17:6
+@radix-ui/react-popover        package.json:18:6
+@radix-ui/react-scroll-area    package.json:19:6
+@radix-ui/react-select         package.json:20:6
+@radix-ui/react-separator      package.json:21:6
+@radix-ui/react-slot           package.json:22:6
+@radix-ui/react-switch         package.json:23:6
+@radix-ui/react-tabs           package.json:24:6
+@radix-ui/react-toast          package.json:25:6
+class-variance-authority       package.json:28:6
+clsx                           package.json:29:6
+date-fns                       package.json:30:6
+lucide-react                   package.json:33:6
+pg                             package.json:35:6
+react-to-print                 package.json:39:6
+tailwind-merge                 package.json:41:6
+ws                             package.json:42:6
+xlsx                           package.json:43:6
+Unused devDependencies (1)
+eslint-config-next  package.json:52:6
+Unlisted dependencies (1)
+postcss  postcss.config.mjs
+Configuration hints (1)
+. (root)    .  Create knip.json configuration file, and add entry and/or refine project files (53 unused files)
