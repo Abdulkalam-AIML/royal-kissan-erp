@@ -57,9 +57,29 @@ export default function DashboardPage() {
   const [countStats, setCountStats] = useState({ todaySales: 0, todayCollection: 0, todayDue: 0 })
   const [loading, setLoading] = useState(true)
   const [isMounted, setIsMounted] = useState(false)
+  const [authReady, setAuthReady] = useState(false)
+  const [showRetry, setShowRetry] = useState(false)
   const supabase = createClient()
 
-  useEffect(() => { setIsMounted(true); loadDashboardData() }, [])
+  useEffect(() => {
+    setIsMounted(true)
+    const checkSession = async () => {
+      try {
+        await supabase.auth.getSession()
+        setAuthReady(true)
+      } catch (err) {
+        console.error('Session check error:', err)
+        setAuthReady(true) // Proceed anyway to avoid infinite hang
+      }
+    }
+    checkSession()
+  }, [])
+
+  useEffect(() => {
+    if (authReady) {
+      loadDashboardData()
+    }
+  }, [authReady])
 
   useEffect(() => {
     if (loading) return
@@ -84,6 +104,15 @@ export default function DashboardPage() {
 
   async function loadDashboardData() {
     setLoading(true)
+    setShowRetry(false)
+    let isTimedOut = false
+    const timeoutId = setTimeout(() => {
+      isTimedOut = true
+      setLoading(false)
+      setShowRetry(true)
+      console.warn('Dashboard data fetch timed out after 8 seconds.')
+    }, 8000)
+
     try {
       const today = new Date().toISOString().split('T')[0]
       const currentMonth = new Date().getMonth() + 1
@@ -238,7 +267,10 @@ export default function DashboardPage() {
     } catch (err) {
       console.error('Error loading dashboard stats:', err)
     } finally {
-      setLoading(false)
+      clearTimeout(timeoutId)
+      if (!isTimedOut) {
+        setLoading(false)
+      }
     }
   }
 
@@ -306,6 +338,30 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      {showRetry && (
+        <div style={{
+          padding: '1.5rem',
+          borderRadius: '1rem',
+          background: 'rgba(245,158,11,0.08)',
+          border: '1px solid rgba(245,158,11,0.2)',
+          color: '#fff',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '2rem',
+          flexWrap: 'wrap',
+          gap: '1rem'
+        }}>
+          <div>
+            <h4 style={{ margin: 0, fontWeight: '700', color: '#fbbf24' }}>⚠️ Connection taking longer than expected</h4>
+            <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: 'hsl(215 20% 65%)' }}>The session or queries might be experiencing slow network response.</p>
+          </div>
+          <button className="btn btn-primary" onClick={loadDashboardData} style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: 'none', borderRadius: '0.75rem', padding: '0.5rem 1.25rem' }}>
+            Retry Fetching Data
+          </button>
+        </div>
+      )}
 
       {/* 11 KPI CARDS GRID */}
       {loading ? (
