@@ -3,6 +3,30 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
+import { 
+  Receipt, 
+  ArrowRight, 
+  Plus, 
+  Trash2, 
+  Download, 
+  Printer, 
+  Smartphone, 
+  Send, 
+  X, 
+  Settings, 
+  User, 
+  CreditCard, 
+  Package, 
+  Coins, 
+  Shuffle, 
+  AlertCircle, 
+  Truck, 
+  Building2, 
+  Store, 
+  FileCheck, 
+  FileText, 
+  AlertTriangle 
+} from 'lucide-react'
 
 type BillType = 'driver_sale' | 'company_sale' | 'dealer_invoice' | 'gst_invoice' | 'non_gst_invoice'
 type PaymentMode = 'cash' | 'upi' | 'due' | 'mixed'
@@ -53,11 +77,26 @@ const PRODUCTS = [
 ]
 
 const BILL_TYPE_LABELS: Record<BillType, string> = {
-  driver_sale:    '🚛 Driver Sale',
-  company_sale:   '🏢 Company Sale',
-  dealer_invoice: '🤝 Dealer Invoice',
-  gst_invoice:    '📋 GST Invoice',
-  non_gst_invoice:'📄 Non-GST Invoice',
+  driver_sale:    'Driver Sale',
+  company_sale:   'Company Sale',
+  dealer_invoice: 'Dealer Invoice',
+  gst_invoice:    'GST Invoice',
+  non_gst_invoice:'Non-GST Invoice',
+}
+
+const BILL_TYPE_ICONS: Record<BillType, any> = {
+  driver_sale:    Truck,
+  company_sale:   Building2,
+  dealer_invoice: Store,
+  gst_invoice:    FileCheck,
+  non_gst_invoice:FileText,
+}
+
+const PAYMENT_ICONS: Record<PaymentMode, any> = {
+  cash:  Coins,
+  upi:   Smartphone,
+  mixed: Shuffle,
+  due:   AlertCircle,
 }
 
 const PAYMENT_STATUS = (total: number, paid: number) => {
@@ -466,10 +505,13 @@ export default function BillingPage() {
     return (
       <div className="animate-fade-in" style={{ padding: '0.25rem' }}>
         {/* ── Control Bar ── */}
-        <div className="no-print glass-card-3d" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
+        <div className="no-print bg-slate-900/50 border border-slate-800 rounded-xl p-6 shadow-xl" style={{ marginBottom: '2rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
             <div>
-              <h2 className="page-title" style={{ fontSize: '1.5rem' }}>✅ Invoice Generated Successfully</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <FileCheck className="w-5 h-5 text-emerald-400" />
+                <h2 className="page-title" style={{ fontSize: '1.5rem', margin: 0 }}>Invoice Generated Successfully</h2>
+              </div>
               <p className="page-subtitle">Invoice #{invoiceNumber} saved to database</p>
               <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                 {saveStatus.map((s, i) => <span key={i} style={{ fontSize: '0.75rem', color: '#34d399' }}>{s}</span>)}
@@ -480,7 +522,10 @@ export default function BillingPage() {
                 <input type="checkbox" checked={isAutoPrint} onChange={e => setIsAutoPrint(e.target.checked)} style={{ width: '16px', height: '16px' }} />
                 <span>Auto-Print</span>
               </label>
-              <button onClick={newBill} className="btn btn-secondary btn-sm">➕ New Invoice</button>
+              <button onClick={newBill} className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                <Plus className="w-4 h-4" />
+                <span>New Invoice</span>
+              </button>
             </div>
           </div>
 
@@ -494,10 +539,22 @@ export default function BillingPage() {
                 </button>
               ))}
             </div>
-            <button onClick={() => window.print()} className="btn btn-primary btn-sm">🖨️ Print</button>
-            <button onClick={handleDownloadPDF} className="btn btn-secondary btn-sm">📄 Download PDF</button>
-            <button onClick={() => window.open(`https://wa.me/?text=Invoice%20${invoiceNumber}%20Total:%20Rs.${totalAmount}`, '_blank')} className="btn btn-sm" style={{ background: '#25D366', color: 'white' }}>📱 WhatsApp</button>
-            <button onClick={handleCancelBill} className="btn btn-sm" style={{ background: '#ef4444', color: 'white' }}>❌ Cancel Bill</button>
+            <button onClick={() => window.print()} className="btn btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+              <Printer className="w-4 h-4" />
+              <span>Print</span>
+            </button>
+            <button onClick={handleDownloadPDF} className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+              <Download className="w-4 h-4" />
+              <span>Download PDF</span>
+            </button>
+            <button onClick={() => window.open(`https://wa.me/?text=Invoice%20${invoiceNumber}%20Total:%20Rs.${totalAmount}`, '_blank')} className="btn btn-sm" style={{ background: '#25D366', color: 'white', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+              <Smartphone className="w-4 h-4" />
+              <span>WhatsApp</span>
+            </button>
+            <button onClick={handleCancelBill} className="btn btn-sm" style={{ background: '#ef4444', color: 'white', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+              <Trash2 className="w-4 h-4" />
+              <span>Cancel Bill</span>
+            </button>
           </div>
         </div>
 
@@ -822,10 +879,16 @@ export default function BillingPage() {
     <div className="animate-fade-in" style={{ padding: '0.25rem' }}>
       <div className="page-header" style={{ marginBottom: '2rem' }}>
         <div>
-          <h2 className="page-title">🧾 Smart Billing System</h2>
+          <h2 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+            <Receipt className="w-6 h-6 text-sky-500" />
+            <span>Smart Billing System</span>
+          </h2>
           <p className="page-subtitle">Generate bills — auto-updates dealer ledger, driver sales & dashboard</p>
         </div>
-        <a href="/sales" className="btn btn-secondary">📋 Sales History →</a>
+        <a href="/sales" className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span>Sales History</span>
+          <ArrowRight className="w-4 h-4" />
+        </a>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1.5rem' }}>
@@ -833,44 +896,52 @@ export default function BillingPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
           {/* Bill Configuration */}
-          <div className="glass-card-3d" style={{ padding: '2rem' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem' }}>📋 Bill Configuration</h3>
+          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 shadow-xl">
+            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Settings className="w-5 h-5 text-sky-400" />
+              <span>Bill Configuration</span>
+            </h3>
 
             <div className="form-group">
               <label className="form-label">Bill Type</label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.5rem' }}>
-                {(Object.entries(BILL_TYPE_LABELS) as [BillType, string][]).map(([type, label]) => (
-                  <button key={type} type="button" onClick={() => setBillType(type)}
-                    className={billType === type ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-                    style={{ fontSize: '0.75rem', borderRadius: '0.5rem', fontWeight: '700' }}>
-                    {label}
-                  </button>
-                ))}
+                {(Object.entries(BILL_TYPE_LABELS) as [BillType, string][]).map(([type, label]) => {
+                  const IconComponent = BILL_TYPE_ICONS[type]
+                  return (
+                    <button key={type} type="button" onClick={() => setBillType(type)}
+                      className={billType === type ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+                      style={{ fontSize: '0.75rem', borderRadius: '0.5rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.375rem', justifyContent: 'center', padding: '0.5rem 0.75rem' }}>
+                      {IconComponent && <IconComponent className="w-3.5 h-3.5" />}
+                      <span>{label}</span>
+                    </button>
+                  )
+                })}
               </div>
             </div>
 
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '1rem', background: isGst ? 'rgba(52,211,153,0.05)' : 'rgba(255,255,255,0.02)',
-              borderRadius: '0.75rem', border: `1px solid ${isGst ? 'rgba(52,211,153,0.2)' : 'rgba(255,255,255,0.05)'}`,
+              padding: '1rem', background: isGst ? 'rgba(16,185,129,0.05)' : 'rgba(255,255,255,0.02)',
+              borderRadius: '0.75rem', border: `1px solid ${isGst ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.05)'}`,
               marginBottom: '1.25rem'
             }}>
               <div>
-                <div style={{ fontWeight: '800', fontSize: '0.875rem', color: '#fff' }}>GST Toggle</div>
+                <div style={{ fontWeight: '800', fontSize: '0.875rem', color: '#fff' }}>GST Status</div>
                 <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', marginTop: '0.125rem' }}>
                   {isGst ? 'Auto-calculating 18% CGST & SGST' : 'GST excluded'}
                 </div>
               </div>
               <button type="button" onClick={() => setIsGst(!isGst)}
-                style={{ borderRadius: '99px', background: isGst ? '#10b981' : 'rgba(255,255,255,0.05)', color: '#fff', padding: '0.375rem 1rem', fontSize: '0.75rem', fontWeight: '800', border: 'none', cursor: 'pointer' }}>
-                {isGst ? '✅ GST ACTIVE' : '⭕ EXEMPTED'}
+                style={{ borderRadius: '99px', background: isGst ? '#10b981' : 'rgba(255,255,255,0.05)', color: '#fff', padding: '0.375rem 1rem', fontSize: '0.75rem', fontWeight: '800', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                <FileCheck className="w-4 h-4" />
+                <span>{isGst ? 'GST ACTIVE' : 'EXEMPTED'}</span>
               </button>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
               <div className="form-group">
                 <label className="form-label">Invoice Number</label>
-                <input className="form-input" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} />
+                <input className="form-input font-mono" style={{ fontWeight: '700' }} value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} />
               </div>
               <div className="form-group">
                 <label className="form-label">Date</label>
@@ -880,8 +951,11 @@ export default function BillingPage() {
           </div>
 
           {/* Customer Info */}
-          <div className="glass-card-3d" style={{ padding: '2rem' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem' }}>👤 Customer Information</h3>
+          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 shadow-xl">
+            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <User className="w-5 h-5 text-sky-400" />
+              <span>Customer Information</span>
+            </h3>
 
             {billType === 'dealer_invoice' && dealers.length > 0 && (
               <div className="form-group">
@@ -943,19 +1017,32 @@ export default function BillingPage() {
           </div>
 
           {/* Payment */}
-          <div className="glass-card-3d" style={{ padding: '2rem' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem' }}>💳 Payment Details</h3>
+          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 shadow-xl">
+            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <CreditCard className="w-5 h-5 text-sky-400" />
+              <span>Payment Details</span>
+            </h3>
 
             <div className="form-group">
               <label className="form-label">Payment Mode</label>
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                {([['cash', '💵 Cash'], ['upi', '📱 UPI'], ['mixed', '🔀 Cash+UPI'], ['due', '🔴 Due']] as const).map(([mode, label]) => (
-                  <button key={mode} type="button" onClick={() => setPaymentMode(mode as PaymentMode)}
-                    className={paymentMode === mode ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-                    style={{ fontWeight: '700' }}>
-                    {label}
-                  </button>
-                ))}
+                {(Object.keys(PAYMENT_ICONS) as PaymentMode[]).map(mode => {
+                  const IconComponent = PAYMENT_ICONS[mode]
+                  const modeLabels: Record<PaymentMode, string> = {
+                    cash: 'Cash',
+                    upi: 'UPI',
+                    mixed: 'Cash+UPI',
+                    due: 'Due'
+                  }
+                  return (
+                    <button key={mode} type="button" onClick={() => setPaymentMode(mode)}
+                      className={paymentMode === mode ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+                      style={{ fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                      {IconComponent && <IconComponent className="w-3.5 h-3.5" />}
+                      <span>{modeLabels[mode]}</span>
+                    </button>
+                  )
+                })}
               </div>
             </div>
 
@@ -963,11 +1050,11 @@ export default function BillingPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.75rem' }}>
                 <div className="form-group">
                   <label className="form-label">💵 Cash Amount</label>
-                  <input type="number" className="form-input" value={cashAmount || ''} onChange={e => setCashAmount(Number(e.target.value))} placeholder="0" />
+                  <input type="number" className="form-input font-mono" value={cashAmount || ''} onChange={e => setCashAmount(Number(e.target.value))} placeholder="0" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">📱 UPI Amount</label>
-                  <input type="number" className="form-input" value={upiAmount || ''} onChange={e => setUpiAmount(Number(e.target.value))} placeholder="0" />
+                  <input type="number" className="form-input font-mono" value={upiAmount || ''} onChange={e => setUpiAmount(Number(e.target.value))} placeholder="0" />
                 </div>
               </div>
             )}
@@ -975,15 +1062,15 @@ export default function BillingPage() {
             <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', padding: '0.875rem', background: 'rgba(255,255,255,0.02)', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.05)' }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '0.7rem', color: 'hsl(215 20% 55%)', textTransform: 'uppercase' }}>Total Bill</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff' }}>₹{totalAmount.toFixed(2)}</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#fff', fontFamily: 'monospace' }}>{formatCurrency(totalAmount)}</div>
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '0.7rem', color: 'hsl(215 20% 55%)', textTransform: 'uppercase' }}>Paid</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#34d399' }}>₹{paidAmount.toFixed(2)}</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#34d399', fontFamily: 'monospace' }}>{formatCurrency(paidAmount)}</div>
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '0.7rem', color: 'hsl(215 20% 55%)', textTransform: 'uppercase' }}>Due</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: '800', color: dueAmount > 0 ? '#f87171' : '#34d399' }}>₹{dueAmount.toFixed(2)}</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: '800', color: dueAmount > 0 ? '#f87171' : '#34d399', fontFamily: 'monospace' }}>{formatCurrency(dueAmount)}</div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center' }}>
                 <span className={`badge ${payStatus.badge}`} style={{ fontSize: '0.75rem', fontWeight: '800' }}>{payStatus.label}</span>
@@ -999,24 +1086,32 @@ export default function BillingPage() {
 
         {/* RIGHT PANEL: Items */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div className="glass-card-3d" style={{ padding: '2rem', flex: 1 }}>
+          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 shadow-xl" style={{ flex: 1 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>📦 Line Items</h3>
-              <button className="btn btn-secondary btn-sm" onClick={addItem}>+ Add Item</button>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Package className="w-5 h-5 text-sky-400" />
+                <span>Line Items</span>
+              </h3>
+              <button className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }} onClick={addItem}>
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Item</span>
+              </button>
             </div>
 
             {items.length === 0 ? (
               <div style={{ padding: '3rem', textAlign: 'center', color: 'hsl(215 20% 45%)', border: '2px dashed rgba(255,255,255,0.06)', borderRadius: '0.75rem' }}>
-                <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📦</div>
+                <Package className="w-8 h-8 mx-auto mb-2 text-slate-600 animate-pulse" />
                 <p style={{ margin: 0 }}>Click "+ Add Item" to start billing</p>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 {items.map((item, i) => (
                   <div key={item.id} style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem', alignItems: 'center' }}>
                       <span style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', fontWeight: '700' }}>Item #{i + 1}</span>
-                      <button className="btn btn-danger btn-sm" style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }} onClick={() => removeItem(item.id)}>✕</button>
+                      <button className="btn btn-danger btn-sm" style={{ padding: '0.2rem 0.4rem', borderRadius: '0.375rem' }} onClick={() => removeItem(item.id)}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                     <div className="form-group">
                       <label className="form-label" style={{ fontSize: '0.7rem' }}>Product</label>
@@ -1027,17 +1122,17 @@ export default function BillingPage() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                       <div className="form-group">
                         <label className="form-label" style={{ fontSize: '0.7rem' }}>Quantity</label>
-                        <input type="number" className="form-input" value={item.quantity} onChange={e => updateItem(item.id, 'quantity', Number(e.target.value))} style={{ fontSize: '0.875rem' }} />
+                        <input type="number" className="form-input font-mono" value={item.quantity} onChange={e => updateItem(item.id, 'quantity', Number(e.target.value))} style={{ fontSize: '0.875rem' }} />
                       </div>
                       <div className="form-group">
                         <label className="form-label" style={{ fontSize: '0.7rem' }}>Rate (₹)</label>
-                        <input type="number" className="form-input" value={item.rate} onChange={e => updateItem(item.id, 'rate', Number(e.target.value))} style={{ fontSize: '0.875rem' }} />
+                        <input type="number" className="form-input font-mono" value={item.rate} onChange={e => updateItem(item.id, 'rate', Number(e.target.value))} style={{ fontSize: '0.875rem' }} />
                       </div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderTop: '1px solid rgba(255,255,255,0.05)', marginTop: '0.25rem', fontSize: '0.8125rem' }}>
-                      <span style={{ color: 'hsl(215 20% 55%)' }}>Amt: ₹{item.amount.toFixed(2)}</span>
-                      {isGst && <span style={{ color: 'hsl(215 20% 55%)' }}>GST: ₹{item.gst_amount.toFixed(2)}</span>}
-                      <span style={{ fontWeight: '800', color: '#fff' }}>Total: ₹{item.total.toFixed(2)}</span>
+                      <span style={{ color: 'hsl(215 20% 55%)' }}>Amt: <span className="font-mono">₹{item.amount.toFixed(0)}</span></span>
+                      {isGst && <span style={{ color: 'hsl(215 20% 55%)' }}>GST: <span className="font-mono">₹{item.gst_amount.toFixed(0)}</span></span>}
+                      <span style={{ fontWeight: '800', color: '#fff' }}>Total: <span className="font-mono">₹{item.total.toFixed(0)}</span></span>
                     </div>
                   </div>
                 ))}
@@ -1048,36 +1143,37 @@ export default function BillingPage() {
               <div style={{ marginTop: '1.5rem', padding: '1.25rem', background: 'rgba(255,255,255,0.02)', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
                   <span style={{ color: 'hsl(215 20% 55%)' }}>Subtotal</span>
-                  <span style={{ color: '#fff', fontWeight: '700' }}>₹{subtotal.toFixed(2)}</span>
+                  <span style={{ color: '#fff', fontWeight: '700', fontFamily: 'monospace' }}>₹{subtotal.toFixed(2)}</span>
                 </div>
                 {isGst && (<>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
                     <span style={{ color: 'hsl(215 20% 55%)' }}>CGST (9%)</span>
-                    <span style={{ color: '#fff' }}>₹{(totalGst / 2).toFixed(2)}</span>
+                    <span style={{ color: '#fff', fontFamily: 'monospace' }}>₹{(totalGst / 2).toFixed(2)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
                     <span style={{ color: 'hsl(215 20% 55%)' }}>SGST (9%)</span>
-                    <span style={{ color: '#fff' }}>₹{(totalGst / 2).toFixed(2)}</span>
+                    <span style={{ color: '#fff', fontFamily: 'monospace' }}>₹{(totalGst / 2).toFixed(2)}</span>
                   </div>
                 </>)}
                 <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '1.1rem', fontWeight: '900' }}>
                   <span style={{ color: '#fff' }}>GRAND TOTAL</span>
-                  <span style={{ color: '#60a5fa' }}>₹{totalAmount.toFixed(2)}</span>
+                  <span style={{ color: '#60a5fa', fontFamily: 'monospace' }}>₹{totalAmount.toFixed(2)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.8rem' }}>
-                  <span style={{ color: '#34d399' }}>Paid: ₹{paidAmount.toFixed(2)}</span>
-                  <span style={{ color: dueAmount > 0 ? '#f87171' : '#34d399', fontWeight: '700' }}>Due: ₹{dueAmount.toFixed(2)}</span>
+                  <span style={{ color: '#34d399', fontFamily: 'monospace' }}>Paid: ₹{paidAmount.toFixed(2)}</span>
+                  <span style={{ color: dueAmount > 0 ? '#f87171' : '#34d399', fontWeight: '700', fontFamily: 'monospace' }}>Due: ₹{dueAmount.toFixed(2)}</span>
                 </div>
               </div>
             )}
 
             <button
               className="btn btn-primary"
-              style={{ width: '100%', marginTop: '1.5rem', padding: '0.875rem', fontSize: '1rem', fontWeight: '800', borderRadius: '0.75rem', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)' }}
+              style={{ width: '100%', marginTop: '1.5rem', padding: '0.875rem', fontSize: '1rem', fontWeight: '800', borderRadius: '0.75rem', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
               onClick={saveBill}
               disabled={saving || items.length === 0 || !customerName}
             >
-              {saving ? '⏳ Saving Bill...' : '💾 Save & Generate Bill'}
+              <Receipt className="w-5 h-5" />
+              <span>{saving ? 'Saving Bill...' : 'Save & Generate Bill'}</span>
             </button>
           </div>
         </div>
