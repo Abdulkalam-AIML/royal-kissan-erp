@@ -163,45 +163,80 @@ export default function Header({
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
         
         {/* System Health Indicators */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', paddingRight: '0.5rem', borderRight: '1px solid rgba(255,255,255,0.06)' }} className="no-print">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingRight: '0.5rem', borderRight: '1px solid rgba(255,255,255,0.06)' }} className="no-print">
           {/* Internet Indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }} title={isOnline ? 'Internet: Online' : 'Internet: Offline'}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.375rem',
+            padding: '2px 6px',
+            borderRadius: '4px',
+            background: 'rgba(0,0,0,0.2)',
+            border: '1px solid rgba(255,255,255,0.05)',
+            fontFamily: 'monospace',
+            fontSize: '0.68rem',
+            fontWeight: '600',
+            color: 'hsl(215 20% 65%)'
+          }} title={isOnline ? 'Internet: Online' : 'Internet: Offline'}>
             <span style={{
-              width: '8px',
-              height: '8px',
+              width: '6px',
+              height: '6px',
               borderRadius: '50%',
-              background: isOnline ? '#34d399' : '#f87171',
+              background: isOnline ? '#10b981' : '#ef4444',
               display: 'inline-block',
-              boxShadow: isOnline ? '0 0 8px #34d399' : '0 0 8px #f87171',
-              animation: isOnline ? 'pulse 2s infinite' : 'none'
-            }} />
-            <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', fontWeight: '600' }}>NET</span>
+              boxShadow: isOnline ? '0 0 8px #10b981' : '0 0 8px #ef4444',
+            }} className={isOnline ? 'animate-pulse' : ''} />
+            <span>NET: {isOnline ? 'ON' : 'OFF'}</span>
           </div>
 
           {/* Supabase Indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }} title={supabaseConnected ? 'Supabase Database: Online' : 'Supabase Database: Offline'}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.375rem',
+            padding: '2px 6px',
+            borderRadius: '4px',
+            background: 'rgba(0,0,0,0.2)',
+            border: '1px solid rgba(255,255,255,0.05)',
+            fontFamily: 'monospace',
+            fontSize: '0.68rem',
+            fontWeight: '600',
+            color: 'hsl(215 20% 65%)'
+          }} title={supabaseConnected ? 'Supabase Database: Online' : 'Supabase Database: Offline'}>
             <span style={{
-              width: '8px',
-              height: '8px',
+              width: '6px',
+              height: '6px',
               borderRadius: '50%',
-              background: supabaseConnected ? '#34d399' : '#f87171',
+              background: supabaseConnected ? '#0ea5e9' : '#ef4444',
               display: 'inline-block',
-              boxShadow: supabaseConnected ? '0 0 8px #34d399' : '0 0 8px #f87171',
+              boxShadow: supabaseConnected ? '0 0 8px #0ea5e9' : '0 0 8px #ef4444',
             }} />
-            <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', fontWeight: '600' }}>DB</span>
+            <span>DB: {supabaseConnected ? 'OK' : 'ERR'}</span>
           </div>
 
           {/* Firebase Indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }} title="Firebase Sync: Inactive / Local storage fallback">
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.375rem',
+            padding: '2px 6px',
+            borderRadius: '4px',
+            background: 'rgba(0,0,0,0.2)',
+            border: '1px solid rgba(255,255,255,0.05)',
+            fontFamily: 'monospace',
+            fontSize: '0.68rem',
+            fontWeight: '600',
+            color: 'hsl(215 20% 65%)'
+          }} title="Firebase Sync: Inactive / Local storage fallback">
             <span style={{
-              width: '8px',
-              height: '8px',
+              width: '6px',
+              height: '6px',
               borderRadius: '50%',
-              background: '#fbbf24',
+              background: '#f59e0b',
               display: 'inline-block',
-              boxShadow: '0 0 8px #fbbf24',
+              boxShadow: '0 0 8px #f59e0b',
             }} />
-            <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', fontWeight: '600' }}>SYNC</span>
+            <span>SYNC: LOC</span>
           </div>
         </div>
 

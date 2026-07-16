@@ -4,6 +4,19 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
 import ErrorBoundary from '@/components/common/ErrorBoundary'
+import { 
+  Receipt, 
+  AlertCircle, 
+  DollarSign, 
+  Smartphone, 
+  Truck, 
+  Store, 
+  Building2, 
+  Map, 
+  Milestone, 
+  TrendingUp, 
+  AlertTriangle 
+} from 'lucide-react'
 
 const DashboardCharts = dynamic(() => import('@/components/dashboard/DashboardCharts'), {
   ssr: false,
@@ -41,6 +54,62 @@ function formatCurrency(amount: number) {
 const NAGARAJU_ID = 'b097b6a9-8395-4eb8-a720-3057e07662c1'
 const DRIVER2_ID  = '70c293e7-bae8-4de2-a505-edccfd35f761'
 const LOCAL_ROUTE_ID = 'a1111111-1111-1111-1111-111111111111'
+
+function DashboardSkeleton() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', padding: '0.25rem' }}>
+      {/* Hero cards skeleton */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="animate-pulse" style={{
+            background: 'rgba(15, 23, 42, 0.45)',
+            border: '1px solid rgba(255, 255, 255, 0.05)',
+            borderRadius: '1rem',
+            padding: '1.5rem',
+            height: '130px',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ height: '12px', width: '90px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px' }} />
+              <div style={{ height: '24px', width: '24px', background: 'rgba(255,255,255,0.06)', borderRadius: '6px' }} />
+            </div>
+            <div style={{ height: '28px', width: '150px', background: 'rgba(255,255,255,0.08)', borderRadius: '6px', marginTop: '12px' }} />
+            <div style={{ height: '10px', width: '180px', background: 'rgba(255,255,255,0.04)', borderRadius: '4px', marginTop: '8px' }} />
+          </div>
+        ))}
+      </div>
+      {/* Secondary cards skeleton */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem' }}>
+        {[...Array(7)].map((_, i) => (
+          <div key={i} className="animate-pulse" style={{
+            background: 'rgba(15, 23, 42, 0.25)',
+            border: '1px solid rgba(255, 255, 255, 0.03)',
+            borderRadius: '0.75rem',
+            padding: '1.25rem',
+            height: '110px',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ height: '10px', width: '80px', background: 'rgba(255,255,255,0.04)', borderRadius: '4px' }} />
+              <div style={{ height: '16px', width: '16px', background: 'rgba(255,255,255,0.04)', borderRadius: '4px' }} />
+            </div>
+            <div style={{ height: '20px', width: '100px', background: 'rgba(255,255,255,0.06)', borderRadius: '6px', marginTop: '8px' }} />
+            <div style={{ height: '8px', width: '110px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px', marginTop: '6px' }} />
+          </div>
+        ))}
+      </div>
+      {/* Charts row skeleton */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem', marginTop: '0.5rem' }}>
+        <div style={{ height: '350px', background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(255, 255, 255, 0.04)', borderRadius: '1.25rem' }} className="animate-pulse" />
+        <div style={{ height: '350px', background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(255, 255, 255, 0.04)', borderRadius: '1.25rem' }} className="animate-pulse" />
+      </div>
+    </div>
+  )
+}
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats>({
@@ -290,19 +359,21 @@ export default function DashboardPage() {
     name: dp.name, Sales: dp.sales, Collected: dp.collected, Dues: dp.dues
   }))
 
-  // KPI Cards config
-  const kpiCards = [
-    { label: "Today's Sales", value: formatCurrency(countStats.todaySales), icon: '🧾', color: '#fff', bg: 'rgba(59,130,246,0.05)', sub: 'All routes combined' },
-    { label: "Today's Due", value: formatCurrency(countStats.todayDue), icon: '🔴', color: stats.todayDue > 0 ? '#f87171' : '#34d399', bg: 'rgba(248,113,113,0.05)', sub: stats.todayDue > 0 ? 'Requires follow-up' : 'All clear' },
-    { label: 'Cash Collection', value: formatCurrency(stats.todayCash), icon: '💵', color: '#34d399', bg: 'rgba(52,211,153,0.05)', sub: 'Cash received today' },
-    { label: 'UPI Collection', value: formatCurrency(stats.todayUPI), icon: '📱', color: '#a78bfa', bg: 'rgba(167,139,250,0.05)', sub: 'UPI/QR received today' },
-    { label: 'Driver Sales', value: formatCurrency(stats.driverSales.nagaraju + stats.driverSales.driver2), icon: '🚛', color: '#60a5fa', bg: 'rgba(96,165,250,0.05)', sub: `Nagaraju: ${formatCurrency(stats.driverSales.nagaraju)} | D2: ${formatCurrency(stats.driverSales.driver2)}` },
-    { label: 'Dealer Sales', value: formatCurrency(stats.dealerSales), icon: '🏪', color: '#f59e0b', bg: 'rgba(245,158,11,0.05)', sub: 'Wholesale dealer billing' },
-    { label: 'Company Sales', value: formatCurrency(stats.companySales), icon: '🏢', color: '#06b6d4', bg: 'rgba(6,182,212,0.05)', sub: 'Direct company invoices' },
-    { label: 'Local Route Sales', value: formatCurrency(stats.localRouteSales), icon: '🗺️', color: '#10b981', bg: 'rgba(16,185,129,0.05)', sub: 'Nagaraju → Local Route' },
-    { label: 'Non Local Route Sales', value: formatCurrency(stats.nonLocalRouteSales), icon: '🛣️', color: '#e879f9', bg: 'rgba(232,121,249,0.05)', sub: 'Driver-2 → 3 Routes' },
-    { label: 'Month Sales', value: formatCurrency(stats.monthlySales), icon: '📈', color: '#818cf8', bg: 'rgba(129,140,248,0.05)', sub: 'Current month total' },
-    { label: 'Month Due', value: formatCurrency(stats.monthlyDue), icon: '⚠️', color: stats.monthlyDue > 0 ? '#fb923c' : '#34d399', bg: 'rgba(251,146,60,0.05)', sub: 'Pending this month' },
+  const heroCards = [
+    { label: "Today's Sales", value: formatCurrency(countStats.todaySales), icon: Receipt, color: '#fff', borderAccent: 'rgba(56, 189, 248, 0.15)', sub: 'All routes combined' },
+    { label: 'Month Sales', value: formatCurrency(stats.monthlySales), icon: TrendingUp, color: '#fff', borderAccent: 'rgba(129, 140, 248, 0.15)', sub: 'Current month total' },
+    { label: "Today's Due", value: formatCurrency(countStats.todayDue), icon: AlertCircle, color: stats.todayDue > 0 ? '#f87171' : '#34d399', borderAccent: stats.todayDue > 0 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)', sub: stats.todayDue > 0 ? 'Requires follow-up' : 'All clear' },
+    { label: 'Month Due', value: formatCurrency(stats.monthlyDue), icon: AlertTriangle, color: stats.monthlyDue > 0 ? '#fb923c' : '#34d399', borderAccent: stats.monthlyDue > 0 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)', sub: 'Pending this month' },
+  ]
+
+  const secondaryCards = [
+    { label: 'Cash Collection', value: formatCurrency(stats.todayCash), icon: DollarSign, color: '#34d399', sub: 'Cash received today' },
+    { label: 'UPI Collection', value: formatCurrency(stats.todayUPI), icon: Smartphone, color: '#a78bfa', sub: 'UPI/QR received today' },
+    { label: 'Driver Sales', value: formatCurrency(stats.driverSales.nagaraju + stats.driverSales.driver2), icon: Truck, color: '#60a5fa', sub: `Nagaraju: ${formatCurrency(stats.driverSales.nagaraju)} | D2: ${formatCurrency(stats.driverSales.driver2)}` },
+    { label: 'Dealer Sales', value: formatCurrency(stats.dealerSales), icon: Store, color: '#f59e0b', sub: 'Wholesale dealer billing' },
+    { label: 'Company Sales', value: formatCurrency(stats.companySales), icon: Building2, color: '#06b6d4', sub: 'Direct company invoices' },
+    { label: 'Local Route Sales', value: formatCurrency(stats.localRouteSales), icon: Map, color: '#10b981', sub: 'Nagaraju → Local Route' },
+    { label: 'Non Local Route Sales', value: formatCurrency(stats.nonLocalRouteSales), icon: Milestone, color: '#e879f9', sub: 'Driver-2 → 3 Routes' },
   ]
 
   return (
@@ -353,9 +424,12 @@ export default function DashboardPage() {
           flexWrap: 'wrap',
           gap: '1rem'
         }}>
-          <div>
-            <h4 style={{ margin: 0, fontWeight: '700', color: '#fbbf24' }}>⚠️ Connection taking longer than expected</h4>
-            <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: 'hsl(215 20% 65%)' }}>The session or queries might be experiencing slow network response.</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <AlertCircle style={{ width: '20px', height: '20px', color: '#fbbf24', flexShrink: 0 }} />
+            <div>
+              <h4 style={{ margin: 0, fontWeight: '700', color: '#fbbf24' }}>Connection taking longer than expected</h4>
+              <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: 'hsl(215 20% 65%)' }}>The session or queries might be experiencing slow network response.</p>
+            </div>
           </div>
           <button className="btn btn-primary" onClick={loadDashboardData} style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: 'none', borderRadius: '0.75rem', padding: '0.5rem 1.25rem' }}>
             Retry Fetching Data
@@ -363,39 +437,77 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 11 KPI CARDS GRID */}
       {loading ? (
-        <div style={{ padding: '4rem', textAlign: 'center' }}><span className="loading-spinner" /></div>
+        <DashboardSkeleton />
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-          {kpiCards.map((card, i) => (
-            <div key={i} className="stat-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: card.bg, borderRadius: '1rem', padding: '1.25rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.72rem', color: 'hsl(215 20% 65%)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{card.label}</span>
-                <span style={{ fontSize: '1.25rem' }}>{card.icon}</span>
+        <>
+          {/* HERO KPI CARDS GRID */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
+            {heroCards.map((card, i) => (
+              <div key={i} className="stat-card" style={{
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                background: 'rgba(15, 23, 42, 0.45)',
+                border: `1px solid ${card.borderAccent || 'rgba(255,255,255,0.06)'}`,
+                borderRadius: '1rem',
+                padding: '1.5rem',
+                height: '130px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'hsl(215 20% 65%)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{card.label}</span>
+                  <card.icon style={{ width: '20px', height: '20px', color: 'hsl(215 20% 55%)' }} />
+                </div>
+                <div style={{ fontSize: '2.1rem', fontWeight: '800', color: card.color, letterSpacing: '-0.03em', lineHeight: 1, fontFamily: 'monospace', margin: '0.5rem 0 0.25rem' }}>
+                  {card.value}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 50%)' }}>{card.sub}</div>
               </div>
-              <div style={{ fontSize: '1.6rem', fontWeight: '800', color: card.color, letterSpacing: '-0.02em', lineHeight: 1 }}>
-                {card.value}
-              </div>
-              <div style={{ fontSize: '0.7rem', color: 'hsl(215 20% 50%)' }}>{card.sub}</div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
 
-      {/* CHARTS ROW */}
-      <DashboardCharts salesTrendData={salesTrendData} driverChartData={driverChartData} />
+          {/* SECONDARY KPI CARDS GRID */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+            {secondaryCards.map((card, i) => (
+              <div key={i} className="stat-card" style={{
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                background: 'rgba(15, 23, 42, 0.25)',
+                border: '1px solid rgba(255,255,255,0.04)',
+                borderRadius: '0.75rem',
+                padding: '1.25rem',
+                height: '110px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.68rem', color: 'hsl(215 20% 55%)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{card.label}</span>
+                  <card.icon style={{ width: '16px', height: '16px', color: 'hsl(215 20% 45%)' }} />
+                </div>
+                <div style={{ fontSize: '1.45rem', fontWeight: '800', color: card.color, letterSpacing: '-0.02em', lineHeight: 1, fontFamily: 'monospace', margin: '0.25rem 0' }}>
+                  {card.value}
+                </div>
+                <div style={{ fontSize: '0.68rem', color: 'hsl(215 20% 45%)' }}>{card.sub}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* CHARTS ROW */}
+          <DashboardCharts salesTrendData={salesTrendData} driverChartData={driverChartData} />
+        </>
+      )}
 
       {/* ROUTE SALES BREAKDOWN */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
         {[
-          { route: 'Local Route', sales: stats.localRouteSales, driver: 'Nagaraju', color: '#10b981', icon: '🗺️' },
-          { route: 'Non-Local Routes', sales: stats.nonLocalRouteSales, driver: 'Driver-2', color: '#e879f9', icon: '🛣️' },
-          { route: 'Dealer Sales', sales: stats.dealerSales, driver: 'Wholesale', color: '#f59e0b', icon: '🏪' },
-          { route: 'Company Sales', sales: stats.companySales, driver: 'Direct', color: '#06b6d4', icon: '🏢' },
+          { route: 'Local Route', sales: stats.localRouteSales, driver: 'Nagaraju', color: '#10b981', icon: Map },
+          { route: 'Non-Local Routes', sales: stats.nonLocalRouteSales, driver: 'Driver-2', color: '#e879f9', icon: Milestone },
+          { route: 'Dealer Sales', sales: stats.dealerSales, driver: 'Wholesale', color: '#f59e0b', icon: Store },
+          { route: 'Company Sales', sales: stats.companySales, driver: 'Direct', color: '#06b6d4', icon: Building2 },
         ].map((item, i) => (
           <div key={i} className="glass-card-3d" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: `${item.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', flexShrink: 0 }}>{item.icon}</div>
+            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: `${item.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <item.icon style={{ width: '22px', height: '22px', color: item.color }} />
+            </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', fontWeight: '600' }}>{item.route}</div>
               <div style={{ fontSize: '1.35rem', fontWeight: '800', color: item.color }}>{formatCurrency(item.sales)}</div>
@@ -409,7 +521,10 @@ export default function DashboardPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
         <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
           <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <h3 className="card-title">🚛 Driver Performance Index</h3>
+            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+              <Truck style={{ width: '18px', height: '18px', color: '#60a5fa' }} />
+              <span>Driver Performance Index</span>
+            </h3>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table className="erp-table">
@@ -432,7 +547,10 @@ export default function DashboardPage() {
 
         <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
           <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <h3 className="card-title">🗺️ Route Performance Index</h3>
+            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+              <Map style={{ width: '18px', height: '18px', color: '#10b981' }} />
+              <span>Route Performance Index</span>
+            </h3>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table className="erp-table">
@@ -458,7 +576,10 @@ export default function DashboardPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1.5rem' }}>
         <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 className="card-title" style={{ color: '#f87171' }}>⚠️ Overdue Accounts</h3>
+            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, color: '#f87171' }}>
+              <AlertTriangle style={{ width: '18px', height: '18px', color: '#f87171' }} />
+              <span>Overdue Accounts</span>
+            </h3>
             <a href="/dues" className="btn btn-secondary btn-sm" style={{ borderColor: 'rgba(248,113,113,0.3)', color: '#f87171' }}>Manage Dues →</a>
           </div>
           <div style={{ overflowX: 'auto' }}>
@@ -486,7 +607,10 @@ export default function DashboardPage() {
 
         <div className="glass-card-3d" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 className="card-title">📈 Profit & Loss Overview</h3>
+            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+              <TrendingUp style={{ width: '18px', height: '18px', color: '#818cf8' }} />
+              <span>Profit & Loss Overview</span>
+            </h3>
             <a href="/profit-loss" className="btn btn-secondary btn-sm">Full Ledger →</a>
           </div>
           <div className="card-body" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
