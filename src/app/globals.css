@@ -497,8 +497,40 @@
 
 /* ===== PRINT STYLES ===== */
 @media print {
-  .no-print { display: none !important; }
-  
+  /* Hide all elements on the body by default */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Make only the invoice container and its children visible */
+  #printable-invoice,
+  #printable-invoice * {
+    visibility: visible;
+  }
+
+  /* Position the invoice container absolutely at the top-left */
+  #printable-invoice {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 10mm 12mm !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Force display: none on all navigation, bars, and non-printable elements */
+  .sidebar, 
+  .header,
+  .no-print,
+  button,
+  .btn {
+    display: none !important;
+  }
+
   body {
     background: white !important;
     color: black !important;
@@ -512,8 +544,6 @@
   .print-a4 {
     width: 210mm;
     min-height: 297mm;
-    padding: 10mm 15mm;
-    margin: 0 !important;
     background: white !important;
     color: black !important;
     box-shadow: none !important;
@@ -525,8 +555,7 @@
   .print-80mm {
     width: 80mm;
     max-width: 80mm;
-    padding: 3mm;
-    margin: 0 !important;
+    padding: 3mm !important;
     font-size: 11px;
     font-family: 'Courier New', monospace;
     background: white !important;
@@ -538,8 +567,7 @@
   .print-58mm {
     width: 58mm;
     max-width: 58mm;
-    padding: 2mm;
-    margin: 0 !important;
+    padding: 2mm !important;
     font-size: 9px;
     font-family: 'Courier New', monospace;
     background: white !important;
@@ -553,7 +581,7 @@
   /* A4 print page settings */
   @page {
     size: A4 portrait;
-    margin: 8mm;
+    margin: 5mm 8mm;
   }
 }
 

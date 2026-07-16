@@ -583,6 +583,7 @@ export default function BillingPage() {
         {/* ── INVOICE TEMPLATE ── */}
         <div
           ref={printRef}
+          id="printable-invoice"
           className={printFormat === 'a4' ? 'print-a4' : printFormat === '80mm' ? 'print-80mm' : 'print-58mm'}
           style={{
             background: 'white',
