@@ -68,8 +68,13 @@ export default function NonLocalRoutesPage() {
   async function loadInitialData() {
     setLoading(true)
     try {
-      const { data: dbRoutes } = await supabase.from('routes').select('id, name, driver_id, area').order('name')
-      const { data: dbDrivers } = await supabase.from('drivers').select('id, name, phone, salary, is_active').order('name')
+      const [routesRes, driversRes] = await Promise.all([
+        supabase.from('routes').select('id, name, driver_id, area').order('name'),
+        supabase.from('drivers').select('id, name, phone, salary, is_active').order('name')
+      ])
+
+      const dbRoutes = routesRes.data
+      const dbDrivers = driversRes.data
 
       if (dbRoutes) {
         // Filter for Non-Local Routes (does not contain 'local' in the name)
@@ -99,22 +104,25 @@ export default function NonLocalRoutesPage() {
 
   async function loadRouteStops(routeId: string) {
     try {
-      const { data: stops } = await supabase
-        .from('route_stops')
-        .select('id, route_id, name, stop_order')
-        .eq('route_id', routeId)
-        .order('stop_order')
+      const [stopsRes, custsRes] = await Promise.all([
+        supabase
+          .from('route_stops')
+          .select('id, route_id, name, stop_order')
+          .eq('route_id', routeId)
+          .order('stop_order'),
+        supabase
+          .from('route_customers')
+          .select('name, route_id, product_name, default_qty, default_rate')
+          .eq('route_id', routeId)
+      ])
+
+      const stops = stopsRes.data
+      const custs = custsRes.data
 
       setRouteStopsList(stops || [])
 
       // Pre-seed stop inputs
       const initialEntries: Record<string, StopEntry> = {}
-      
-      // Also get route customers to default rates
-      const { data: custs } = await supabase
-        .from('route_customers')
-        .select('name, route_id, product_name, default_qty, default_rate')
-        .eq('route_id', routeId)
 
       if (stops) {
         stops.forEach(s => {
@@ -138,16 +146,20 @@ export default function NonLocalRoutesPage() {
 
   async function loadRouteHistory(routeId: string) {
     try {
-      const { data: sales } = await supabase
-        .from('route_sales')
-        .select('id, sale_date, driver_id, product_name, quantity, total_amount, due_amount, cash_paid, upi_paid, drivers(name)')
-        .eq('route_id', routeId)
-        .order('sale_date', { ascending: false })
-      
-      const { data: exps } = await supabase
-        .from('route_expenses')
-        .select('expense_date, driver_id, fuel_charges, driver_bata, other_expenses')
-        .eq('route_id', routeId)
+      const [salesRes, expsRes] = await Promise.all([
+        supabase
+          .from('route_sales')
+          .select('id, sale_date, driver_id, product_name, quantity, total_amount, due_amount, cash_paid, upi_paid, drivers(name)')
+          .eq('route_id', routeId)
+          .order('sale_date', { ascending: false }),
+        supabase
+          .from('route_expenses')
+          .select('expense_date, driver_id, fuel_charges, driver_bata, other_expenses')
+          .eq('route_id', routeId)
+      ])
+
+      const sales = salesRes.data
+      const exps = expsRes.data
 
       // Merge history logs
       const merged = sales?.map(s => {

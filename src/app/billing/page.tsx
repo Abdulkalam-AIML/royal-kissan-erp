@@ -113,10 +113,11 @@ function RKLogo({ size = 60, forPrint = false }: { size?: number; forPrint?: boo
       alt="Royal Kissan Packaged Drinking Water"
       width={size}
       height={size}
+      priority
+      unoptimized
       style={{
         objectFit: 'contain',
         borderRadius: forPrint ? '4px' : '0',
-        background: '#000',
         display: 'block',
       }}
     />
@@ -152,6 +153,13 @@ export default function BillingPage() {
   const [saveStatus, setSaveStatus] = useState<string[]>([])
   const [printFormat, setPrintFormat] = useState<'a4' | '58mm' | '80mm'>('a4')
   const [isAutoPrint, setIsAutoPrint] = useState(false)
+  const [settings, setSettings] = useState<Record<string, string>>({
+    company_name: 'ROYAL KISSAN',
+    company_address: 'Guntur Highway Road, Guntur, AP',
+    company_phone: '81849 18757',
+    company_email: 'royalkissan@gmail.com',
+    company_gst: '37BABS2021G1Z3'
+  })
   const printRef = useRef<HTMLDivElement>(null)
   const supabase = createClient()
 
@@ -164,6 +172,7 @@ export default function BillingPage() {
     fetchProducts()
     fetchDealers()
     fetchCustomers()
+    fetchSettings()
   }, [])
 
   useEffect(() => { setIsGst(billType !== 'non_gst_invoice') }, [billType])
@@ -242,6 +251,19 @@ export default function BillingPage() {
       const { data } = await supabase.from('customers').select('id, name, phone, address, gst_number').order('name')
       if (data) setCustomers(data)
     } catch (err) { console.error('Failed to load customers:', err) }
+  }
+
+  async function fetchSettings() {
+    try {
+      const { data } = await supabase.from('settings').select('key, value')
+      if (data && data.length > 0) {
+        const loaded: Record<string, string> = {}
+        data.forEach(s => {
+          loaded[s.key] = s.value
+        })
+        setSettings(prev => ({ ...prev, ...loaded }))
+      }
+    } catch (err) { console.error('Failed to load settings:', err) }
   }
 
   const dueAmount = Math.max(0, totalAmount - paidAmount)
@@ -579,6 +601,31 @@ export default function BillingPage() {
           ════════════════════════════════════════ */}
           {printFormat === 'a4' ? (
             <div>
+              {/* Logo block centered at the top */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                width: '100%',
+                paddingBottom: '5mm',
+                marginBottom: '5mm',
+                borderBottom: '1px dashed #e5e7eb'
+              }}>
+                <Image
+                  src="/royal-kissan-logo.png"
+                  alt="Royal Kissan Logo"
+                  width={90}
+                  height={90}
+                  priority
+                  unoptimized
+                  style={{
+                    objectFit: 'contain',
+                    borderRadius: '8px',
+                    display: 'block'
+                  }}
+                />
+              </div>
+
               {/* Header */}
               <div style={{
                 display: 'flex',
@@ -588,26 +635,17 @@ export default function BillingPage() {
                 paddingBottom: '8mm',
                 marginBottom: '6mm',
               }}>
-                {/* Left: Logo + Company */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <Image
-                    src="/royal-kissan-logo.png"
-                    alt="Royal Kissan"
-                    width={80}
-                    height={80}
-                    style={{ objectFit: 'contain', background: '#000', borderRadius: '6px', flexShrink: 0 }}
-                  />
-                  <div>
-                    <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#1e3a8a', margin: '0 0 2px', letterSpacing: '-0.5px' }}>
-                      ROYAL KISSAN
-                    </h1>
-                    <p style={{ fontSize: '11px', color: '#4b5563', margin: '0 0 4px', fontWeight: '700', letterSpacing: '1px' }}>
-                      PACKAGED DRINKING WATER
-                    </p>
-                    <p style={{ fontSize: '9.5px', color: '#6b7280', margin: '2px 0' }}>📍 Guntur Highway Road, Guntur, Andhra Pradesh</p>
-                    <p style={{ fontSize: '9.5px', color: '#6b7280', margin: '2px 0' }}>📞 +91 81849 18757 &nbsp;|&nbsp; ✉ royalkissan@gmail.com</p>
-                    <p style={{ fontSize: '9.5px', color: '#6b7280', margin: '2px 0', fontWeight: '700' }}>GSTIN: 37BABS2021G1Z3</p>
-                  </div>
+                {/* Left: Company details from database settings */}
+                <div>
+                  <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#1e3a8a', margin: '0 0 2px', letterSpacing: '-0.5px' }}>
+                    {settings.company_name}
+                  </h1>
+                  <p style={{ fontSize: '11px', color: '#4b5563', margin: '0 0 4px', fontWeight: '700', letterSpacing: '1px' }}>
+                    PACKAGED DRINKING WATER
+                  </p>
+                  <p style={{ fontSize: '9.5px', color: '#6b7280', margin: '2px 0' }}>📍 {settings.company_address}</p>
+                  <p style={{ fontSize: '9.5px', color: '#6b7280', margin: '2px 0' }}>📞 +91 {settings.company_phone} &nbsp;|&nbsp; ✉ {settings.company_email}</p>
+                  {settings.company_gst && <p style={{ fontSize: '9.5px', color: '#6b7280', margin: '2px 0', fontWeight: '700' }}>GSTIN: {settings.company_gst}</p>}
                 </div>
                 {/* Right: Invoice Badge */}
                 <div style={{ textAlign: 'right', minWidth: '160px' }}>
@@ -773,17 +811,18 @@ export default function BillingPage() {
                     alt="Royal Kissan"
                     width={printFormat === '80mm' ? 70 : 52}
                     height={printFormat === '80mm' ? 70 : 52}
+                    priority
+                    unoptimized
                     style={{
                       objectFit: 'contain',
-                      background: '#000',
                       borderRadius: '4px',
                     }}
                   />
                 </div>
-                <div style={{ fontWeight: '900', fontSize: printFormat === '80mm' ? '14px' : '11px', letterSpacing: '1px' }}>ROYAL KISSAN</div>
+                <div style={{ fontWeight: '900', fontSize: printFormat === '80mm' ? '14px' : '11px', letterSpacing: '1px' }}>{settings.company_name}</div>
                 <div style={{ fontSize: printFormat === '80mm' ? '10px' : '8px', margin: '1px 0' }}>Packaged Drinking Water</div>
-                <div style={{ fontSize: printFormat === '80mm' ? '9px' : '8px' }}>Ph: 81849 18757</div>
-                {isGst && <div style={{ fontSize: printFormat === '80mm' ? '9px' : '7.5px' }}>GSTIN: 37BABS2021G1Z3</div>}
+                <div style={{ fontSize: printFormat === '80mm' ? '9px' : '8px' }}>Ph: {settings.company_phone}</div>
+                {isGst && settings.company_gst && <div style={{ fontSize: printFormat === '80mm' ? '9px' : '7.5px' }}>GSTIN: {settings.company_gst}</div>}
                 <div style={{ fontSize: printFormat === '80mm' ? '9px' : '7.5px', marginTop: '2px', fontWeight: '700' }}>
                   {isGst ? '— TAX INVOICE —' : '— BILL OF SUPPLY —'}
                 </div>

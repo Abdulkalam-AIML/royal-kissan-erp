@@ -82,8 +82,12 @@ export default function ReportsPage() {
   }
 
   async function loadDailyReport(date: string) {
-    const { data: routeSales } = await supabase.from('route_sales').select('total_amount, cash_paid, upi_paid, due_amount, route_id').eq('sale_date', date)
-    const { data: bills } = await supabase.from('bills').select('total_amount, cash_amount, upi_amount, paid_amount, due_amount, bill_type').eq('date', date)
+    const [routeSalesRes, billsRes] = await Promise.all([
+      supabase.from('route_sales').select('total_amount, cash_paid, upi_paid, due_amount, route_id').eq('sale_date', date),
+      supabase.from('bills').select('total_amount, cash_amount, upi_amount, paid_amount, due_amount, bill_type').eq('date', date)
+    ])
+    const routeSales = routeSalesRes.data
+    const bills = billsRes.data
 
     let totalSales = 0, totalCollection = 0, cashCollection = 0, upiCollection = 0, totalDue = 0
     let driverSales = 0, dealerSales = 0, companySales = 0, localRouteSales = 0, nonLocalRouteSales = 0
@@ -114,8 +118,12 @@ export default function ReportsPage() {
   }
 
   async function loadDriverReport(date: string) {
-    const { data: routeSales } = await supabase.from('route_sales').select('total_amount, cash_paid, upi_paid, due_amount, driver_id, routes(name)').eq('sale_date', date)
-    const { data: bills } = await supabase.from('bills').select('total_amount, cash_amount, upi_amount, paid_amount, due_amount, driver_id').eq('date', date)
+    const [routeSalesRes, billsRes] = await Promise.all([
+      supabase.from('route_sales').select('total_amount, cash_paid, upi_paid, due_amount, driver_id, routes(name)').eq('sale_date', date),
+      supabase.from('bills').select('total_amount, cash_amount, upi_amount, paid_amount, due_amount, driver_id').eq('date', date)
+    ])
+    const routeSales = routeSalesRes.data
+    const bills = billsRes.data
 
     const driverMap: Record<string, DriverReport> = {
       [NAGARAJU_ID]: { name: 'Nagaraju', totalSales: 0, totalCollection: 0, cashCollection: 0, upiCollection: 0, totalDue: 0, routeName: 'Local Route', salesCount: 0 },
@@ -202,8 +210,12 @@ export default function ReportsPage() {
     const firstDay = `${year}-${mon}-01`
     const lastDay = new Date(Number(year), Number(mon), 0).toISOString().split('T')[0]
 
-    const { data: routeSales } = await supabase.from('route_sales').select('sale_date, total_amount, cash_paid, upi_paid, due_amount, route_id').gte('sale_date', firstDay).lte('sale_date', lastDay)
-    const { data: bills } = await supabase.from('bills').select('date, total_amount, cash_amount, upi_amount, paid_amount, due_amount, bill_type').gte('date', firstDay).lte('date', lastDay)
+    const [routeSalesRes, billsRes] = await Promise.all([
+      supabase.from('route_sales').select('sale_date, total_amount, cash_paid, upi_paid, due_amount, route_id').gte('sale_date', firstDay).lte('sale_date', lastDay),
+      supabase.from('bills').select('date, total_amount, cash_amount, upi_amount, paid_amount, due_amount, bill_type').gte('date', firstDay).lte('date', lastDay)
+    ])
+    const routeSales = routeSalesRes.data
+    const bills = billsRes.data
 
     // Group by day
     const dayMap: Record<string, DailyReport> = {}

@@ -67,8 +67,13 @@ export default function DealersPage() {
   async function loadDealersAndProducts() {
     setLoading(true)
     try {
-      const { data: dbDealers } = await supabase.from('dealers').select('id, name, area, phone, address, gst_number, outstanding_amount, credit_limit, is_active').order('name')
-      const { data: dbProducts } = await supabase.from('products').select('id, name, default_rate, category, unit, is_active').order('name')
+      const [dealersRes, productsRes] = await Promise.all([
+        supabase.from('dealers').select('id, name, area, phone, address, gst_number, outstanding_amount, credit_limit, is_active').order('name'),
+        supabase.from('products').select('id, name, default_rate, category, unit, is_active').order('name')
+      ])
+
+      const dbDealers = dealersRes.data
+      const dbProducts = productsRes.data
 
       if (dbDealers && dbDealers.length > 0) {
         const merged = dbDealers.map(d => {
@@ -97,31 +102,32 @@ export default function DealersPage() {
     setCustomRates(dealer.custom_rates || {})
     setBillProduct(products[0]?.name || '')
     setBillRate(dealer.custom_rates?.[products[0]?.name] || products[0]?.default_rate || 0)
-    await loadDealerHistory(dealer.id)
+    await loadDealerHistory(dealer.id, dealer.name)
   }
 
-  async function loadDealerHistory(dealerId: string) {
+  async function loadDealerHistory(dealerId: string, dealerName: string) {
     try {
-      // Load bills for this dealer
-      const { data: billsData } = await supabase
-        .from('bills')
-        .select('id, invoice_number, date, total_amount, paid_amount, payment_status')
-        .eq('dealer_id', dealerId)
-        .order('date', { ascending: false })
+      const [billsRes, collectRes, ledgerRes] = await Promise.all([
+        supabase
+          .from('bills')
+          .select('id, invoice_number, date, total_amount, paid_amount, payment_status')
+          .eq('dealer_id', dealerId)
+          .order('date', { ascending: false }),
+        supabase
+          .from('dealer_collections')
+          .select('id, collected_date, notes, amount, payment_mode')
+          .eq('dealer_id', dealerId)
+          .order('collected_date', { ascending: false }),
+        supabase
+          .from('customer_ledger')
+          .select('id, transaction_date, description, debit, credit, balance')
+          .eq('customer_name', dealerName)
+          .order('transaction_date', { ascending: false })
+      ])
 
-      // Load collections for this dealer
-      const { data: collectData } = await supabase
-        .from('dealer_collections')
-        .select('id, collected_date, notes, amount, payment_mode')
-        .eq('dealer_id', dealerId)
-        .order('collected_date', { ascending: false })
-
-      // Load ledger with exact name match and column projection
-      const { data: ledgerData } = await supabase
-        .from('customer_ledger')
-        .select('id, transaction_date, description, debit, credit, balance')
-        .eq('customer_name', selectedDealer?.name)
-        .order('transaction_date', { ascending: false })
+      const billsData = billsRes.data
+      const collectData = collectRes.data
+      const ledgerData = ledgerRes.data
 
       setOrders(billsData || [
         { id: 'o1', invoice_number: 'INV-001', date: '2026-06-05', total_amount: 4200, paid_amount: 4200, due_amount: 0, payment_status: 'paid' },
