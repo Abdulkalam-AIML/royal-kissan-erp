@@ -141,7 +141,7 @@ export default function BillingPage() {
     const d = new Date()
     return `RK-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${Date.now().toString().slice(-4)}`
   })
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(new Date().toLocaleDateString('en-CA'))
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [showPrint, setShowPrint] = useState(false)
@@ -331,9 +331,15 @@ export default function BillingPage() {
 
       const paymentStatus = paidAmount <= 0 ? 'due' : paidAmount >= totalAmount ? 'paid' : 'partial'
 
+      let finalInvoiceNumber = invoiceNumber.trim()
+      if (!finalInvoiceNumber) {
+        const d = new Date()
+        finalInvoiceNumber = `RK-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${Date.now().toString().slice(-4)}`
+      }
+
       // 3. Build complete bills payload — all columns must match DB schema
       const payload = {
-        invoice_number:   invoiceNumber,
+        invoice_number:   finalInvoiceNumber,
         bill_type:        billType,
         customer_name:    customerName,
         customer_phone:   customerPhone || null,
@@ -1090,11 +1096,11 @@ export default function BillingPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.75rem' }}>
                 <div className="form-group">
                   <label className="form-label">💵 Cash Amount</label>
-                  <input type="number" className="form-input font-mono" value={cashAmount || ''} onChange={e => setCashAmount(Number(e.target.value))} placeholder="0" />
+                  <input type="number" className="form-input font-mono" value={cashAmount === 0 ? '' : cashAmount} onChange={e => setCashAmount(e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} placeholder="0" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">📱 UPI Amount</label>
-                  <input type="number" className="form-input font-mono" value={upiAmount || ''} onChange={e => setUpiAmount(Number(e.target.value))} placeholder="0" />
+                  <input type="number" className="form-input font-mono" value={upiAmount === 0 ? '' : upiAmount} onChange={e => setUpiAmount(e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} placeholder="0" />
                 </div>
               </div>
             )}
@@ -1162,11 +1168,11 @@ export default function BillingPage() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                       <div className="form-group">
                         <label className="form-label" style={{ fontSize: '0.7rem' }}>Quantity</label>
-                        <input type="number" className="form-input font-mono" value={item.quantity} onChange={e => updateItem(item.id, 'quantity', Number(e.target.value))} style={{ fontSize: '0.875rem' }} />
+                        <input type="number" className="form-input font-mono" value={item.quantity === 0 ? '' : item.quantity} onChange={e => updateItem(item.id, 'quantity', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} style={{ fontSize: '0.875rem' }} />
                       </div>
                       <div className="form-group">
                         <label className="form-label" style={{ fontSize: '0.7rem' }}>Rate (₹)</label>
-                        <input type="number" className="form-input font-mono" value={item.rate} onChange={e => updateItem(item.id, 'rate', Number(e.target.value))} style={{ fontSize: '0.875rem' }} />
+                        <input type="number" className="form-input font-mono" value={item.rate === 0 ? '' : item.rate} onChange={e => updateItem(item.id, 'rate', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} style={{ fontSize: '0.875rem' }} />
                       </div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderTop: '1px solid rgba(255,255,255,0.05)', marginTop: '0.25rem', fontSize: '0.8125rem' }}>

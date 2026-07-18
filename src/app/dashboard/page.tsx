@@ -45,6 +45,11 @@ interface DashboardStats {
   pendingDues: any[]
   driverPerformance: any[]
   routePerformance: any[]
+  todayCans: number
+  todayBottles: number
+  todayBags: number
+  todayOthers: number
+  driverLeaderboardList: { name: string; sales: number; units: number }[]
 }
 
 function formatCurrency(amount: number) {
@@ -120,7 +125,9 @@ export default function DashboardPage() {
     driverSales: { nagaraju: 0, driver2: 0 },
     dealerSales: 0, companySales: 0,
     localRouteSales: 0, nonLocalRouteSales: 0,
-    pendingDues: [], driverPerformance: [], routePerformance: []
+    pendingDues: [], driverPerformance: [], routePerformance: [],
+    todayCans: 0, todayBottles: 0, todayBags: 0, todayOthers: 0,
+    driverLeaderboardList: []
   })
 
   const [countStats, setCountStats] = useState({ todaySales: 0, todayCollection: 0, todayDue: 0 })
@@ -183,7 +190,7 @@ export default function DashboardPage() {
     }, 8000)
 
     try {
-      const today = new Date().toISOString().split('T')[0]
+      const today = new Date().toLocaleDateString('en-CA')
       const currentMonth = new Date().getMonth() + 1
       const currentYear = new Date().getFullYear()
       const firstDayOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`
@@ -191,7 +198,7 @@ export default function DashboardPage() {
       // Route Sales — Today
       const { data: todayRouteSales, error: err1 } = await supabase
         .from('route_sales')
-        .select('total_amount, due_amount, cash_paid, upi_paid, driver_id, route_id')
+        .select('total_amount, due_amount, cash_paid, upi_paid, driver_id, route_id, product_name, quantity')
         .eq('sale_date', today)
       console.log('todayRouteSales:', { data: todayRouteSales, error: err1 })
 
@@ -201,6 +208,12 @@ export default function DashboardPage() {
         .select('total_amount, due_amount, cash_amount, upi_amount, paid_amount, bill_type, driver_id, route_id')
         .eq('date', today)
       console.log('todayBills:', { data: todayBills, error: err2 })
+
+      // Bill Items — Today
+      const { data: todayBillItems } = await supabase
+        .from('bill_items')
+        .select('quantity, product_name, bills!inner(date)')
+        .eq('bills.date', today)
 
       // Route Sales — Monthly
       const { data: monthlyRouteSales, error: err3 } = await supabase
@@ -246,22 +259,57 @@ export default function DashboardPage() {
         .limit(10)
       console.log('routePerfData:', { data: routePerfData, error: err8 })
 
-      // --- Aggregate Today Stats ---
+      // --- Aggregate Today Stats & Quantities ---
       let tSales = 0, tDue = 0, tCollection = 0, tCash = 0, tUPI = 0
       let nagarajuSales = 0, driver2Sales = 0
       let dealerSales = 0, companySales = 0
       let localRouteSales = 0, nonLocalRouteSales = 0
+
+      let cansSold = 0
+      let bottlesSold = 0
+      let bagsSold = 0
+      let othersSold = 0
+
+      const categorize = (name: string, qty: number) => {
+        const lower = (name || '').toLowerCase()
+        if (lower.includes('can')) cansSold += qty
+        else if (lower.includes('bottle') || lower.includes('case')) bottlesSold += qty
+        else if (lower.includes('bag') || lower.includes('pack')) bagsSold += qty
+        else othersSold += qty
+      }
+
+      // Initialize leaderboard maps
+      const driverLeaderboardMap: Record<string, { name: string; sales: number; units: number }> = {}
+
+      // Fetch driver mapping dynamically (we can map from all drivers returned or hardcoded fallback)
+      const { data: allDrivers } = await supabase.from('drivers').select('id, name')
+      allDrivers?.forEach(d => {
+        driverLeaderboardMap[d.id] = { name: d.name, sales: 0, units: 0 }
+      })
 
       todayRouteSales?.forEach(s => {
         const total = Number(s.total_amount) || 0
         const due = Number(s.due_amount) || 0
         const cash = Number(s.cash_paid) || 0
         const upi = Number(s.upi_paid) || 0
+        const qty = Number(s.quantity) || 0
+
         tSales += total; tDue += due; tCash += cash; tUPI += upi; tCollection += cash + upi
+
         if (s.driver_id === NAGARAJU_ID) nagarajuSales += total
         if (s.driver_id === DRIVER2_ID) driver2Sales += total
         if (s.route_id === LOCAL_ROUTE_ID) localRouteSales += total
         else nonLocalRouteSales += total
+
+        categorize(s.product_name || '', qty)
+
+        if (s.driver_id) {
+          if (!driverLeaderboardMap[s.driver_id]) {
+            driverLeaderboardMap[s.driver_id] = { name: 'Unknown Driver', sales: 0, units: 0 }
+          }
+          driverLeaderboardMap[s.driver_id].sales += total
+          driverLeaderboardMap[s.driver_id].units += qty
+        }
       })
 
       todayBills?.forEach(b => {
@@ -270,13 +318,33 @@ export default function DashboardPage() {
         const cash = Number(b.cash_amount) || 0
         const upi = Number(b.upi_amount) || 0
         const paid = Number(b.paid_amount) || 0
+
         tSales += total; tDue += due
         tCash += cash; tUPI += upi; tCollection += paid
+
         if (b.bill_type === 'dealer_invoice') dealerSales += total
         else companySales += total
+
         if (b.driver_id === NAGARAJU_ID) nagarajuSales += total
         if (b.driver_id === DRIVER2_ID) driver2Sales += total
+
+        if (b.driver_id) {
+          if (!driverLeaderboardMap[b.driver_id]) {
+            driverLeaderboardMap[b.driver_id] = { name: 'Unknown Driver', sales: 0, units: 0 }
+          }
+          driverLeaderboardMap[b.driver_id].sales += total
+        }
       })
+
+      // Aggregate today's bill item quantities
+      todayBillItems?.forEach(item => {
+        const qty = Number(item.quantity) || 0
+        categorize(item.product_name || '', qty)
+      })
+
+      const driverLeaderboardList = Object.values(driverLeaderboardMap)
+        .filter(d => d.sales > 0 || d.units > 0)
+        .sort((a, b) => b.sales - a.sales)
 
       // --- Aggregate Monthly Stats ---
       let mSales = 0, mDue = 0, mCollection = 0
@@ -331,7 +399,12 @@ export default function DashboardPage() {
         localRouteSales, nonLocalRouteSales,
         pendingDues: duesData || [],
         driverPerformance: Object.keys(driverSummaryMap).length > 0 ? Object.values(driverSummaryMap) : fallbackDrivers,
-        routePerformance: Object.keys(routeSummaryMap).length > 0 ? Object.values(routeSummaryMap) : fallbackRoutes
+        routePerformance: Object.keys(routeSummaryMap).length > 0 ? Object.values(routeSummaryMap) : fallbackRoutes,
+        todayCans: cansSold,
+        todayBottles: bottlesSold,
+        todayBags: bagsSold,
+        todayOthers: othersSold,
+        driverLeaderboardList
       })
     } catch (err) {
       console.error('Error loading dashboard stats:', err)
@@ -383,28 +456,28 @@ export default function DashboardPage() {
       {/* HERO BANNER */}
       <div style={{
         borderRadius: '1.5rem', padding: '2.5rem 2rem', marginBottom: '2rem',
-        background: 'linear-gradient(135deg, hsl(217 91% 25% / 0.5) 0%, hsl(224 71% 4% / 0.8) 100%)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 20px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)',
+        background: 'linear-gradient(135deg, rgba(60, 44, 8, 0.65) 0%, rgba(10, 8, 2, 0.85) 100%)',
+        border: '1px solid rgba(212, 175, 55, 0.15)',
+        boxShadow: '0 20px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(212, 175, 55, 0.08)',
         position: 'relative', overflow: 'hidden'
       }}>
-        <div style={{ position: 'absolute', top: '-50%', right: '-20%', width: '400px', height: '400px', borderRadius: '50%', background: 'radial-gradient(circle, hsla(199,89%,48%,0.15) 0%, transparent 75%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', top: '-50%', right: '-20%', width: '400px', height: '400px', borderRadius: '50%', background: 'radial-gradient(circle, hsla(46,65%,52%,0.12) 0%, transparent 75%)', pointerEvents: 'none' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1.5rem', position: 'relative', zIndex: 1 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-              <span className="badge badge-info" style={{ letterSpacing: '0.05em' }}>PREMIUM ENTERPRISE</span>
+              <span className="badge badge-info" style={{ letterSpacing: '0.05em', background: 'rgba(212,175,55,0.12)', color: '#d4af37', borderColor: 'rgba(212,175,55,0.3)' }}>PREMIUM ENTERPRISE</span>
               <span style={{ fontSize: '0.8125rem', color: 'hsl(142 71% 55%)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                 <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} /> Live
               </span>
             </div>
-            <h2 style={{ fontSize: '2.25rem', fontWeight: '800', margin: 0, letterSpacing: '-0.03em', background: 'linear-gradient(135deg, #ffffff 40%, #93c5fd 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            <h2 style={{ fontSize: '2.25rem', fontWeight: '800', margin: 0, letterSpacing: '-0.03em', background: 'linear-gradient(135deg, #ffffff 40%, #e8c84a 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
               Royal Kissan ERP
             </h2>
             <p style={{ fontSize: '0.925rem', color: 'hsl(215 20% 65%)', marginTop: '0.5rem' }}>
               Real-time operations dashboard — {new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
           </div>
-          <button className="btn btn-primary btn-lg" onClick={loadDashboardData} disabled={loading} style={{ borderRadius: '1rem', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)' }}>
+          <button className="btn btn-primary btn-lg" onClick={loadDashboardData} disabled={loading} style={{ borderRadius: '1rem' }}>
             {loading ? '⏳ Loading...' : '🔄 Refresh Data'}
           </button>
         </div>
@@ -496,25 +569,87 @@ export default function DashboardPage() {
         </>
       )}
 
-      {/* ROUTE SALES BREAKDOWN */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-        {[
-          { route: 'Local Route', sales: stats.localRouteSales, driver: 'Nagaraju', color: '#10b981', icon: Map },
-          { route: 'Non-Local Routes', sales: stats.nonLocalRouteSales, driver: 'Driver-2', color: '#e879f9', icon: Milestone },
-          { route: 'Dealer Sales', sales: stats.dealerSales, driver: 'Wholesale', color: '#f59e0b', icon: Store },
-          { route: 'Company Sales', sales: stats.companySales, driver: 'Direct', color: '#06b6d4', icon: Building2 },
-        ].map((item, i) => (
-          <div key={i} className="glass-card-3d" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: `${item.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <item.icon style={{ width: '22px', height: '22px', color: item.color }} />
+      {/* DAILY PRODUCT BREAKDOWN (Task 4) */}
+      <div style={{ marginBottom: '2rem' }}>
+        <h3 style={{ fontSize: '1.25rem', fontWeight: '800', color: '#fff', marginBottom: '1rem', letterSpacing: '-0.02em' }}>
+          📦 Today's Product Category Breakdowns
+        </h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem' }}>
+          {[
+            { label: 'Water & Cooling Cans (20L)', value: stats.todayCans, color: '#60a5fa', sub: 'Cans delivered today' },
+            { label: 'Water Bottles (Cases)', value: stats.todayBottles, color: '#34d399', sub: '500ml/1L/2L cases' },
+            { label: 'Bags (100 Packs)', value: stats.todayBags, color: '#fb923c', sub: 'Plastic carrier bags' },
+            { label: 'Others', value: stats.todayOthers, color: '#a78bfa', sub: 'Custom orders/other' }
+          ].map((item, idx) => (
+            <div key={idx} className="glass-card-3d" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(255,255,255,0.04)' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{item.label}</span>
+              <div style={{ fontSize: '2rem', fontWeight: '800', color: item.color, fontFamily: 'monospace' }}>
+                {item.value} <span style={{ fontSize: '0.9rem', fontWeight: '500', color: 'hsl(215 20% 65%)' }}>units</span>
+              </div>
+              <span style={{ fontSize: '0.75rem', color: 'hsl(215 20% 45%)' }}>{item.sub}</span>
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', fontWeight: '600' }}>{item.route}</div>
-              <div style={{ fontSize: '1.35rem', fontWeight: '800', color: item.color }}>{formatCurrency(item.sales)}</div>
-              <div style={{ fontSize: '0.65rem', color: 'hsl(215 20% 45%)' }}>Driver: {item.driver}</div>
-            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* LEADERBOARD & ROUTE LIST (Task 4) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
+        {/* Driver Leaderboard */}
+        <div className="glass-card-3d" style={{ padding: '1.5rem 2rem' }}>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            🏆 Driver Performance Leaderboard (Today)
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {stats.driverLeaderboardList.map((driver, idx) => (
+              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: idx === 0 ? '#d4af37' : 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', color: idx === 0 ? '#000' : '#fff', fontSize: '0.85rem' }}>
+                    {idx + 1}
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: '700', color: '#fff' }}>{driver.name}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>{driver.units} units sold</div>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontWeight: '800', color: '#34d399' }}>₹{driver.sales}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 45%)' }}>Revenue</div>
+                </div>
+              </div>
+            ))}
+            {stats.driverLeaderboardList.length === 0 && (
+              <div style={{ padding: '2rem', textAlign: 'center', color: 'hsl(215 20% 45%)' }}>
+                No driver sales recorded today yet.
+              </div>
+            )}
           </div>
-        ))}
+        </div>
+
+        {/* Route & Channel Summary */}
+        <div className="glass-card-3d" style={{ padding: '1.5rem 2rem' }}>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem' }}>
+            📊 Revenue by Channel / Route (Today)
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {[
+              { label: 'Local Route (Nagaraju)', value: stats.localRouteSales, color: '#10b981' },
+              { label: 'Non-Local Highway Routes', value: stats.nonLocalRouteSales, color: '#e879f9' },
+              { label: 'Wholesale Dealers', value: stats.dealerSales, color: '#f59e0b' },
+              { label: 'Direct Company Sales', value: stats.companySales, color: '#06b6d4' }
+            ].map((chan, idx) => (
+              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <div>
+                  <div style={{ fontWeight: '700', color: '#fff' }}>{chan.label}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>Distribution channel</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontWeight: '800', color: chan.color }}>₹{chan.value}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 45%)' }}>Total Sales</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* TABLES GRID */}

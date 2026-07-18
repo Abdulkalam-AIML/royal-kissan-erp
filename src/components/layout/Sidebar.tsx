@@ -106,13 +106,13 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
           width: '40px',
           height: '40px',
           borderRadius: '10px',
-          background: 'linear-gradient(135deg, hsl(217 91% 60%), hsl(199 89% 48%))',
+          background: 'linear-gradient(135deg, #c9a227, #7d6010)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           fontSize: '20px',
           flexShrink: 0,
-          boxShadow: '0 4px 16px hsl(217 91% 60% / 0.3)',
+          boxShadow: '0 4px 16px rgba(201, 162, 39, 0.35)',
         }}>
           💧
         </div>
@@ -122,7 +122,7 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
               fontFamily: 'Plus Jakarta Sans, Inter, sans-serif',
               fontWeight: '800',
               fontSize: '0.875rem',
-              background: 'linear-gradient(135deg, #fff, hsl(217 91% 75%))',
+              background: 'linear-gradient(135deg, #fff, #e8c84a)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               lineHeight: 1.2,

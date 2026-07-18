@@ -18,6 +18,8 @@ interface StopEntry {
   rate: number
   cashPaid: number
   upiPaid: number
+  returnedQty: number
+  leakedQty: number
 }
 
 export default function NonLocalRoutesPage() {
@@ -29,7 +31,7 @@ export default function NonLocalRoutesPage() {
   // Trip configuration
   const [selectedDriverId, setSelectedDriverId] = useState('')
   const [vehicleNumber, setVehicleNumber] = useState('')
-  const [tripDate, setTripDate] = useState(new Date().toISOString().split('T')[0])
+  const [tripDate, setTripDate] = useState(new Date().toLocaleDateString('en-CA'))
   
   // Dynamic Stop entries state
   const [stopEntries, setStopEntries] = useState<Record<string, StopEntry>>({})
@@ -42,6 +44,17 @@ export default function NonLocalRoutesPage() {
   
   // History logs
   const [historyLogs, setHistoryLogs] = useState<any[]>([])
+  
+  // Dispatch configuration state
+  const [activeDispatch, setActiveDispatch] = useState<any | null>(null)
+  const [dispatchItems, setDispatchItems] = useState<Record<string, number>>({
+    'Water Can (20L)': 0,
+    'Cooling Can (20L)': 0,
+    'Bags (100 Pack)': 0,
+    '500ml Bottle Case': 0,
+    '1L Bottle Case': 0,
+    '2L Bottle Case': 0
+  })
   
   // Admin configuration state
   const [showAdminPanel, setShowAdminPanel] = useState(false)
@@ -62,8 +75,9 @@ export default function NonLocalRoutesPage() {
     if (selectedRoute) {
       loadRouteStops(selectedRoute.id)
       loadRouteHistory(selectedRoute.id)
+      loadActiveDispatch(selectedRoute.id, tripDate)
     }
-  }, [selectedRoute])
+  }, [selectedRoute, tripDate])
 
   async function loadInitialData() {
     setLoading(true)
@@ -102,6 +116,86 @@ export default function NonLocalRoutesPage() {
     }
   }
 
+  async function loadActiveDispatch(routeId: string, date: string) {
+    try {
+      const { data, error } = await supabase
+        .from('route_dispatches')
+        .select('*')
+        .eq('route_id', routeId)
+        .eq('date', date)
+        .limit(1)
+        .maybeSingle()
+
+      if (!error && data) {
+        setActiveDispatch(data)
+        // Set dispatch items state
+        const itemsMap: Record<string, number> = {
+          'Water Can (20L)': 0,
+          'Cooling Can (20L)': 0,
+          'Bags (100 Pack)': 0,
+          '500ml Bottle Case': 0,
+          '1L Bottle Case': 0,
+          '2L Bottle Case': 0
+        }
+        data.items.forEach((item: any) => {
+          itemsMap[item.product_name] = item.quantity
+        })
+        setDispatchItems(itemsMap)
+      } else {
+        setActiveDispatch(null)
+        setDispatchItems({
+          'Water Can (20L)': 0,
+          'Cooling Can (20L)': 0,
+          'Bags (100 Pack)': 0,
+          '500ml Bottle Case': 0,
+          '1L Bottle Case': 0,
+          '2L Bottle Case': 0
+        })
+      }
+    } catch (e) {
+      console.error('loadActiveDispatch error:', e)
+    }
+  }
+
+  async function handleCreateDispatch() {
+    if (!selectedRoute || !selectedDriverId || !vehicleNumber) {
+      alert('Please configure Driver and Vehicle Number first!')
+      return
+    }
+    const itemsList = Object.entries(dispatchItems)
+      .map(([name, qty]) => ({ product_name: name, quantity: qty }))
+      .filter(item => item.quantity > 0)
+    
+    if (itemsList.length === 0) {
+      alert('Please load at least one product with quantity > 0!')
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('route_dispatches')
+        .insert({
+          route_id: selectedRoute.id,
+          driver_id: selectedDriverId,
+          date: tripDate,
+          items: itemsList,
+          status: 'dispatched',
+          issued_by: 'Admin'
+        })
+        .select()
+        .single()
+
+      if (!error && data) {
+        setActiveDispatch(data)
+        alert('🎉 Route Dispatch Loading Sheet created successfully!')
+      } else {
+        alert(error?.message || 'Failed to create dispatch.')
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   async function loadRouteStops(routeId: string) {
     try {
       const [stopsRes, custsRes] = await Promise.all([
@@ -134,7 +228,9 @@ export default function NonLocalRoutesPage() {
             quantity: cConf?.default_qty || 0,
             rate: Number(cConf?.default_rate) || 15.00,
             cashPaid: 0,
-            upiPaid: 0
+            upiPaid: 0,
+            returnedQty: 0,
+            leakedQty: 0
           }
         })
       }
@@ -146,39 +242,34 @@ export default function NonLocalRoutesPage() {
 
   async function loadRouteHistory(routeId: string) {
     try {
-      const [salesRes, expsRes] = await Promise.all([
-        supabase
-          .from('route_sales')
-          .select('id, sale_date, driver_id, product_name, quantity, total_amount, due_amount, cash_paid, upi_paid, drivers(name)')
-          .eq('route_id', routeId)
-          .order('sale_date', { ascending: false }),
-        supabase
-          .from('route_expenses')
-          .select('expense_date, driver_id, fuel_charges, driver_bata, other_expenses')
-          .eq('route_id', routeId)
-      ])
+      const { data: runs, error } = await supabase
+        .from('route_runs')
+        .select('*, drivers(name)')
+        .eq('route_id', routeId)
+        .order('date', { ascending: false })
 
-      const sales = salesRes.data
-      const exps = expsRes.data
-
-      // Merge history logs
-      const merged = sales?.map(s => {
-        const matchingExp = exps?.find(e => e.expense_date === s.sale_date && e.driver_id === s.driver_id)
-        return {
-          id: s.id,
-          date: s.sale_date,
-          driver: (Array.isArray(s.drivers) ? s.drivers[0]?.name : (s.drivers as any)?.name) || 'Nagaraju',
-          product: s.product_name,
-          qty: s.quantity,
-          sales: s.total_amount,
-          expenses: matchingExp ? (Number(matchingExp.fuel_charges) + Number(matchingExp.driver_bata) + Number(matchingExp.other_expenses)) : 0,
-          due: s.due_amount,
-          netCollection: s.total_amount - s.due_amount
-        }
-      })
-      setHistoryLogs(merged || [])
+      if (!error && runs) {
+        const formatted = runs.map(r => {
+          // Count total quantity sold across all stops
+          const totalQty = r.stops ? r.stops.reduce((sum: number, s: any) => sum + (Number(s.quantity) || 0), 0) : 0
+          return {
+            id: r.id,
+            date: r.date,
+            driver: r.drivers?.name || 'Nagaraju',
+            product: r.stops && r.stops.length > 0 ? r.stops[0].productName : 'Multiple',
+            qty: totalQty,
+            sales: Number(r.total_sales) || 0,
+            expenses: Number(r.total_expenses) || 0,
+            due: Math.max(0, (Number(r.total_sales) || 0) - ((Number(r.net_collection) || 0) + (Number(r.total_expenses) || 0))),
+            netCollection: Number(r.net_collection) || 0
+          }
+        })
+        setHistoryLogs(formatted)
+      } else {
+        setHistoryLogs([])
+      }
     } catch (e) {
-      console.error(e)
+      console.error('loadRouteHistory error:', e)
     }
   }
 
@@ -231,9 +322,40 @@ export default function NonLocalRoutesPage() {
       return
     }
 
+    // 1. Crosscheck Dispatch vs Accounted Stop Sheet quantities (Task 2)
+    const stopTotals: Record<string, { sold: number; returned: number; leaked: number }> = {}
+    Object.values(stopEntries).forEach(e => {
+      if (!stopTotals[e.productName]) {
+        stopTotals[e.productName] = { sold: 0, returned: 0, leaked: 0 }
+      }
+      stopTotals[e.productName].sold += Number(e.quantity) || 0
+      stopTotals[e.productName].returned += Number(e.returnedQty) || 0
+      stopTotals[e.productName].leaked += Number(e.leakedQty) || 0
+    })
+
+    const discrepancies: string[] = []
+    if (activeDispatch) {
+      activeDispatch.items.forEach((item: any) => {
+        const totals = stopTotals[item.product_name] || { sold: 0, returned: 0, leaked: 0 }
+        const accounted = totals.sold + totals.returned + totals.leaked
+        if (accounted !== item.quantity) {
+          discrepancies.push(
+            `• ${item.product_name}: Dispatched ${item.quantity}, but accounted for ${accounted} (Sold: ${totals.sold}, Returned: ${totals.returned}, Leaked: ${totals.leaked}). Difference of ${item.quantity - accounted}.`
+          )
+        }
+      })
+    }
+
+    if (discrepancies.length > 0) {
+      const proceed = window.confirm(
+        `⚠️ DISPATCH RECONCILIATION MISMATCH:\n\n${discrepancies.join('\n')}\n\nDo you want to proceed and save anyway?`
+      )
+      if (!proceed) return
+    }
+
     setSavingRoute(true)
     try {
-      // 1. Loop and save stop sales
+      // 2. Loop and save stop sales
       for (const [stopId, entry] of Object.entries(stopEntries)) {
         if (entry.quantity <= 0) continue // Skip unbilled stops
 
@@ -265,7 +387,7 @@ export default function NonLocalRoutesPage() {
         }
       }
 
-      // 2. Save Route Expenses
+      // 3. Save Route Expenses
       const totalExpenses = Number(fuelCharges) + Number(driverBata) + Number(otherExpenses)
       if (totalExpenses > 0) {
         const { error: expErr } = await supabase
@@ -286,7 +408,38 @@ export default function NonLocalRoutesPage() {
         }
       }
 
-      alert('🎉 Route Trip Record Locked & Saved Successfully!')
+      // 4. Save Route Run Settlement (Task 2)
+      const totalReturned = Object.values(stopEntries).reduce((sum, e) => sum + (Number(e.returnedQty) || 0), 0)
+      const totalLeaked = Object.values(stopEntries).reduce((sum, e) => sum + (Number(e.leakedQty) || 0), 0)
+
+      const { error: runError } = await supabase
+        .from('route_runs')
+        .insert({
+          route_id: selectedRoute.id,
+          driver_id: selectedDriverId,
+          date: tripDate,
+          dispatch_id: activeDispatch?.id || null,
+          stops: Object.values(stopEntries),
+          total_sales: totals.totalSales,
+          total_returned: totalReturned,
+          total_leaked: totalLeaked,
+          total_expenses: totalExpenses,
+          net_collection: totals.netCollection
+        })
+
+      if (runError) {
+        console.error('Save route run settlement error:', runError.message)
+      }
+
+      // 5. Update Dispatch Status
+      if (activeDispatch) {
+        await supabase
+          .from('route_dispatches')
+          .update({ status: 'reconciled' })
+          .eq('id', activeDispatch.id)
+      }
+
+      alert('🎉 Route Trip Record Reconciled, Locked & Saved Successfully!')
       // Reset forms
       setFuelCharges(0)
       setDriverBata(0)
@@ -295,6 +448,7 @@ export default function NonLocalRoutesPage() {
       setVehicleNumber('')
       loadRouteStops(selectedRoute.id)
       loadRouteHistory(selectedRoute.id)
+      loadActiveDispatch(selectedRoute.id, tripDate)
     } catch (e) {
       console.error(e)
     } finally {
@@ -534,6 +688,57 @@ export default function NonLocalRoutesPage() {
         </div>
       </div>
 
+      {/* ROUTE DISPATCH CONFIGURATOR PANEL (Task 1) */}
+      <div className="glass-card-3d" style={{ padding: '2rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+          <div>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>
+              {activeDispatch ? '✅ Dispatch Issued' : '📦 Route Dispatch Loading Config'}
+            </h3>
+            <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'hsl(215 20% 65%)' }}>
+              {activeDispatch ? 'Stock is dispatched and loaded onto vehicle.' : 'Configure quantities issued to driver before route start.'}
+            </p>
+          </div>
+          {activeDispatch && (
+            <button className="btn btn-secondary btn-sm" onClick={() => window.print()}>
+              🖨️ Print Dispatch Loading Sheet
+            </button>
+          )}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+          {Object.entries(dispatchItems).map(([prodName, qty]) => (
+            <div key={prodName} className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '0.75rem' }}>{prodName}</label>
+              {activeDispatch ? (
+                <div className="form-input font-mono" style={{ background: 'rgba(255,255,255,0.03)', opacity: 0.8, display: 'flex', alignItems: 'center' }}>
+                  {qty} units
+                </div>
+              ) : (
+                <input 
+                  type="number" 
+                  className="form-input font-mono" 
+                  placeholder="0" 
+                  value={qty === 0 ? '' : qty} 
+                  onChange={e => setDispatchItems(prev => ({
+                    ...prev,
+                    [prodName]: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value))
+                  }))} 
+                />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {!activeDispatch && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button className="btn btn-primary" onClick={handleCreateDispatch}>
+              📦 Save & Issue Dispatch Sheet
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* DAILY STOP SHEET INVOICING PANEL */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
         <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
@@ -556,11 +761,13 @@ export default function NonLocalRoutesPage() {
                   <tr>
                     <th>Stop Name</th>
                     <th>Product description</th>
-                    <th style={{ width: '120px' }}>Quantity</th>
-                    <th style={{ width: '120px' }}>Rate (₹)</th>
+                    <th style={{ width: '100px' }}>Quantity</th>
+                    <th style={{ width: '100px' }}>Rate (₹)</th>
                     <th style={{ textAlign: 'right' }}>Total (₹)</th>
-                    <th style={{ width: '130px' }}>Cash Paid (₹)</th>
-                    <th style={{ width: '130px' }}>UPI Paid (₹)</th>
+                    <th style={{ width: '110px' }}>Cash Paid (₹)</th>
+                    <th style={{ width: '110px' }}>UPI Paid (₹)</th>
+                    <th style={{ width: '100px' }}>Returned</th>
+                    <th style={{ width: '100px' }}>Leaked</th>
                     <th style={{ textAlign: 'right' }}>Dues (₹)</th>
                   </tr>
                 </thead>
@@ -572,7 +779,9 @@ export default function NonLocalRoutesPage() {
                       quantity: 0,
                       rate: 15,
                       cashPaid: 0,
-                      upiPaid: 0
+                      upiPaid: 0,
+                      returnedQty: 0,
+                      leakedQty: 0
                     }
                     const total = entry.quantity * entry.rate
                     const collected = Number(entry.cashPaid) + Number(entry.upiPaid)
@@ -592,17 +801,23 @@ export default function NonLocalRoutesPage() {
                           </select>
                         </td>
                         <td>
-                          <input type="number" className="form-input" style={{ padding: '0.4rem 0.625rem' }} value={entry.quantity || ''} placeholder="0" onChange={e => updateStopEntry(s.id, 'quantity', Math.max(0, Number(e.target.value)))} />
+                          <input type="number" className="form-input" style={{ padding: '0.4rem 0.625rem' }} value={entry.quantity === 0 ? '' : entry.quantity} placeholder="0" onChange={e => updateStopEntry(s.id, 'quantity', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} />
                         </td>
                         <td>
-                          <input type="number" className="form-input" style={{ padding: '0.4rem 0.625rem' }} value={entry.rate || ''} placeholder="0" onChange={e => updateStopEntry(s.id, 'rate', Math.max(0, Number(e.target.value)))} />
+                          <input type="number" className="form-input" style={{ padding: '0.4rem 0.625rem' }} value={entry.rate === 0 ? '' : entry.rate} placeholder="0" onChange={e => updateStopEntry(s.id, 'rate', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} />
                         </td>
                         <td style={{ textAlign: 'right', fontWeight: '700' }}>₹{total}</td>
                         <td>
-                          <input type="number" className="form-input" style={{ padding: '0.4rem 0.625rem', borderColor: 'rgba(52,211,153,0.3)' }} value={entry.cashPaid || ''} placeholder="0" onChange={e => updateStopEntry(s.id, 'cashPaid', Math.max(0, Number(e.target.value)))} />
+                          <input type="number" className="form-input" style={{ padding: '0.4rem 0.625rem', borderColor: 'rgba(52,211,153,0.3)' }} value={entry.cashPaid === 0 ? '' : entry.cashPaid} placeholder="0" onChange={e => updateStopEntry(s.id, 'cashPaid', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} />
                         </td>
                         <td>
-                          <input type="number" className="form-input" style={{ padding: '0.4rem 0.625rem', borderColor: 'rgba(96,165,250,0.3)' }} value={entry.upiPaid || ''} placeholder="0" onChange={e => updateStopEntry(s.id, 'upiPaid', Math.max(0, Number(e.target.value)))} />
+                          <input type="number" className="form-input" style={{ padding: '0.4rem 0.625rem', borderColor: 'rgba(96,165,250,0.3)' }} value={entry.upiPaid === 0 ? '' : entry.upiPaid} placeholder="0" onChange={e => updateStopEntry(s.id, 'upiPaid', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} />
+                        </td>
+                        <td>
+                          <input type="number" className="form-input" style={{ padding: '0.4rem 0.625rem' }} value={entry.returnedQty === 0 ? '' : entry.returnedQty} placeholder="0" onChange={e => updateStopEntry(s.id, 'returnedQty', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} />
+                        </td>
+                        <td>
+                          <input type="number" className="form-input" style={{ padding: '0.4rem 0.625rem' }} value={entry.leakedQty === 0 ? '' : entry.leakedQty} placeholder="0" onChange={e => updateStopEntry(s.id, 'leakedQty', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} />
                         </td>
                         <td style={{ textAlign: 'right', color: due > 0 ? '#f87171' : '#34d399', fontWeight: '700' }}>
                           ₹{due}
@@ -627,15 +842,15 @@ export default function NonLocalRoutesPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
             <div className="form-group">
               <label className="form-label">Fuel Charges (₹)</label>
-              <input type="number" className="form-input" placeholder="0" value={fuelCharges || ''} onChange={e => setFuelCharges(Math.max(0, Number(e.target.value)))} />
+              <input type="number" className="form-input" placeholder="0" value={fuelCharges === 0 ? '' : fuelCharges} onChange={e => setFuelCharges(e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} />
             </div>
             <div className="form-group">
               <label className="form-label">Driver Bata (₹)</label>
-              <input type="number" className="form-input" placeholder="0" value={driverBata || ''} onChange={e => setDriverBata(Math.max(0, Number(e.target.value)))} />
+              <input type="number" className="form-input" placeholder="0" value={driverBata === 0 ? '' : driverBata} onChange={e => setDriverBata(e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} />
             </div>
             <div className="form-group">
               <label className="form-label">Other Expenses (₹)</label>
-              <input type="number" className="form-input" placeholder="0" value={otherExpenses || ''} onChange={e => setOtherExpenses(Math.max(0, Number(e.target.value)))} />
+              <input type="number" className="form-input" placeholder="0" value={otherExpenses === 0 ? '' : otherExpenses} onChange={e => setOtherExpenses(e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} />
             </div>
           </div>
 
@@ -729,6 +944,57 @@ export default function NonLocalRoutesPage() {
           </table>
         </div>
       </div>
+
+      {/* PRINTABLE DISPATCH SHEET TEMPLATE (Task 1) */}
+      {activeDispatch && (
+        <div id="printable-dispatch" className="print-a4" style={{ display: 'none', background: '#fff', color: '#000', padding: '2rem' }}>
+          <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+            <h1 style={{ fontSize: '1.8rem', fontWeight: '800', margin: '0 0 0.5rem 0', color: '#000' }}>ROYAL KISSAN</h1>
+            <p style={{ margin: 0, fontSize: '0.9rem', color: '#444' }}>PACKAGED DRINKING WATER</p>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: '700', borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '0.4rem 0', margin: '1rem 0', color: '#000' }}>
+              ROUTE DISPATCH LOADING SHEET
+            </h2>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '2rem', fontSize: '0.95rem', color: '#000' }}>
+            <div>
+              <strong>Route Name:</strong> {selectedRoute?.name}<br />
+              <strong>Driver Assigned:</strong> {drivers.find(d => d.id === activeDispatch.driver_id)?.name || 'Nagaraju'}<br />
+            </div>
+            <div>
+              <strong>Date:</strong> {activeDispatch.date}<br />
+              <strong>Vehicle Number:</strong> {vehicleNumber || '—'}<br />
+              <strong>Issued By:</strong> {activeDispatch.issued_by || 'Admin'}
+            </div>
+          </div>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '3rem', color: '#000' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #000' }}>
+                <th style={{ textAlign: 'left', padding: '0.5rem 0' }}>Product description</th>
+                <th style={{ textAlign: 'right', padding: '0.5rem 0' }}>Quantity Loaded</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activeDispatch.items.map((item: any, idx: number) => (
+                <tr key={idx} style={{ borderBottom: '1px solid #ccc' }}>
+                  <td style={{ padding: '0.75rem 0' }}>{item.product_name}</td>
+                  <td style={{ textAlign: 'right', padding: '0.75rem 0', fontWeight: '700' }}>{item.quantity}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4rem', marginTop: '4rem', color: '#000' }}>
+            <div style={{ textAlign: 'center', borderTop: '1px solid #000', paddingTop: '0.5rem' }}>
+              Driver Signature
+            </div>
+            <div style={{ textAlign: 'center', borderTop: '1px solid #000', paddingTop: '0.5rem' }}>
+              Authorized Issuer Signature
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )
