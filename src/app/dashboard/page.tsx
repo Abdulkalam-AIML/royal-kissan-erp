@@ -21,7 +21,7 @@ import {
 const DashboardCharts = dynamic(() => import('@/components/dashboard/DashboardCharts'), {
   ssr: false,
   loading: () => (
-    <div style={{ height: '320px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card-bg)', borderRadius: '1rem', border: '1px solid hsl(217 32% 14%)', marginBottom: '2rem' }}>
+    <div style={{ height: '320px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(16, 14, 10, 0.75)', borderRadius: '1rem', border: '1px solid rgba(201, 162, 39, 0.12)', marginBottom: '2rem' }}>
       <span className="loading-spinner" />
     </div>
   )
@@ -67,21 +67,21 @@ function DashboardSkeleton() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
         {[...Array(4)].map((_, i) => (
           <div key={i} className="animate-pulse" style={{
-            background: 'rgba(15, 23, 42, 0.45)',
-            border: '1px solid rgba(255, 255, 255, 0.05)',
+            background: 'rgba(20, 17, 12, 0.6)',
+            border: '1px solid rgba(201, 162, 39, 0.15)',
             borderRadius: '1rem',
             padding: '1.5rem',
-            height: '130px',
+            height: '135px',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ height: '12px', width: '90px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px' }} />
-              <div style={{ height: '24px', width: '24px', background: 'rgba(255,255,255,0.06)', borderRadius: '6px' }} />
+              <div style={{ height: '12px', width: '90px', background: 'rgba(201, 162, 39, 0.15)', borderRadius: '4px' }} />
+              <div style={{ height: '24px', width: '24px', background: 'rgba(201, 162, 39, 0.15)', borderRadius: '6px' }} />
             </div>
-            <div style={{ height: '28px', width: '150px', background: 'rgba(255,255,255,0.08)', borderRadius: '6px', marginTop: '12px' }} />
-            <div style={{ height: '10px', width: '180px', background: 'rgba(255,255,255,0.04)', borderRadius: '4px', marginTop: '8px' }} />
+            <div style={{ height: '28px', width: '150px', background: 'rgba(201, 162, 39, 0.2)', borderRadius: '6px', marginTop: '12px' }} />
+            <div style={{ height: '10px', width: '180px', background: 'rgba(201, 162, 39, 0.1)', borderRadius: '4px', marginTop: '8px' }} />
           </div>
         ))}
       </div>
@@ -89,8 +89,8 @@ function DashboardSkeleton() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem' }}>
         {[...Array(7)].map((_, i) => (
           <div key={i} className="animate-pulse" style={{
-            background: 'rgba(15, 23, 42, 0.25)',
-            border: '1px solid rgba(255, 255, 255, 0.03)',
+            background: 'rgba(16, 14, 10, 0.5)',
+            border: '1px solid rgba(201, 162, 39, 0.08)',
             borderRadius: '0.75rem',
             padding: '1.25rem',
             height: '110px',
@@ -98,19 +98,11 @@ function DashboardSkeleton() {
             flexDirection: 'column',
             justifyContent: 'space-between'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ height: '10px', width: '80px', background: 'rgba(255,255,255,0.04)', borderRadius: '4px' }} />
-              <div style={{ height: '16px', width: '16px', background: 'rgba(255,255,255,0.04)', borderRadius: '4px' }} />
-            </div>
-            <div style={{ height: '20px', width: '100px', background: 'rgba(255,255,255,0.06)', borderRadius: '6px', marginTop: '8px' }} />
-            <div style={{ height: '8px', width: '110px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px', marginTop: '6px' }} />
+            <div style={{ height: '10px', width: '80px', background: 'rgba(255, 255, 255, 0.06)', borderRadius: '4px' }} />
+            <div style={{ height: '20px', width: '110px', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px' }} />
+            <div style={{ height: '8px', width: '90px', background: 'rgba(255, 255, 255, 0.04)', borderRadius: '4px' }} />
           </div>
         ))}
-      </div>
-      {/* Charts row skeleton */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem', marginTop: '0.5rem' }}>
-        <div style={{ height: '350px', background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(255, 255, 255, 0.04)', borderRadius: '1.25rem' }} className="animate-pulse" />
-        <div style={{ height: '350px', background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(255, 255, 255, 0.04)', borderRadius: '1.25rem' }} className="animate-pulse" />
       </div>
     </div>
   )
@@ -125,141 +117,107 @@ export default function DashboardPage() {
     driverSales: { nagaraju: 0, driver2: 0 },
     dealerSales: 0, companySales: 0,
     localRouteSales: 0, nonLocalRouteSales: 0,
-    pendingDues: [], driverPerformance: [], routePerformance: [],
-    todayCans: 0, todayBottles: 0, todayBags: 0, todayOthers: 0,
+    pendingDues: [],
+    driverPerformance: [],
+    routePerformance: [],
+    todayCans: 0,
+    todayBottles: 0,
+    todayBags: 0,
+    todayOthers: 0,
     driverLeaderboardList: []
   })
+  
+  const [countStats, setCountStats] = useState({
+    todaySales: 0,
+    todayDue: 0
+  })
 
-  const [countStats, setCountStats] = useState({ todaySales: 0, todayCollection: 0, todayDue: 0 })
   const [loading, setLoading] = useState(true)
   const [isMounted, setIsMounted] = useState(false)
-  const [authReady, setAuthReady] = useState(false)
   const [showRetry, setShowRetry] = useState(false)
   const supabase = createClient()
 
   useEffect(() => {
     setIsMounted(true)
-    const checkSession = async () => {
-      try {
-        await supabase.auth.getSession()
-        setAuthReady(true)
-      } catch (err) {
-        console.error('Session check error:', err)
-        setAuthReady(true) // Proceed anyway to avoid infinite hang
-      }
-    }
-    checkSession()
+    loadDashboardData()
   }, [])
 
-  useEffect(() => {
-    if (authReady) {
-      loadDashboardData()
-    }
-  }, [authReady])
-
+  // Smooth counter animation for hero KPI cards
   useEffect(() => {
     if (loading) return
-    const duration = 1000
-    const steps = 30
-    const stepTime = duration / steps
-    let currentStep = 0
-    const timer = setInterval(() => {
-      currentStep++
+    const duration = 800
+    const startTime = performance.now()
+
+    const animate = (now: number) => {
+      const elapsed = now - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      const easeOut = 1 - Math.pow(1 - progress, 3)
+
       setCountStats({
-        todaySales: Math.floor((stats.todaySales / steps) * currentStep),
-        todayCollection: Math.floor((stats.todayCollection / steps) * currentStep),
-        todayDue: Math.floor((stats.todayDue / steps) * currentStep),
+        todaySales: Math.round(stats.todaySales * easeOut),
+        todayDue: Math.round(stats.todayDue * easeOut)
       })
-      if (currentStep >= steps) {
-        setCountStats({ todaySales: stats.todaySales, todayCollection: stats.todayCollection, todayDue: stats.todayDue })
-        clearInterval(timer)
+
+      if (progress < 1) {
+        requestAnimationFrame(animate)
       }
-    }, stepTime)
-    return () => clearInterval(timer)
-  }, [stats, loading])
+    }
+
+    requestAnimationFrame(animate)
+  }, [loading, stats.todaySales, stats.todayDue])
 
   async function loadDashboardData() {
     setLoading(true)
     setShowRetry(false)
-    let isTimedOut = false
+
     const timeoutId = setTimeout(() => {
-      isTimedOut = true
-      setLoading(false)
       setShowRetry(true)
-      console.warn('Dashboard data fetch timed out after 8 seconds.')
-    }, 8000)
+    }, 6000)
 
     try {
-      const today = new Date().toLocaleDateString('en-CA')
+      const today = new Date().toISOString().split('T')[0]
       const currentMonth = new Date().getMonth() + 1
       const currentYear = new Date().getFullYear()
       const firstDayOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`
 
-      // Route Sales — Today
-      const { data: todayRouteSales, error: err1 } = await supabase
-        .from('route_sales')
-        .select('total_amount, due_amount, cash_paid, upi_paid, driver_id, route_id, product_name, quantity')
-        .eq('sale_date', today)
-      console.log('todayRouteSales:', { data: todayRouteSales, error: err1 })
+      // Execute all 10 dashboard queries in parallel (FAST-WIN QUERY OPTIMIZATION)
+      const [
+        todayRouteSalesRes,
+        todayBillsRes,
+        todayBillItemsRes,
+        monthlyRouteSalesRes,
+        monthlyBillsRes,
+        expensesRes,
+        duesRes,
+        driverPerfRes,
+        routePerfRes,
+        allDriversRes
+      ] = await Promise.all([
+        supabase.from('route_sales').select('total_amount, due_amount, cash_paid, upi_paid, driver_id, route_id, product_name, quantity').eq('sale_date', today),
+        supabase.from('bills').select('total_amount, due_amount, cash_amount, upi_amount, paid_amount, bill_type, driver_id, route_id').eq('date', today),
+        supabase.from('bill_items').select('quantity, product_name, bills!inner(date)').eq('bills.date', today),
+        supabase.from('route_sales').select('total_amount, due_amount, cash_paid, upi_paid, driver_id, route_id').gte('sale_date', firstDayOfMonth),
+        supabase.from('bills').select('total_amount, due_amount, cash_amount, upi_amount, paid_amount, bill_type').gte('date', firstDayOfMonth),
+        supabase.from('expenses').select('amount'),
+        supabase.from('customer_dues').select('id, customer_name, due_amount, route_id, routes(name)').gt('due_amount', 0).order('due_amount', { ascending: false }).limit(5),
+        supabase.from('driver_performance').select('total_sales, total_collected, total_due, driver_id, drivers(name)').order('performance_date', { ascending: false }).limit(10),
+        supabase.from('route_performance').select('total_sales, total_collected, total_due, route_id, routes(name)').order('performance_date', { ascending: false }).limit(10),
+        supabase.from('drivers').select('id, name')
+      ])
 
-      // Bills — Today (company/dealer sales)
-      const { data: todayBills, error: err2 } = await supabase
-        .from('bills')
-        .select('total_amount, due_amount, cash_amount, upi_amount, paid_amount, bill_type, driver_id, route_id')
-        .eq('date', today)
-      console.log('todayBills:', { data: todayBills, error: err2 })
+      const todayRouteSales = todayRouteSalesRes.data
+      const todayBills = todayBillsRes.data
+      const todayBillItems = todayBillItemsRes.data
+      const monthlyRouteSales = monthlyRouteSalesRes.data
+      const monthlyBills = monthlyBillsRes.data
+      const expensesData = expensesRes.data
+      const duesData = duesRes.data
+      const driverPerfData = driverPerfRes.data
+      const routePerfData = routePerfRes.data
+      const allDrivers = allDriversRes.data
 
-      // Bill Items — Today
-      const { data: todayBillItems } = await supabase
-        .from('bill_items')
-        .select('quantity, product_name, bills!inner(date)')
-        .eq('bills.date', today)
-
-      // Route Sales — Monthly
-      const { data: monthlyRouteSales, error: err3 } = await supabase
-        .from('route_sales')
-        .select('total_amount, due_amount, cash_paid, upi_paid, driver_id, route_id')
-        .gte('sale_date', firstDayOfMonth)
-      console.log('monthlyRouteSales:', { data: monthlyRouteSales, error: err3 })
-
-      // Bills — Monthly
-      const { data: monthlyBills, error: err4 } = await supabase
-        .from('bills')
-        .select('total_amount, due_amount, cash_amount, upi_amount, paid_amount, bill_type')
-        .gte('date', firstDayOfMonth)
-      console.log('monthlyBills:', { data: monthlyBills, error: err4 })
-
-      // Expenses
-      const { data: expensesData, error: err5 } = await supabase.from('expenses').select('amount')
-      console.log('expensesData:', { data: expensesData, error: err5 })
       const totalExpenses = expensesData?.reduce((s, e) => s + (Number(e.amount) || 0), 0) || 0
 
-      // Pending Dues
-      const { data: duesData, error: err6 } = await supabase
-        .from('customer_dues')
-        .select('id, customer_name, due_amount, route_id, routes(name)')
-        .gt('due_amount', 0)
-        .order('due_amount', { ascending: false })
-        .limit(5)
-      console.log('duesData:', { data: duesData, error: err6 })
-
-      // Driver Performance
-      const { data: driverPerfData, error: err7 } = await supabase
-        .from('driver_performance')
-        .select('total_sales, total_collected, total_due, driver_id, drivers(name)')
-        .order('performance_date', { ascending: false })
-        .limit(10)
-      console.log('driverPerfData:', { data: driverPerfData, error: err7 })
-
-      // Route Performance
-      const { data: routePerfData, error: err8 } = await supabase
-        .from('route_performance')
-        .select('total_sales, total_collected, total_due, route_id, routes(name)')
-        .order('performance_date', { ascending: false })
-        .limit(10)
-      console.log('routePerfData:', { data: routePerfData, error: err8 })
-
-      // --- Aggregate Today Stats & Quantities ---
       let tSales = 0, tDue = 0, tCollection = 0, tCash = 0, tUPI = 0
       let nagarajuSales = 0, driver2Sales = 0
       let dealerSales = 0, companySales = 0
@@ -278,11 +236,7 @@ export default function DashboardPage() {
         else othersSold += qty
       }
 
-      // Initialize leaderboard maps
       const driverLeaderboardMap: Record<string, { name: string; sales: number; units: number }> = {}
-
-      // Fetch driver mapping dynamically (we can map from all drivers returned or hardcoded fallback)
-      const { data: allDrivers } = await supabase.from('drivers').select('id, name')
       allDrivers?.forEach(d => {
         driverLeaderboardMap[d.id] = { name: d.name, sales: 0, units: 0 }
       })
@@ -336,7 +290,6 @@ export default function DashboardPage() {
         }
       })
 
-      // Aggregate today's bill item quantities
       todayBillItems?.forEach(item => {
         const qty = Number(item.quantity) || 0
         categorize(item.product_name || '', qty)
@@ -346,7 +299,6 @@ export default function DashboardPage() {
         .filter(d => d.sales > 0 || d.units > 0)
         .sort((a, b) => b.sales - a.sales)
 
-      // --- Aggregate Monthly Stats ---
       let mSales = 0, mDue = 0, mCollection = 0
       monthlyRouteSales?.forEach(s => {
         mSales += Number(s.total_amount) || 0
@@ -359,23 +311,26 @@ export default function DashboardPage() {
         mCollection += Number(b.paid_amount) || 0
       })
 
-      // --- Build driver/route performance ---
-      const driverSummaryMap: Record<string, any> = {}
-      driverPerfData?.forEach(p => {
-        const dName = (Array.isArray(p.drivers) ? p.drivers[0]?.name : (p.drivers as any)?.name) || 'Unknown'
-        if (!driverSummaryMap[dName]) driverSummaryMap[dName] = { name: dName, sales: 0, collected: 0, dues: 0 }
-        driverSummaryMap[dName].sales += Number(p.total_sales) || 0
-        driverSummaryMap[dName].collected += Number(p.total_collected) || 0
-        driverSummaryMap[dName].dues += Number(p.total_due) || 0
+      const driverSummaryMap: Record<string, { name: string; sales: number; collected: number; dues: number }> = {}
+      driverPerfData?.forEach(dp => {
+        const dName = (Array.isArray(dp.drivers) ? dp.drivers[0]?.name : (dp.drivers as any)?.name) || 'Unknown Driver'
+        if (!driverSummaryMap[dName]) {
+          driverSummaryMap[dName] = { name: dName, sales: 0, collected: 0, dues: 0 }
+        }
+        driverSummaryMap[dName].sales += Number(dp.total_sales) || 0
+        driverSummaryMap[dName].collected += Number(dp.total_collected) || 0
+        driverSummaryMap[dName].dues += Number(dp.total_due) || 0
       })
 
-      const routeSummaryMap: Record<string, any> = {}
-      routePerfData?.forEach(p => {
-        const rName = (Array.isArray(p.routes) ? p.routes[0]?.name : (p.routes as any)?.name) || 'Unknown'
-        if (!routeSummaryMap[rName]) routeSummaryMap[rName] = { name: rName, sales: 0, collected: 0, dues: 0 }
-        routeSummaryMap[rName].sales += Number(p.total_sales) || 0
-        routeSummaryMap[rName].collected += Number(p.total_collected) || 0
-        routeSummaryMap[rName].dues += Number(p.total_due) || 0
+      const routeSummaryMap: Record<string, { name: string; sales: number; collected: number; dues: number }> = {}
+      routePerfData?.forEach(rp => {
+        const rName = (Array.isArray(rp.routes) ? rp.routes[0]?.name : (rp.routes as any)?.name) || 'Unknown Route'
+        if (!routeSummaryMap[rName]) {
+          routeSummaryMap[rName] = { name: rName, sales: 0, collected: 0, dues: 0 }
+        }
+        routeSummaryMap[rName].sales += Number(rp.total_sales) || 0
+        routeSummaryMap[rName].collected += Number(rp.total_collected) || 0
+        routeSummaryMap[rName].dues += Number(rp.total_due) || 0
       })
 
       const fallbackDrivers = [
@@ -410,9 +365,7 @@ export default function DashboardPage() {
       console.error('Error loading dashboard stats:', err)
     } finally {
       clearTimeout(timeoutId)
-      if (!isTimedOut) {
-        setLoading(false)
-      }
+      setLoading(false)
     }
   }
 
@@ -433,10 +386,10 @@ export default function DashboardPage() {
   }))
 
   const heroCards = [
-    { label: "Today's Sales", value: formatCurrency(countStats.todaySales), icon: Receipt, color: '#fff', borderAccent: 'rgba(56, 189, 248, 0.15)', sub: 'All routes combined' },
-    { label: 'Month Sales', value: formatCurrency(stats.monthlySales), icon: TrendingUp, color: '#fff', borderAccent: 'rgba(129, 140, 248, 0.15)', sub: 'Current month total' },
-    { label: "Today's Due", value: formatCurrency(countStats.todayDue), icon: AlertCircle, color: stats.todayDue > 0 ? '#f87171' : '#34d399', borderAccent: stats.todayDue > 0 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)', sub: stats.todayDue > 0 ? 'Requires follow-up' : 'All clear' },
-    { label: 'Month Due', value: formatCurrency(stats.monthlyDue), icon: AlertTriangle, color: stats.monthlyDue > 0 ? '#fb923c' : '#34d399', borderAccent: stats.monthlyDue > 0 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)', sub: 'Pending this month' },
+    { label: "Today's Sales", value: formatCurrency(countStats.todaySales), icon: Receipt, color: '#dfb638', sub: 'All routes combined' },
+    { label: 'Month Sales', value: formatCurrency(stats.monthlySales), icon: TrendingUp, color: '#dfb638', sub: 'Current month total' },
+    { label: "Today's Due", value: formatCurrency(countStats.todayDue), icon: AlertCircle, color: stats.todayDue > 0 ? '#f87171' : '#34d399', sub: stats.todayDue > 0 ? 'Requires follow-up' : 'All clear' },
+    { label: 'Month Due', value: formatCurrency(stats.monthlyDue), icon: AlertTriangle, color: stats.monthlyDue > 0 ? '#fb923c' : '#34d399', sub: 'Pending this month' },
   ]
 
   const secondaryCards = [
@@ -453,27 +406,28 @@ export default function DashboardPage() {
     <ErrorBoundary>
       <div className="animate-fade-in" style={{ padding: '0.25rem' }}>
 
-      {/* HERO BANNER */}
+      {/* HERO BANNER - LEVEL 2 BLACK & GOLD */}
       <div style={{
         borderRadius: '1.5rem', padding: '2.5rem 2rem', marginBottom: '2rem',
-        background: 'linear-gradient(135deg, rgba(60, 44, 8, 0.65) 0%, rgba(10, 8, 2, 0.85) 100%)',
-        border: '1px solid rgba(212, 175, 55, 0.15)',
-        boxShadow: '0 20px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(212, 175, 55, 0.08)',
+        background: 'linear-gradient(135deg, rgba(32, 26, 14, 0.85) 0%, rgba(14, 12, 8, 0.95) 100%)',
+        border: '1px solid rgba(201, 162, 39, 0.3)',
+        borderTop: '3px solid #c9a227',
+        boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 30px rgba(201,162,39,0.12)',
         position: 'relative', overflow: 'hidden'
       }}>
-        <div style={{ position: 'absolute', top: '-50%', right: '-20%', width: '400px', height: '400px', borderRadius: '50%', background: 'radial-gradient(circle, hsla(46,65%,52%,0.12) 0%, transparent 75%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', top: '-50%', right: '-20%', width: '400px', height: '400px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(201,162,39,0.15) 0%, transparent 75%)', pointerEvents: 'none' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1.5rem', position: 'relative', zIndex: 1 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-              <span className="badge badge-info" style={{ letterSpacing: '0.05em', background: 'rgba(212,175,55,0.12)', color: '#d4af37', borderColor: 'rgba(212,175,55,0.3)' }}>PREMIUM ENTERPRISE</span>
-              <span style={{ fontSize: '0.8125rem', color: 'hsl(142 71% 55%)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} /> Live
+              <span className="badge badge-info" style={{ letterSpacing: '0.05em', background: 'rgba(201,162,39,0.15)', color: '#dfb638', borderColor: 'rgba(201,162,39,0.4)', fontWeight: '700' }}>LEVEL 2 BLACK & GOLD</span>
+              <span style={{ fontSize: '0.8125rem', color: 'hsl(142 71% 55%)', display: 'flex', alignItems: 'center', gap: '0.25rem', fontWeight: '600' }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} /> Live System
               </span>
             </div>
-            <h2 style={{ fontSize: '2.25rem', fontWeight: '800', margin: 0, letterSpacing: '-0.03em', background: 'linear-gradient(135deg, #ffffff 40%, #e8c84a 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            <h2 style={{ fontSize: '2.25rem', fontWeight: '800', margin: 0, letterSpacing: '-0.03em', background: 'linear-gradient(135deg, #ffffff 40%, #dfb638 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
               Royal Kissan ERP
             </h2>
-            <p style={{ fontSize: '0.925rem', color: 'hsl(215 20% 65%)', marginTop: '0.5rem' }}>
+            <p style={{ fontSize: '0.925rem', color: '#a39f93', marginTop: '0.5rem' }}>
               Real-time operations dashboard — {new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
           </div>
@@ -487,8 +441,8 @@ export default function DashboardPage() {
         <div style={{
           padding: '1.5rem',
           borderRadius: '1rem',
-          background: 'rgba(245,158,11,0.08)',
-          border: '1px solid rgba(245,158,11,0.2)',
+          background: 'rgba(201,162,39,0.1)',
+          border: '1px solid rgba(201,162,39,0.3)',
           color: '#fff',
           display: 'flex',
           justifyContent: 'space-between',
@@ -498,13 +452,13 @@ export default function DashboardPage() {
           gap: '1rem'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <AlertCircle style={{ width: '20px', height: '20px', color: '#fbbf24', flexShrink: 0 }} />
+            <AlertCircle style={{ width: '20px', height: '20px', color: '#dfb638', flexShrink: 0 }} />
             <div>
-              <h4 style={{ margin: 0, fontWeight: '700', color: '#fbbf24' }}>Connection taking longer than expected</h4>
-              <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: 'hsl(215 20% 65%)' }}>The session or queries might be experiencing slow network response.</p>
+              <h4 style={{ margin: 0, fontWeight: '700', color: '#dfb638' }}>Connection taking longer than expected</h4>
+              <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: '#a39f93' }}>The session or queries might be experiencing network delay.</p>
             </div>
           </div>
-          <button className="btn btn-primary" onClick={loadDashboardData} style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: 'none', borderRadius: '0.75rem', padding: '0.5rem 1.25rem' }}>
+          <button className="btn btn-primary" onClick={loadDashboardData} style={{ borderRadius: '0.75rem', padding: '0.5rem 1.25rem' }}>
             Retry Fetching Data
           </button>
         </div>
@@ -514,27 +468,23 @@ export default function DashboardPage() {
         <DashboardSkeleton />
       ) : (
         <>
-          {/* HERO KPI CARDS GRID */}
+          {/* LEVEL 2 HERO KPI CARDS GRID */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
             {heroCards.map((card, i) => (
-              <div key={i} className="stat-card" style={{
+              <div key={i} className="hero-stat-card" style={{
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'space-between',
-                background: 'rgba(15, 23, 42, 0.45)',
-                border: `1px solid ${card.borderAccent || 'rgba(255,255,255,0.06)'}`,
-                borderRadius: '1rem',
-                padding: '1.5rem',
-                height: '130px'
+                height: '135px'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'hsl(215 20% 65%)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{card.label}</span>
-                  <card.icon style={{ width: '20px', height: '20px', color: 'hsl(215 20% 55%)' }} />
+                  <span style={{ fontSize: '0.75rem', color: '#a39f93', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{card.label}</span>
+                  <card.icon style={{ width: '20px', height: '20px', color: '#c9a227' }} />
                 </div>
-                <div style={{ fontSize: '2.1rem', fontWeight: '800', color: card.color, letterSpacing: '-0.03em', lineHeight: 1, fontFamily: 'monospace', margin: '0.5rem 0 0.25rem' }}>
+                <div style={{ fontSize: '2.2rem', fontWeight: '800', color: card.color, letterSpacing: '-0.03em', lineHeight: 1, fontFamily: 'monospace', margin: '0.5rem 0 0.25rem' }}>
                   {card.value}
                 </div>
-                <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 50%)' }}>{card.sub}</div>
+                <div style={{ fontSize: '0.75rem', color: '#a39f93' }}>{card.sub}</div>
               </div>
             ))}
           </div>
@@ -546,236 +496,103 @@ export default function DashboardPage() {
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'space-between',
-                background: 'rgba(15, 23, 42, 0.25)',
-                border: '1px solid rgba(255,255,255,0.04)',
-                borderRadius: '0.75rem',
-                padding: '1.25rem',
                 height: '110px'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.68rem', color: 'hsl(215 20% 55%)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{card.label}</span>
-                  <card.icon style={{ width: '16px', height: '16px', color: 'hsl(215 20% 45%)' }} />
+                  <span style={{ fontSize: '0.7rem', color: '#a39f93', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{card.label}</span>
+                  <card.icon style={{ width: '16px', height: '16px', color: card.color }} />
                 </div>
-                <div style={{ fontSize: '1.45rem', fontWeight: '800', color: card.color, letterSpacing: '-0.02em', lineHeight: 1, fontFamily: 'monospace', margin: '0.25rem 0' }}>
+                <div style={{ fontSize: '1.35rem', fontWeight: '800', color: '#f3f1ec', letterSpacing: '-0.02em', lineHeight: 1, fontFamily: 'monospace', margin: '0.375rem 0 0.25rem' }}>
                   {card.value}
                 </div>
-                <div style={{ fontSize: '0.68rem', color: 'hsl(215 20% 45%)' }}>{card.sub}</div>
+                <div style={{ fontSize: '0.7rem', color: '#a39f93', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{card.sub}</div>
               </div>
             ))}
           </div>
 
-          {/* CHARTS ROW */}
+          {/* CHARTS SECTION */}
           <DashboardCharts salesTrendData={salesTrendData} driverChartData={driverChartData} />
+
+          {/* LOWER GRID: DRIVER LEADERBOARD & PENDING DUES */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
+            
+            {/* DRIVER LEADERBOARD */}
+            <div className="glass-card" style={{ padding: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  🏆 Today Driver Sales Leaderboard
+                </h3>
+                <span className="badge badge-primary" style={{ fontSize: '0.7rem' }}>Real-time</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+                {stats.driverLeaderboardList.map((d, idx) => (
+                  <div key={idx} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '0.875rem 1rem', borderRadius: '0.75rem',
+                    background: 'rgba(20, 17, 12, 0.6)', border: '1px solid rgba(201, 162, 39, 0.15)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <div style={{
+                        width: '28px', height: '28px', borderRadius: '50%',
+                        background: idx === 0 ? '#c9a227' : 'rgba(201,162,39,0.2)',
+                        color: idx === 0 ? '#0c0a06' : '#dfb638',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '0.8125rem'
+                      }}>
+                        #{idx + 1}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: '700', color: '#fff', fontSize: '0.9rem' }}>{d.name}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#a39f93' }}>{d.units} items sold</div>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', fontWeight: '800', color: '#dfb638', fontSize: '1.1rem', fontFamily: 'monospace' }}>
+                      {formatCurrency(d.sales)}
+                    </div>
+                  </div>
+                ))}
+                {stats.driverLeaderboardList.length === 0 && (
+                  <p style={{ color: '#a39f93', textAlign: 'center', padding: '2rem 0', fontSize: '0.875rem' }}>No driver sales recorded today.</p>
+                )}
+              </div>
+            </div>
+
+            {/* PENDING DUES */}
+            <div className="glass-card" style={{ padding: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  🔴 Outstanding Customer Dues
+                </h3>
+                <a href="/dues" style={{ fontSize: '0.75rem', color: '#c9a227', fontWeight: '700', textDecoration: 'none' }}>View All →</a>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+                {stats.pendingDues.map((due, idx) => (
+                  <div key={due.id || idx} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '0.875rem 1rem', borderRadius: '0.75rem',
+                    background: 'rgba(20, 17, 12, 0.6)', border: '1px solid rgba(239, 68, 68, 0.2)'
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: '700', color: '#fff', fontSize: '0.9rem' }}>{due.customer_name}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#a39f93' }}>
+                        Route: {(Array.isArray(due.routes) ? due.routes[0]?.name : due.routes?.name) || 'Local Route'}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', fontWeight: '800', color: '#f87171', fontSize: '1.1rem', fontFamily: 'monospace' }}>
+                      {formatCurrency(due.due_amount)}
+                    </div>
+                  </div>
+                ))}
+                {stats.pendingDues.length === 0 && (
+                  <p style={{ color: '#a39f93', textAlign: 'center', padding: '2rem 0', fontSize: '0.875rem' }}>No pending customer dues!</p>
+                )}
+              </div>
+            </div>
+
+          </div>
         </>
       )}
 
-      {/* DAILY PRODUCT BREAKDOWN (Task 4) */}
-      <div style={{ marginBottom: '2rem' }}>
-        <h3 style={{ fontSize: '1.25rem', fontWeight: '800', color: '#fff', marginBottom: '1rem', letterSpacing: '-0.02em' }}>
-          📦 Today's Product Category Breakdowns
-        </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem' }}>
-          {[
-            { label: 'Water & Cooling Cans (20L)', value: stats.todayCans, color: '#60a5fa', sub: 'Cans delivered today' },
-            { label: 'Water Bottles (Cases)', value: stats.todayBottles, color: '#34d399', sub: '500ml/1L/2L cases' },
-            { label: 'Bags (100 Packs)', value: stats.todayBags, color: '#fb923c', sub: 'Plastic carrier bags' },
-            { label: 'Others', value: stats.todayOthers, color: '#a78bfa', sub: 'Custom orders/other' }
-          ].map((item, idx) => (
-            <div key={idx} className="glass-card-3d" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(255,255,255,0.04)' }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{item.label}</span>
-              <div style={{ fontSize: '2rem', fontWeight: '800', color: item.color, fontFamily: 'monospace' }}>
-                {item.value} <span style={{ fontSize: '0.9rem', fontWeight: '500', color: 'hsl(215 20% 65%)' }}>units</span>
-              </div>
-              <span style={{ fontSize: '0.75rem', color: 'hsl(215 20% 45%)' }}>{item.sub}</span>
-            </div>
-          ))}
-        </div>
       </div>
-
-      {/* LEADERBOARD & ROUTE LIST (Task 4) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-        {/* Driver Leaderboard */}
-        <div className="glass-card-3d" style={{ padding: '1.5rem 2rem' }}>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            🏆 Driver Performance Leaderboard (Today)
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {stats.driverLeaderboardList.map((driver, idx) => (
-              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: idx === 0 ? '#d4af37' : 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', color: idx === 0 ? '#000' : '#fff', fontSize: '0.85rem' }}>
-                    {idx + 1}
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: '700', color: '#fff' }}>{driver.name}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>{driver.units} units sold</div>
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontWeight: '800', color: '#34d399' }}>₹{driver.sales}</div>
-                  <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 45%)' }}>Revenue</div>
-                </div>
-              </div>
-            ))}
-            {stats.driverLeaderboardList.length === 0 && (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'hsl(215 20% 45%)' }}>
-                No driver sales recorded today yet.
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Route & Channel Summary */}
-        <div className="glass-card-3d" style={{ padding: '1.5rem 2rem' }}>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem' }}>
-            📊 Revenue by Channel / Route (Today)
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {[
-              { label: 'Local Route (Nagaraju)', value: stats.localRouteSales, color: '#10b981' },
-              { label: 'Non-Local Highway Routes', value: stats.nonLocalRouteSales, color: '#e879f9' },
-              { label: 'Wholesale Dealers', value: stats.dealerSales, color: '#f59e0b' },
-              { label: 'Direct Company Sales', value: stats.companySales, color: '#06b6d4' }
-            ].map((chan, idx) => (
-              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                <div>
-                  <div style={{ fontWeight: '700', color: '#fff' }}>{chan.label}</div>
-                  <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>Distribution channel</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontWeight: '800', color: chan.color }}>₹{chan.value}</div>
-                  <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 45%)' }}>Total Sales</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* TABLES GRID */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
-        <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
-          <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-              <Truck style={{ width: '18px', height: '18px', color: '#60a5fa' }} />
-              <span>Driver Performance Index</span>
-            </h3>
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="erp-table">
-              <thead>
-                <tr><th>Driver</th><th style={{ textAlign: 'right' }}>Sales</th><th style={{ textAlign: 'right' }}>Collected</th><th style={{ textAlign: 'right' }}>Dues</th></tr>
-              </thead>
-              <tbody>
-                {stats.driverPerformance.map((dp, idx) => (
-                  <tr key={idx}>
-                    <td style={{ fontWeight: '700', color: '#fff' }}>{dp.name}</td>
-                    <td style={{ textAlign: 'right', fontWeight: '600' }}>{formatCurrency(dp.sales)}</td>
-                    <td style={{ textAlign: 'right', color: '#34d399', fontWeight: '600' }}>{formatCurrency(dp.collected)}</td>
-                    <td style={{ textAlign: 'right', color: dp.dues > 0 ? '#f87171' : '#34d399', fontWeight: '700' }}>{formatCurrency(dp.dues)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
-          <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-              <Map style={{ width: '18px', height: '18px', color: '#10b981' }} />
-              <span>Route Performance Index</span>
-            </h3>
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="erp-table">
-              <thead>
-                <tr><th>Route</th><th style={{ textAlign: 'right' }}>Sales</th><th style={{ textAlign: 'right' }}>Collected</th><th style={{ textAlign: 'right' }}>Dues</th></tr>
-              </thead>
-              <tbody>
-                {stats.routePerformance.map((rp, idx) => (
-                  <tr key={idx}>
-                    <td style={{ fontWeight: '700', color: '#fff' }}>{rp.name}</td>
-                    <td style={{ textAlign: 'right', fontWeight: '600' }}>{formatCurrency(rp.sales)}</td>
-                    <td style={{ textAlign: 'right', color: '#34d399', fontWeight: '600' }}>{formatCurrency(rp.collected)}</td>
-                    <td style={{ textAlign: 'right', color: rp.dues > 0 ? '#f87171' : '#34d399', fontWeight: '700' }}>{formatCurrency(rp.dues)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* PENDING DUES + P&L */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1.5rem' }}>
-        <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
-          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, color: '#f87171' }}>
-              <AlertTriangle style={{ width: '18px', height: '18px', color: '#f87171' }} />
-              <span>Overdue Accounts</span>
-            </h3>
-            <a href="/dues" className="btn btn-secondary btn-sm" style={{ borderColor: 'rgba(248,113,113,0.3)', color: '#f87171' }}>Manage Dues →</a>
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            {stats.pendingDues.length === 0 ? (
-              <div style={{ padding: '3rem', textAlign: 'center', color: 'hsl(215 20% 45%)' }}>
-                <div style={{ fontSize: '2rem' }}>✅</div>
-                <p>No active overdue accounts!</p>
-              </div>
-            ) : (
-              <table className="erp-table">
-                <thead><tr><th>Customer</th><th>Route</th><th style={{ textAlign: 'right' }}>Due</th></tr></thead>
-                <tbody>
-                  {stats.pendingDues.map((d, idx) => (
-                    <tr key={idx}>
-                      <td style={{ fontWeight: '700', color: '#fff' }}>{d.customer_name}</td>
-                      <td><span className="badge badge-muted">{(Array.isArray(d.routes) ? d.routes[0]?.name : (d.routes as any)?.name) || 'Local Route'}</span></td>
-                      <td style={{ textAlign: 'right', fontWeight: '800', color: '#f87171' }}>{formatCurrency(d.due_amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-
-        <div className="glass-card-3d" style={{ display: 'flex', flexDirection: 'column' }}>
-          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-              <TrendingUp style={{ width: '18px', height: '18px', color: '#818cf8' }} />
-              <span>Profit & Loss Overview</span>
-            </h3>
-            <a href="/profit-loss" className="btn btn-secondary btn-sm">Full Ledger →</a>
-          </div>
-          <div className="card-body" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.25rem', textAlign: 'center' }}>
-              {[
-                { label: 'Total Sales', value: formatCurrency(stats.monthlySales), color: '#fff' },
-                { label: 'Total Expenses', value: formatCurrency(stats.totalExpenses), color: '#f87171' },
-                { label: 'Net Revenue', value: formatCurrency(stats.monthlySales - stats.totalExpenses), color: (stats.monthlySales - stats.totalExpenses) >= 0 ? '#34d399' : '#f87171' },
-              ].map((item, i) => (
-                <div key={i}>
-                  <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 60%)', fontWeight: '600', textTransform: 'uppercase', marginBottom: '0.5rem' }}>{item.label}</div>
-                  <div style={{ fontSize: '1.35rem', fontWeight: '800', color: item.color }}>{item.value}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.04)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem', marginBottom: '0.5rem' }}>
-                <span style={{ color: 'hsl(215 20% 55%)' }}>Cash Collections</span>
-                <span style={{ color: '#10b981', fontWeight: '700' }}>{formatCurrency(stats.todayCash)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem' }}>
-                <span style={{ color: 'hsl(215 20% 55%)' }}>UPI Collections</span>
-                <span style={{ color: '#a78bfa', fontWeight: '700' }}>{formatCurrency(stats.todayUPI)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-    </div>
     </ErrorBoundary>
   )
 }
