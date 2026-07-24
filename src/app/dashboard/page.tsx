@@ -416,22 +416,22 @@ export default function DashboardPage() {
         position: 'relative', overflow: 'hidden'
       }}>
         <div style={{ position: 'absolute', top: '-50%', right: '-20%', width: '400px', height: '400px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(201,162,39,0.15) 0%, transparent 75%)', pointerEvents: 'none' }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1.5rem', position: 'relative', zIndex: 1 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-              <span className="badge badge-info" style={{ letterSpacing: '0.05em', background: 'rgba(201,162,39,0.15)', color: '#dfb638', borderColor: 'rgba(201,162,39,0.4)', fontWeight: '700' }}>LEVEL 2 BLACK & GOLD</span>
-              <span style={{ fontSize: '0.8125rem', color: 'hsl(142 71% 55%)', display: 'flex', alignItems: 'center', gap: '0.25rem', fontWeight: '600' }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} /> Live System
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1.5rem', position: 'relative', zIndex: 1 }}>
+          <div style={{ flex: '1 1 300px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.75rem', letterSpacing: '0.05em', background: 'rgba(201,162,39,0.15)', color: '#dfb638', border: '1px solid rgba(201,162,39,0.4)', fontWeight: '700', padding: '0.25rem 0.625rem', borderRadius: '0.375rem' }}>LEVEL 2 BLACK & GOLD</span>
+              <span style={{ fontSize: '0.8125rem', color: '#34d399', display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontWeight: '600' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#34d399', display: 'inline-block' }} /> Live System
               </span>
             </div>
-            <h2 style={{ fontSize: '2.25rem', fontWeight: '800', margin: 0, letterSpacing: '-0.03em', background: 'linear-gradient(135deg, #ffffff 40%, #dfb638 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            <h2 style={{ fontSize: '2.25rem', fontWeight: '800', margin: '0 0 0.5rem', letterSpacing: '-0.03em', color: '#ffffff', lineHeight: 1.2 }}>
               Royal Kissan ERP
             </h2>
-            <p style={{ fontSize: '0.925rem', color: '#a39f93', marginTop: '0.5rem' }}>
+            <p style={{ fontSize: '0.925rem', color: '#a39f93', margin: 0, lineHeight: 1.4 }}>
               Real-time operations dashboard — {new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
           </div>
-          <button className="btn btn-primary btn-lg" onClick={loadDashboardData} disabled={loading} style={{ borderRadius: '1rem' }}>
+          <button className="btn btn-primary btn-lg" onClick={loadDashboardData} disabled={loading} style={{ borderRadius: '1rem', padding: '0.75rem 1.5rem', whiteSpace: 'nowrap', cursor: 'pointer' }}>
             {loading ? '⏳ Loading...' : '🔄 Refresh Data'}
           </button>
         </div>
