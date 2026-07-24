@@ -33,14 +33,14 @@
 
 @layer base {
   * {
-    box-sizing: border-box;
+    box-sizing: border-color;
     border-color: hsl(var(--border));
   }
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings: "cv02" 1, "cv03" 1, "cv04" 1, "cv11" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     background-image: 
@@ -52,6 +52,13 @@
   html {
     scroll-behavior: smooth;
   }
+}
+
+/* ===== TABULAR MONOSPACE NUMBERS (STRIPE & LINEAR QUALITY) ===== */
+.text-money, .tabular-nums, .hero-stat-card .value, .stat-card .value {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  font-family: 'JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace;
 }
 
 /* ===== CUSTOM SCROLLBAR ===== */
@@ -170,6 +177,10 @@
 /* ===== MICRO-INTERACTIONS & RESPONSIVE CTAs ===== */
 .btn {
   transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn-primary {
@@ -271,7 +282,7 @@
   padding: 0.875rem 1rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   color: #f3f1ec;
-
+  font-variant-numeric: tabular-nums;
 }
 
 .erp-table tr:hover td {
@@ -286,7 +297,9 @@
   padding: 0.625rem 0.875rem;
   color: #f3f1ec;
   font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
   transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  min-height: 40px;
 }
 
 .form-input:focus {

@@ -169,11 +169,51 @@ export default function BillingPage() {
   const totalAmount = subtotal + totalGst
 
   useEffect(() => {
-    fetchProducts()
-    fetchDealers()
-    fetchCustomers()
-    fetchSettings()
+    loadBillingInitialData()
   }, [])
+
+  async function loadBillingInitialData() {
+    try {
+      const [productsRes, dealersRes, customersRes, settingsRes] = await Promise.all([
+        supabase.from('products').select('id, name, default_rate, gst_rate, category').eq('is_active', true),
+        supabase.from('dealers').select('id, name, area').order('name'),
+        supabase.from('bills').select('customer_name, customer_phone, customer_address').not('customer_name', 'is', null).limit(50),
+        supabase.from('system_settings').select('setting_key, setting_value')
+      ])
+
+      if (productsRes.data && productsRes.data.length > 0) {
+        const seen = new Set()
+        const unique: any[] = []
+        productsRes.data.forEach((p: any) => {
+          if (!seen.has(p.name)) {
+            seen.add(p.name)
+            unique.push({ id: p.id, name: p.name, rate: Number(p.default_rate) || 0, gst_rate: Number(p.gst_rate) || 18, category: p.category || 'bottle' })
+          }
+        })
+        if (unique.length > 0) setDbProducts(unique)
+      }
+
+      if (dealersRes.data) setDealers(dealersRes.data)
+
+      if (customersRes.data) {
+        const map = new Map()
+        customersRes.data.forEach((c: any) => {
+          if (c.customer_name && !map.has(c.customer_name)) {
+            map.set(c.customer_name, { name: c.customer_name, phone: c.customer_phone || '', address: c.customer_address || '' })
+          }
+        })
+        setCustomers(Array.from(map.values()))
+      }
+
+      if (settingsRes.data) {
+        const map: Record<string, string> = { ...settings }
+        settingsRes.data.forEach((s: any) => { if (s.setting_key) map[s.setting_key] = s.setting_value })
+        setSettings(map)
+      }
+    } catch (err) {
+      console.error('Failed to load initial billing data:', err)
+    }
+  }
 
   useEffect(() => { setIsGst(billType !== 'non_gst_invoice') }, [billType])
 
@@ -221,50 +261,6 @@ export default function BillingPage() {
       setPaidAmount(cashAmount + upiAmount)
     }
   }, [cashAmount, upiAmount, paymentMode])
-
-  async function fetchProducts() {
-    try {
-      const { data } = await supabase.from('products').select('id, name, default_rate, gst_rate, category').eq('is_active', true)
-      if (data && data.length > 0) {
-        const seen = new Set()
-        const unique: any[] = []
-        data.forEach(p => {
-          if (!seen.has(p.name)) {
-            seen.add(p.name)
-            unique.push({ id: p.id, name: p.name, rate: Number(p.default_rate) || 0, gst_rate: Number(p.gst_rate) || 18, category: p.category || 'bottle' })
-          }
-        })
-        if (unique.length > 0) setDbProducts(unique)
-      }
-    } catch (err) { console.error('Failed to load products:', err) }
-  }
-
-  async function fetchDealers() {
-    try {
-      const { data } = await supabase.from('dealers').select('id, name, area').order('name')
-      if (data && data.length > 0) setDealers(data)
-    } catch (err) { console.error('Failed to load dealers:', err) }
-  }
-
-  async function fetchCustomers() {
-    try {
-      const { data } = await supabase.from('customers').select('id, name, phone, address, gst_number').order('name')
-      if (data) setCustomers(data)
-    } catch (err) { console.error('Failed to load customers:', err) }
-  }
-
-  async function fetchSettings() {
-    try {
-      const { data } = await supabase.from('settings').select('key, value')
-      if (data && data.length > 0) {
-        const loaded: Record<string, string> = {}
-        data.forEach(s => {
-          loaded[s.key] = s.value
-        })
-        setSettings(prev => ({ ...prev, ...loaded }))
-      }
-    } catch (err) { console.error('Failed to load settings:', err) }
-  }
 
   const dueAmount = Math.max(0, totalAmount - paidAmount)
   const payStatus = PAYMENT_STATUS(totalAmount, paidAmount)

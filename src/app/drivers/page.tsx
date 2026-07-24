@@ -154,8 +154,23 @@ export default function DriversPage() {
 
   async function loadDriversAndRoutes() {
     try {
-      const { data: dbDrivers } = await supabase.from('drivers').select('id, name, phone, salary, is_active').order('name')
-      const { data: dbRoutes } = await supabase.from('routes').select('id, name, driver_id, area').order('name')
+      const today = new Date().toISOString().split('T')[0]
+      const currentMonth = new Date().getMonth() + 1
+      const currentYear = new Date().getFullYear()
+      const firstOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`
+
+      // PARALLEL QUERY FETCHING (PROMISE.ALL FOR ZERO WATERFALL LATENCY)
+      const [driversRes, routesRes, todaySalesRes, monthSalesRes] = await Promise.all([
+        supabase.from('drivers').select('id, name, phone, salary, is_active').order('name'),
+        supabase.from('routes').select('id, name, driver_id, area').order('name'),
+        supabase.from('route_sales').select('driver_id, total_amount, cash_paid, upi_paid, due_amount').eq('sale_date', today),
+        supabase.from('route_sales').select('driver_id, total_amount, cash_paid, upi_paid, due_amount').gte('sale_date', firstOfMonth)
+      ])
+
+      const dbDrivers = driversRes.data
+      const dbRoutes = routesRes.data
+      const todaySales = todaySalesRes.data
+      const monthSales = monthSalesRes.data
       
       if (dbDrivers && dbDrivers.length > 0) {
         const filteredDrivers = dbDrivers.filter(d => 
@@ -164,22 +179,6 @@ export default function DriversPage() {
         setDrivers(filteredDrivers)
       }
       if (dbRoutes && dbRoutes.length > 0) setRoutes(dbRoutes)
-
-      // Fetch sales to aggregate statistics
-      const today = new Date().toISOString().split('T')[0]
-      const currentMonth = new Date().getMonth() + 1
-      const currentYear = new Date().getFullYear()
-      const firstOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`
-
-      const { data: todaySales } = await supabase
-        .from('route_sales')
-        .select('driver_id, total_amount, cash_paid, upi_paid, due_amount')
-        .eq('sale_date', today)
-
-      const { data: monthSales } = await supabase
-        .from('route_sales')
-        .select('driver_id, total_amount, cash_paid, upi_paid, due_amount')
-        .gte('sale_date', firstOfMonth)
 
       const statsMap = {
         'b097b6a9-8395-4eb8-a720-3057e07662c1': { collection: 2500, due: 800, sales: 3300, mSales: 48000, mCollection: 42000 },
@@ -279,15 +278,26 @@ export default function DriversPage() {
       const currentYear = new Date().getFullYear()
       const firstOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`
 
-      // 1. Fetch Today's Daily Route Assignment from daily_route_assignments
-      const { data: assignData } = await supabase
-        .from('daily_route_assignments')
-        .select('*, routes(id, name, area)')
-        .eq('driver_id', driverId)
-        .eq('date', today)
-        .maybeSingle()
+      // PARALLEL PROFILE HISTORY FETCHING (PROMISE.ALL)
+      const [assignRes, dispRes, dSalesRes, mSalesRes, expRes] = await Promise.all([
+        supabase.from('daily_route_assignments').select('*, routes(id, name, area)').eq('driver_id', driverId).eq('date', today).maybeSingle(),
+        supabase.from('route_dispatches').select('*').eq('driver_id', driverId).eq('date', today).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('route_sales').select('id, invoice_number, customer_name, product_name, quantity, rate, total_amount, cash_paid, upi_paid, due_amount, payment_status, sale_date').eq('driver_id', driverId).eq('sale_date', today),
+        supabase.from('route_sales').select('id, invoice_number, customer_name, product_name, quantity, rate, total_amount, cash_paid, upi_paid, due_amount, payment_status, sale_date').eq('driver_id', driverId).gte('sale_date', firstOfMonth),
+        supabase.from('route_expenses').select('id, expense_date, fuel_charges, driver_bata, other_expenses, notes, created_at').eq('driver_id', driverId).order('created_at', { ascending: false })
+      ])
+
+      const assignData = assignRes.data
+      const dispData = dispRes.data
+      const dSales = dSalesRes.data
+      const mSales = mSalesRes.data
+      const expenses = expRes.data
 
       setDailyAssignment(assignData || null)
+      setActiveDispatch(dispData || null)
+      setDailySalesList(dSales || [])
+      setMonthlySalesList(mSales || [])
+      setExpensesList(expenses || [])
 
       if (assignData) {
         setAssignVehicle(assignData.vehicle_number || 'AP 16 AB 1234')
@@ -299,16 +309,6 @@ export default function DriversPage() {
         loadRouteCustomers(assignData.route_id)
 
         // Fetch dispatch record for this assignment
-        const { data: dispData } = await supabase
-          .from('route_dispatches')
-          .select('*')
-          .eq('driver_id', driverId)
-          .eq('date', today)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        setActiveDispatch(dispData || null)
         if (dispData?.items) {
           const itemsObj: Record<string, number> = {
             'Water Can (20L)': 0,
@@ -333,32 +333,8 @@ export default function DriversPage() {
           loadRouteCustomers(firstDriverRoute.id)
         }
       }
-
-      // 2. Fetch Today Sales
-      const { data: dSales } = await supabase
-        .from('route_sales')
-        .select('id, invoice_number, customer_name, product_name, quantity, rate, total_amount, cash_paid, upi_paid, due_amount, payment_status, sale_date')
-        .eq('driver_id', driverId)
-        .eq('sale_date', today)
-      setDailySalesList(dSales || [])
-
-      // 3. Fetch Monthly Sales
-      const { data: mSales } = await supabase
-        .from('route_sales')
-        .select('id, invoice_number, customer_name, product_name, quantity, rate, total_amount, cash_paid, upi_paid, due_amount, payment_status, sale_date')
-        .eq('driver_id', driverId)
-        .gte('sale_date', firstOfMonth)
-      setMonthlySalesList(mSales || [])
-
-      // 4. Fetch Expenses
-      const { data: exp } = await supabase
-        .from('route_expenses')
-        .select('id, expense_date, fuel_charges, driver_bata, other_expenses, notes, created_at')
-        .eq('driver_id', driverId)
-        .order('created_at', { ascending: false })
-      setExpensesList(exp || [])
     } catch (e) {
-      console.error('Error loading profile history:', e)
+      console.error('Error loading driver profile history:', e)
     }
   }
 
