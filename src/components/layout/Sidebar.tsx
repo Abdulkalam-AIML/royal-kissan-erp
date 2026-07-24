@@ -24,9 +24,7 @@ const navItems = [
     group: 'Operations',
     items: [
       { href: '/dealers', label: 'Dealers', icon: '🏪' },
-      { href: '/drivers', label: 'Drivers', icon: '🚛' },
-      { href: '/routes', label: 'Routes', icon: '🗺️' },
-      { href: '/non-local-routes', label: 'Non Local Routes', icon: '🛣️' },
+      { href: '/drivers', label: 'Drivers & Route Sales', icon: '🚛' },
       { href: '/deliveries', label: 'Deliveries', icon: '📦' },
     ]
   },
