@@ -76,9 +76,9 @@ export default function Header({
 
   return (
     <header className="header" style={{
-      background: 'rgba(10, 18, 36, 0.45)',
+      background: 'rgba(14, 12, 8, 0.85)',
       backdropFilter: 'blur(20px)',
-      borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+      borderBottom: '1px solid rgba(201, 162, 39, 0.12)',
       display: 'flex',
       alignItems: 'center',
       padding: '0 1.5rem',

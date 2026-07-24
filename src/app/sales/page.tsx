@@ -1,77 +1,154 @@
 'use client'
+
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import EmptyState from '@/components/common/EmptyState'
+import ErrorState from '@/components/common/ErrorState'
+
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount)
+}
 
 export default function SalesPage() {
   const [sales, setSales] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const supabase = createClient()
 
   useEffect(() => { loadSales() }, [])
 
   async function loadSales() {
-    const { data } = await supabase
-      .from('sales')
-      .select('*, sale_items(*)')
-      .order('created_at', { ascending: false })
-      .limit(100)
-    setSales(data || [])
-    setLoading(false)
+    setLoading(true)
+    setError(null)
+    try {
+      // Parallel fetch from both bills and route_sales
+      const [billsRes, routeSalesRes] = await Promise.all([
+        supabase.from('bills').select('id, invoice_number, bill_type, customer_name, total_amount, paid_amount, due_amount, payment_status, date, payment_method').order('created_at', { ascending: false }).limit(50),
+        supabase.from('route_sales').select('id, invoice_number, customer_name, product_name, quantity, total_amount, cash_paid, upi_paid, due_amount, payment_status, sale_date').order('created_at', { ascending: false }).limit(50)
+      ])
+
+      const combined: any[] = []
+      
+      if (billsRes.data) {
+        billsRes.data.forEach((b: any) => {
+          combined.push({
+            id: `bill-${b.id}`,
+            invoice_number: b.invoice_number || 'INV-BILL',
+            type: b.bill_type || 'Company Invoice',
+            customer: b.customer_name || 'Direct Customer',
+            total: Number(b.total_amount) || 0,
+            paid: Number(b.paid_amount) || 0,
+            due: Number(b.due_amount) || 0,
+            status: b.payment_status || 'paid',
+            date: b.date || new Date().toISOString().split('T')[0],
+            payment_mode: b.payment_method || 'cash'
+          })
+        })
+      }
+
+      if (routeSalesRes.data) {
+        routeSalesRes.data.forEach((rs: any) => {
+          const paid = (Number(rs.cash_paid) || 0) + (Number(rs.upi_paid) || 0)
+          combined.push({
+            id: `rs-${rs.id}`,
+            invoice_number: rs.invoice_number || 'INV-ROUTE',
+            type: 'Route Sale',
+            customer: rs.customer_name || 'Route Stop',
+            total: Number(rs.total_amount) || 0,
+            paid: paid,
+            due: Number(rs.due_amount) || 0,
+            status: rs.payment_status || ((Number(rs.due_amount) || 0) > 0 ? 'due' : 'paid'),
+            date: rs.sale_date || new Date().toISOString().split('T')[0],
+            payment_mode: (Number(rs.cash_paid) || 0) > 0 ? 'cash' : 'upi'
+          })
+        })
+      }
+
+      combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      setSales(combined)
+    } catch (err: any) {
+      console.error('Error loading sales history:', err)
+      setError(err?.message || 'Failed to load sales history records')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const filtered = sales.filter(s =>
     s.invoice_number?.toLowerCase().includes(search.toLowerCase()) ||
-    s.payment_status?.toLowerCase().includes(search.toLowerCase())
+    s.customer?.toLowerCase().includes(search.toLowerCase()) ||
+    s.status?.toLowerCase().includes(search.toLowerCase())
   )
-  const totalSales = sales.reduce((sum, s) => sum + (s.total_amount || 0), 0)
-  const totalCollected = sales.reduce((sum, s) => sum + (s.paid_amount || 0), 0)
-  const totalDue = sales.reduce((sum, s) => sum + (s.due_amount || 0), 0)
+
+  const totalSales = sales.reduce((sum, s) => sum + s.total, 0)
+  const totalCollected = sales.reduce((sum, s) => sum + s.paid, 0)
+  const totalDue = sales.reduce((sum, s) => sum + s.due, 0)
 
   return (
-    <div>
-      <div className="page-header">
+    <div className="animate-fade-in" style={{ padding: '0.25rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2 className="page-title">📋 Sales History</h2>
-          <p className="page-subtitle">{sales.length} bills • Total: ₹{totalSales.toFixed(0)}</p>
+          <h2 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0, letterSpacing: '-0.02em', color: '#fff' }}>
+            📋 Sales History
+          </h2>
+          <p style={{ fontSize: '0.875rem', color: '#a39f93', marginTop: '0.25rem' }}>
+            {sales.length} transactions recorded • Total Revenue: <span className="tabular-nums" style={{ color: '#dfb638', fontWeight: '700' }}>{formatCurrency(totalSales)}</span>
+          </p>
         </div>
-        <a href="/billing" className="btn btn-primary">➕ New Bill</a>
+        <a href="/billing" className="btn btn-primary" style={{ borderRadius: '0.75rem' }}>
+          ➕ New Bill
+        </a>
       </div>
 
-      <div className="stats-grid" style={{ marginBottom: '1.25rem' }}>
+      {/* STATS CARDS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
         {[
-          { label: 'Total Sales', value: `₹${totalSales.toFixed(0)}`, icon: '📊', color: 'hsl(217,91%,60%)' },
-          { label: 'Collected', value: `₹${totalCollected.toFixed(0)}`, icon: '✅', color: 'hsl(142,71%,45%)' },
-          { label: 'Outstanding', value: `₹${totalDue.toFixed(0)}`, icon: '🔴', color: 'hsl(0,85%,60%)' },
-          { label: 'Bills', value: sales.length.toString(), icon: '🧾', color: 'hsl(270,75%,60%)' },
+          { label: 'Total Sales', value: formatCurrency(totalSales), icon: '📊', color: '#dfb638' },
+          { label: 'Collected', value: formatCurrency(totalCollected), icon: '✅', color: '#34d399' },
+          { label: 'Outstanding Dues', value: formatCurrency(totalDue), icon: '🔴', color: '#f87171' },
+          { label: 'Total Invoices', value: sales.length.toString(), icon: '🧾', color: '#60a5fa' },
         ].map(s => (
-          <div key={s.label} className="stat-card">
+          <div key={s.label} className="stat-card" style={{ padding: '1.25rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <p style={{ fontSize: '0.7rem', fontWeight: '600', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.375rem' }}>{s.label}</p>
-                <p style={{ fontSize: '1.375rem', fontWeight: '800', color: 'hsl(210 40% 98%)' }} className="text-money">{s.value}</p>
+                <p style={{ fontSize: '0.7rem', fontWeight: '700', color: '#a39f93', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.375rem' }}>{s.label}</p>
+                <p style={{ fontSize: '1.35rem', fontWeight: '800', color: s.color }} className="tabular-nums">{s.value}</p>
               </div>
-              <span style={{ fontSize: '1.75rem' }}>{s.icon}</span>
+              <span style={{ fontSize: '1.5rem' }}>{s.icon}</span>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div className="card-body">
-          <input className="form-input" placeholder="🔍 Search by invoice number, status..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
+      {/* SEARCH BAR */}
+      <div className="glass-card" style={{ padding: '1rem', marginBottom: '1.25rem' }}>
+        <input
+          className="form-input"
+          style={{ width: '100%' }}
+          placeholder="🔍 Search by invoice number, customer name, status..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
       </div>
 
-      <div className="card">
+      {error && <ErrorState title="Sales History Error" message={error} onRetry={loadSales} />}
+
+      {/* SALES TABLE */}
+      <div className="glass-card">
         <div style={{ overflowX: 'auto' }}>
           {loading ? (
-            <div style={{ padding: '3rem', textAlign: 'center' }}><span className="loading-spinner" /></div>
-          ) : filtered.length === 0 ? (
-            <div style={{ padding: '3rem', textAlign: 'center', color: 'hsl(215 20% 45%)' }}>
-              <div style={{ fontSize: '3rem' }}>🧾</div>
-              <p>No bills found. <a href="/billing" style={{ color: 'hsl(217 91% 70%)' }}>Create your first bill</a></p>
+            <div style={{ padding: '3rem', textAlign: 'center' }}>
+              <span className="loading-spinner" />
             </div>
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon="🧾"
+              title="No Sales Transactions Found"
+              description="No sales or invoices match your search query."
+              actionLabel="Create New Bill"
+              onAction={() => window.location.href = '/billing'}
+            />
           ) : (
             <table className="erp-table">
               <thead>
@@ -79,7 +156,7 @@ export default function SalesPage() {
                   <th>Date</th>
                   <th>Invoice No</th>
                   <th>Type</th>
-                  <th>Items</th>
+                  <th>Customer</th>
                   <th style={{ textAlign: 'right' }}>Total</th>
                   <th style={{ textAlign: 'right' }}>Paid</th>
                   <th style={{ textAlign: 'right' }}>Due</th>
@@ -91,28 +168,28 @@ export default function SalesPage() {
               <tbody>
                 {filtered.map(s => (
                   <tr key={s.id}>
-                    <td style={{ fontSize: '0.8rem', color: 'hsl(215 20% 55%)' }}>{new Date(s.sale_date).toLocaleDateString('en-IN')}</td>
-                    <td style={{ fontWeight: '700', color: 'hsl(217 91% 70%)' }}>{s.invoice_number || '—'}</td>
-                    <td><span className="badge badge-info" style={{ textTransform: 'capitalize' }}>{s.sale_type}</span></td>
-                    <td style={{ color: 'hsl(215 20% 55%)', fontSize: '0.8rem' }}>{s.sale_items?.length || 0} items</td>
-                    <td style={{ textAlign: 'right', fontWeight: '600' }} className="text-money">₹{(s.total_amount || 0).toFixed(2)}</td>
-                    <td style={{ textAlign: 'right', color: 'hsl(142 71% 55%)' }} className="text-money">₹{(s.paid_amount || 0).toFixed(2)}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      {(s.due_amount || 0) > 0
-                        ? <span className="due-amount text-money">₹{s.due_amount.toFixed(2)}</span>
-                        : <span style={{ color: 'hsl(142 71% 55%)', fontSize: '0.8rem' }}>—</span>
+                    <td style={{ fontSize: '0.8rem', color: '#a39f93' }}>{new Date(s.date).toLocaleDateString('en-IN')}</td>
+                    <td style={{ fontWeight: '700', color: '#dfb638' }} className="tabular-nums">{s.invoice_number || '—'}</td>
+                    <td><span className="badge badge-info" style={{ textTransform: 'capitalize' }}>{s.type}</span></td>
+                    <td style={{ fontWeight: '600' }}>{s.customer}</td>
+                    <td style={{ textAlign: 'right', fontWeight: '700' }} className="tabular-nums">{formatCurrency(s.total)}</td>
+                    <td style={{ textAlign: 'right', color: '#34d399', fontWeight: '600' }} className="tabular-nums">{formatCurrency(s.paid)}</td>
+                    <td style={{ textAlign: 'right' }} className="tabular-nums">
+                      {s.due > 0
+                        ? <span style={{ color: '#f87171', fontWeight: '700' }}>{formatCurrency(s.due)}</span>
+                        : <span style={{ color: '#34d399', fontSize: '0.8rem' }}>—</span>
                       }
                     </td>
-                    <td style={{ textTransform: 'capitalize', fontSize: '0.8rem' }}>{s.payment_mode}</td>
+                    <td style={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: '600', color: '#a39f93' }}>{s.payment_mode}</td>
                     <td>
-                      <span className={`badge ${s.payment_status === 'paid' ? 'badge-success' : s.payment_status === 'partial' ? 'badge-warning' : 'badge-danger'}`} style={{ textTransform: 'capitalize' }}>
-                        {s.payment_status}
+                      <span className={`badge ${s.status === 'paid' ? 'badge-success' : s.status === 'partial' ? 'badge-warning' : 'badge-danger'}`} style={{ textTransform: 'capitalize' }}>
+                        {s.status}
                       </span>
                     </td>
                     <td>
-                      <div style={{ display: 'flex', gap: '0.375rem' }}>
-                        <button className="btn btn-secondary btn-sm" onClick={() => window.print()}>🖨️</button>
-                      </div>
+                      <button className="btn btn-secondary btn-sm" onClick={() => window.print()} title="Print Invoice">
+                        🖨️
+                      </button>
                     </td>
                   </tr>
                 ))}
