@@ -46,8 +46,10 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  experimental: {
+    optimizePackageImports: ['lucide-react', 'recharts', 'jspdf'],
+  },
   eslint: {
-    // We use any types for Supabase dynamic data — this is intentional
     ignoreDuringBuilds: false,
   },
   typescript: {
@@ -56,7 +58,6 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        // Apply security headers to all routes
         source: "/(.*)",
         headers: securityHeaders,
       },
