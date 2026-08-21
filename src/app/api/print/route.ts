@@ -102,7 +102,7 @@ export async function POST(req: Request) {
     // 3. Generate ESC/POS Buffer
     const escposBuffer = generateReceiptBuffer(bill, options as PrintJobOptions, settings)
 
-    // 4. Send to Network Printer over Server TCP Socket (192.168.1.1:9100)
+    // 4. Send to Network Printer over Server TCP Socket (192.168.0.2:9100)
     const printResult = await sendToNetworkPrinterServer(settings.printer_ip, settings.printer_port, escposBuffer)
 
     const durationMs = Date.now() - startTime

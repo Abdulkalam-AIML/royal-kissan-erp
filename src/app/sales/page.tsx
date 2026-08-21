@@ -25,7 +25,7 @@ export default function SalesPage() {
     try {
       const { data } = await supabase
         .from('bills')
-        .select('*')
+        .select('id, invoice_number, date, customer_name, customer_phone, bill_type, total_amount, paid_amount, due_amount, payment_mode, created_at')
         .order('created_at', { ascending: false })
         .limit(100)
       setSales(data || [])

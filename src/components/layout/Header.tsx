@@ -8,12 +8,9 @@ import {
   Search,
   Printer,
   Database,
-  Bell,
   User,
   Clock,
   ChevronRight,
-  Wifi,
-  WifiOff,
 } from 'lucide-react'
 
 const breadcrumbMap: Record<string, string> = {

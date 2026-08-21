@@ -111,12 +111,11 @@ export default function DashboardPage() {
       const todayStr = new Date().toISOString().split('T')[0]
       const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
 
-      const [todayBillsRes, monthBillsRes, routeSalesRes, recentBillsRes, customersCountRes] = await Promise.all([
-        supabase.from('bills').select('*').gte('date', todayStr),
-        supabase.from('bills').select('*').gte('date', firstDayOfMonth),
-        supabase.from('route_sales').select('*').gte('sale_date', todayStr),
-        supabase.from('bills').select('*').order('created_at', { ascending: false }).limit(6),
-        supabase.from('bills').select('customer_name', { count: 'exact', head: true })
+      const [todayBillsRes, monthBillsRes, routeSalesRes, recentBillsRes] = await Promise.all([
+        supabase.from('bills').select('total_amount, paid_amount, due_amount, cash_amount, upi_amount').gte('date', todayStr),
+        supabase.from('bills').select('total_amount, paid_amount, due_amount').gte('date', firstDayOfMonth),
+        supabase.from('route_sales').select('total_amount, cash_paid, upi_paid, due_amount').gte('sale_date', todayStr),
+        supabase.from('bills').select('id, date, invoice_number, customer_name, bill_type, total_amount, paid_amount, due_amount, payment_status, created_at').order('created_at', { ascending: false }).limit(6)
       ])
 
       const todayBills = todayBillsRes.data || []
