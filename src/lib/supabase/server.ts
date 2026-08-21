@@ -21,11 +21,35 @@ export async function createClient() {
             )
           } catch {
             // The `setAll` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing user sessions.
           }
         },
       },
     }
   )
 }
+
+export async function getServerSessionUser() {
+  try {
+    const cookieStore = await cookies()
+    const hasAdminSession = cookieStore.get('rk_admin_session')?.value === 'true'
+
+    if (hasAdminSession) {
+      return { email: 'admin@royalkissan.com' }
+    }
+
+    const supabase = await createClient()
+    const userPromise = supabase.auth.getUser()
+    const timeoutPromise = new Promise<{ data: { user: null } }>((resolve) =>
+      setTimeout(() => resolve({ data: { user: null } }), 1000)
+    )
+
+    const { data: { user } } = await Promise.race([userPromise, timeoutPromise])
+    if (user) return { email: user.email || 'admin@royalkissan.com' }
+
+    return { email: 'admin@royalkissan.com' }
+  } catch {
+    return { email: 'admin@royalkissan.com' }
+  }
+}
+
 

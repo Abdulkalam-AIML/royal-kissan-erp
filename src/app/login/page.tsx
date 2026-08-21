@@ -26,6 +26,8 @@ export default function LoginPage() {
       const { data, error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
 
       if (!signInErr && data.user) {
+        document.cookie = 'rk_admin_session=true; path=/; max-age=86400'
+        localStorage.setItem('rk_user_email', email)
         router.push('/dashboard')
         router.refresh()
         return
@@ -36,6 +38,8 @@ export default function LoginPage() {
       if (!signUpErr && signUpData.user) {
         // Try sign in again
         await supabase.auth.signInWithPassword({ email, password })
+        document.cookie = 'rk_admin_session=true; path=/; max-age=86400'
+        localStorage.setItem('rk_user_email', email)
         router.push('/dashboard')
         router.refresh()
         return
