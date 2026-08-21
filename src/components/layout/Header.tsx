@@ -66,10 +66,13 @@ export default function Header({
     updateTime()
     const timer = setInterval(updateTime, 5000)
 
-    // Check Printer status ping
+    // Check Printer status ping with 800ms timeout guard
     const checkHealth = async () => {
       try {
-        const res = await fetch('/api/print/health')
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 800)
+        const res = await fetch('/api/print/health', { signal: controller.signal })
+        clearTimeout(timeoutId)
         const data = await res.json()
         setPrinterOnline(data.online ?? true)
       } catch (e) {

@@ -152,16 +152,25 @@ export default function BillingPage() {
 
   async function loadBillingInitialData() {
     try {
-      const [productsRes, customersRes, dealersRes, driversRes, billsRes, printerRes] = await Promise.all([
+      const fetchPromise = Promise.all([
         supabase.from('products').select('id, name, default_rate, gst_rate, category').eq('is_active', true),
         supabase.from('customers').select('id, name, phone, address, gstin').limit(100),
         supabase.from('dealers').select('id, name, phone').order('name'),
         supabase.from('drivers').select('id, name, phone').order('name'),
-        supabase.from('bills').select('*').order('created_at', { ascending: false }).limit(20),
+        supabase.from('bills').select('id, invoice_number, date, customer_name, total_amount, paid_amount, due_amount, payment_status, bill_type').order('created_at', { ascending: false }).limit(20),
         supabase.from('printer_settings').select('printer_ip, paper_width').eq('is_default', true).maybeSingle()
       ])
 
-      if (productsRes.data && productsRes.data.length > 0) {
+      const timeoutPromise = new Promise<any>((resolve) =>
+        setTimeout(() => resolve([{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: null }]), 2500)
+      )
+
+      const [productsRes, customersRes, dealersRes, driversRes, billsRes, printerRes] = await Promise.race([
+        fetchPromise,
+        timeoutPromise
+      ])
+
+      if (productsRes?.data && productsRes.data.length > 0) {
         const seen = new Set()
         const unique: any[] = []
         productsRes.data.forEach((p: any) => {
@@ -173,12 +182,12 @@ export default function BillingPage() {
         if (unique.length > 0) setDbProducts(unique)
       }
 
-      if (customersRes.data) setCustomers(customersRes.data)
-      if (dealersRes.data) setDealers(dealersRes.data)
-      if (driversRes.data) setDrivers(driversRes.data)
-      if (billsRes.data) setRecentBills(billsRes.data)
-      if (printerRes.data?.printer_ip) setPrinterIp(printerRes.data.printer_ip)
-      if (printerRes.data?.paper_width) setInvoiceFormat(printerRes.data.paper_width as InvoiceFormat)
+      if (customersRes?.data) setCustomers(customersRes.data)
+      if (dealersRes?.data) setDealers(dealersRes.data)
+      if (driversRes?.data) setDrivers(driversRes.data)
+      if (billsRes?.data) setRecentBills(billsRes.data)
+      if (printerRes?.data?.printer_ip) setPrinterIp(printerRes.data.printer_ip)
+      if (printerRes?.data?.paper_width) setInvoiceFormat(printerRes.data.paper_width as InvoiceFormat)
     } catch {
       // Fallback
     }

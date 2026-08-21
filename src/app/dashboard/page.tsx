@@ -111,16 +111,25 @@ export default function DashboardPage() {
       const todayStr = new Date().toISOString().split('T')[0]
       const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
 
-      const [todayBillsRes, monthBillsRes, routeSalesRes, recentBillsRes] = await Promise.all([
+      const fetchPromise = Promise.all([
         supabase.from('bills').select('total_amount, paid_amount, due_amount, cash_amount, upi_amount').gte('date', todayStr),
         supabase.from('bills').select('total_amount, paid_amount, due_amount').gte('date', firstDayOfMonth),
         supabase.from('route_sales').select('total_amount, cash_paid, upi_paid, due_amount').gte('sale_date', todayStr),
         supabase.from('bills').select('id, date, invoice_number, customer_name, bill_type, total_amount, paid_amount, due_amount, payment_status, created_at').order('created_at', { ascending: false }).limit(6)
       ])
 
-      const todayBills = todayBillsRes.data || []
-      const monthBills = monthBillsRes.data || []
-      const routeSales = routeSalesRes.data || []
+      const timeoutPromise = new Promise<any>((resolve) =>
+        setTimeout(() => resolve([{ data: [] }, { data: [] }, { data: [] }, { data: [] }]), 2500)
+      )
+
+      const [todayBillsRes, monthBillsRes, routeSalesRes, recentBillsRes] = await Promise.race([
+        fetchPromise,
+        timeoutPromise
+      ])
+
+      const todayBills = todayBillsRes?.data || []
+      const monthBills = monthBillsRes?.data || []
+      const routeSales = routeSalesRes?.data || []
 
       let tSales = 0
       let tPaid = 0
@@ -128,7 +137,7 @@ export default function DashboardPage() {
       let tCash = 0
       let tUPI = 0
 
-      todayBills.forEach(b => {
+      todayBills.forEach((b: any) => {
         tSales += Number(b.total_amount) || 0
         tPaid += Number(b.paid_amount) || 0
         tDue += Number(b.due_amount) || 0
@@ -136,7 +145,7 @@ export default function DashboardPage() {
         tUPI += Number(b.upi_amount) || 0
       })
 
-      routeSales.forEach(rs => {
+      routeSales.forEach((rs: any) => {
         tSales += Number(rs.total_amount) || 0
         const paid = (Number(rs.cash_paid) || 0) + (Number(rs.upi_paid) || 0)
         tPaid += paid
@@ -149,7 +158,7 @@ export default function DashboardPage() {
       let mPaid = 0
       let mDue = 0
 
-      monthBills.forEach(b => {
+      monthBills.forEach((b: any) => {
         mSales += Number(b.total_amount) || 0
         mPaid += Number(b.paid_amount) || 0
         mDue += Number(b.due_amount) || 0
@@ -183,7 +192,7 @@ export default function DashboardPage() {
         ]
       })
 
-      if (recentBillsRes.data) {
+      if (recentBillsRes?.data) {
         setRecentBills(recentBillsRes.data)
       }
     } catch (err) {
@@ -191,10 +200,6 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  }
-
-  if (loading) {
-    return <DashboardLoadingSkeleton />
   }
 
   return (
