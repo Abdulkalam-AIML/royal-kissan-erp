@@ -607,7 +607,7 @@ export default function NonLocalRoutesPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
           
           {/* Add Stop to Route */}
-          <div className="glass-card-3d" style={{ padding: '2rem' }}>
+          <div className="card" style={{ padding: '2rem' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem' }}>
               Add Stops to: {selectedRoute?.name}
             </h3>
@@ -619,11 +619,11 @@ export default function NonLocalRoutesPage() {
               {savingStop ? 'Saving...' : '➕ Add Stop'}
             </button>
 
-            <div style={{ marginTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '1rem' }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: '800', color: 'hsl(215 20% 60%)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Current Stops List</div>
+            <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-2)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Current Stops List</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '180px', overflowY: 'auto' }}>
                 {routeStopsList.map(s => (
-                  <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '0.5rem' }}>
+                  <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem', background: 'var(--surface-3)', borderRadius: '0.5rem' }}>
                     <span style={{ fontSize: '0.875rem', color: '#fff' }}>{s.stop_order}. {s.name}</span>
                     <button className="btn btn-danger btn-sm" style={{ padding: '0.2rem 0.5rem' }} onClick={() => handleDeleteStop(s.id)}>✕</button>
                   </div>
@@ -633,7 +633,7 @@ export default function NonLocalRoutesPage() {
           </div>
 
           {/* Create New Highway Route */}
-          <div className="glass-card-3d" style={{ padding: '2rem' }}>
+          <div className="card" style={{ padding: '2rem' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem' }}>
               Create New Route
             </h3>
@@ -654,7 +654,7 @@ export default function NonLocalRoutesPage() {
       )}
 
       {/* TRIP SETTINGS CONFIGURATOR */}
-      <div className="glass-card-3d" style={{ padding: '2rem', marginBottom: '1.5rem' }}>
+      <div className="card" style={{ padding: '2rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
           
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -689,13 +689,13 @@ export default function NonLocalRoutesPage() {
       </div>
 
       {/* ROUTE DISPATCH CONFIGURATOR PANEL (Task 1) */}
-      <div className="glass-card-3d" style={{ padding: '2rem', marginBottom: '1.5rem' }}>
+      <div className="card" style={{ padding: '2rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
           <div>
             <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>
               {activeDispatch ? '✅ Dispatch Issued' : '📦 Route Dispatch Loading Config'}
             </h3>
-            <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'hsl(215 20% 65%)' }}>
+            <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-2)' }}>
               {activeDispatch ? 'Stock is dispatched and loaded onto vehicle.' : 'Configure quantities issued to driver before route start.'}
             </p>
           </div>
@@ -711,7 +711,7 @@ export default function NonLocalRoutesPage() {
             <div key={prodName} className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label" style={{ fontSize: '0.75rem' }}>{prodName}</label>
               {activeDispatch ? (
-                <div className="form-input font-mono" style={{ background: 'rgba(255,255,255,0.03)', opacity: 0.8, display: 'flex', alignItems: 'center' }}>
+                <div className="form-input font-mono" style={{ background: 'var(--surface-3)', opacity: 0.8, display: 'flex', alignItems: 'center' }}>
                   {qty} units
                 </div>
               ) : (
@@ -741,7 +741,7 @@ export default function NonLocalRoutesPage() {
 
       {/* DAILY STOP SHEET INVOICING PANEL */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
-        <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
+        <div className="card" style={{ overflow: 'hidden' }}>
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 className="card-title">📖 Daily Stop Invoicing Sheet: {selectedRoute?.name}</h3>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -752,7 +752,7 @@ export default function NonLocalRoutesPage() {
           
           <div style={{ overflowX: 'auto' }}>
             {routeStopsList.length === 0 ? (
-              <div style={{ padding: '3rem', textAlign: 'center', color: 'hsl(215 20% 45%)' }}>
+              <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-2)' }}>
                 <p>No stops configured. Open Route Settings to configure stops for this route.</p>
               </div>
             ) : (
@@ -836,7 +836,7 @@ export default function NonLocalRoutesPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
         
         {/* Expenses entry card */}
-        <div className="glass-card-3d" style={{ padding: '2rem' }}>
+        <div className="card" style={{ padding: '2rem' }}>
           <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem' }}>Log Route Expenses</h3>
           
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
@@ -861,20 +861,20 @@ export default function NonLocalRoutesPage() {
         </div>
 
         {/* Dynamic calculations card */}
-        <div className="glass-card-3d" style={{ padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div className="card" style={{ padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>Dynamic Summary</h3>
           
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.75rem', fontSize: '0.875rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', fontSize: '0.875rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'hsl(215 20% 55%)' }}>Total Sales Amount:</span>
+              <span style={{ color: 'var(--text-2)' }}>Total Sales Amount:</span>
               <span style={{ fontWeight: '700', color: '#fff' }}>₹{totals.totalSales}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'hsl(215 20% 55%)' }}>Total Qty Loaded:</span>
+              <span style={{ color: 'var(--text-2)' }}>Total Qty Loaded:</span>
               <span style={{ fontWeight: '700', color: '#fff' }}>{totals.totalQty} cases/cans</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'hsl(215 20% 55%)' }}>Trip Expenses Logged:</span>
+              <span style={{ color: 'var(--text-2)' }}>Trip Expenses Logged:</span>
               <span style={{ fontWeight: '700', color: '#f87171' }}>- ₹{totals.totalExpenses}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#f87171' }}>
@@ -885,7 +885,7 @@ export default function NonLocalRoutesPage() {
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <span style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', fontWeight: '600' }}>NET TRIP COLLECTION</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-2)', fontWeight: '600' }}>NET TRIP COLLECTION</span>
               <div style={{ fontSize: '1.5rem', fontWeight: '800', color: totals.netCollection >= 0 ? '#34d399' : '#f87171', marginTop: '0.125rem' }}>
                 ₹{totals.netCollection}
               </div>
@@ -904,7 +904,7 @@ export default function NonLocalRoutesPage() {
       </div>
 
       {/* TRIP HISTORY LOG TABLE */}
-      <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
+      <div className="card" style={{ overflow: 'hidden' }}>
         <div className="card-header"><h3 className="card-title">📖 Permanent Route Run History Logs</h3></div>
         <div style={{ overflowX: 'auto' }}>
           <table className="erp-table">
@@ -935,7 +935,7 @@ export default function NonLocalRoutesPage() {
               ))}
               {historyLogs.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: 'hsl(215 20% 45%)' }}>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
                     No route runs logged yet.
                   </td>
                 </tr>

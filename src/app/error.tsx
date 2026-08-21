@@ -23,7 +23,7 @@ export default function Error({
     }}>
       <div style={{ textAlign: 'center', maxWidth: '640px', width: '100%' }}>
         <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>❌</div>
-        <h2 style={{ fontSize: '1.25rem', fontWeight: '700', color: 'hsl(210 40% 98%)', marginBottom: '0.5rem' }}>
+        <h2 style={{ fontSize: '1.25rem', fontWeight: '700', color: 'var(--text-1)', marginBottom: '0.5rem' }}>
           Application Render Crash (HTTP 500)
         </h2>
         <p style={{ color: 'hsl(0 85% 70%)', marginBottom: '1.5rem', fontSize: '0.9rem', fontWeight: 'bold' }}>
@@ -40,8 +40,8 @@ export default function Error({
             fontSize: '0.75rem',
             overflowX: 'auto',
             maxHeight: '250px',
-            color: 'hsl(215 20% 65%)',
-            fontFamily: 'monospace',
+            color: 'var(--text-2)',
+            fontFamily: 'var(--font-m)',
             marginBottom: '1.5rem',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-all'

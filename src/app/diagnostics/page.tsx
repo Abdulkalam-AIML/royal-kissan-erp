@@ -253,7 +253,7 @@ export default function DiagnosticsPage() {
             <h1 style={{ fontSize: '1.875rem', fontWeight: '800', margin: 0, color: '#38bdf8', letterSpacing: '-0.025em' }}>
               🔌 Supabase Connection Audit & Diagnostics
             </h1>
-            <p style={{ color: 'hsl(215 20% 65%)', fontSize: '0.925rem', marginTop: '0.35rem' }}>
+            <p style={{ color: 'var(--text-2)', fontSize: '0.925rem', marginTop: '0.35rem' }}>
               Query-based connectivity diagnostics for Royal Kissan ERP
             </p>
           </div>
@@ -295,13 +295,13 @@ export default function DiagnosticsPage() {
               boxShadow: connectionStatus === 'healthy' ? '0 0 12px #10b981' : '0 0 12px #ef4444'
             }} />
             <div>
-              <div style={{ fontSize: '0.8125rem', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em', color: 'hsl(215 20% 55%)' }}>Overall Status</div>
+              <div style={{ fontSize: '0.8125rem', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em', color: 'var(--text-2)' }}>Overall Status</div>
               <strong style={{ fontSize: '1.375rem', color: connectionStatus === 'healthy' ? '#10b981' : '#f87171' }}>
                 {connectionStatus === 'healthy' ? '🟢 HEALTHY' : connectionStatus === 'testing' ? 'Testing Connection...' : '🔴 UNHEALTHY'}
               </strong>
             </div>
           </div>
-          <div style={{ fontSize: '0.875rem', color: 'hsl(215 20% 55%)', textAlign: 'right' }}>
+          <div style={{ fontSize: '0.875rem', color: 'var(--text-2)', textAlign: 'right' }}>
             Connection verified via actual SELECT & INSERT query operations
           </div>
         </div>
@@ -315,7 +315,7 @@ export default function DiagnosticsPage() {
         }}>
           {/* Env Card */}
           <div style={{ background: 'hsl(222 47% 7%)', border: '1px solid hsl(217 32% 14%)', borderRadius: '0.75rem', padding: '1.25rem' }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'hsl(215 20% 55%)', marginBottom: '0.5rem' }}>Environment Check</div>
+            <div style={{ fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-2)', marginBottom: '0.5rem' }}>Environment Check</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ color: envStatus === 'healthy' ? '#10b981' : '#ef4444', fontSize: '1.25rem', fontWeight: '700' }}>
                 {envStatus === 'healthy' ? '🟢 Working' : '🔴 Failed'}
@@ -325,7 +325,7 @@ export default function DiagnosticsPage() {
 
           {/* Read Card */}
           <div style={{ background: 'hsl(222 47% 7%)', border: '1px solid hsl(217 32% 14%)', borderRadius: '0.75rem', padding: '1.25rem' }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'hsl(215 20% 55%)', marginBottom: '0.5rem' }}>Database Read</div>
+            <div style={{ fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-2)', marginBottom: '0.5rem' }}>Database Read</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ color: dbReadStatus === 'healthy' ? '#10b981' : dbReadStatus === 'testing' ? '#f59e0b' : '#ef4444', fontSize: '1.25rem', fontWeight: '700' }}>
                 {dbReadStatus === 'healthy' ? '🟢 Working' : dbReadStatus === 'testing' ? '🟡 Testing...' : '🔴 Failed'}
@@ -335,7 +335,7 @@ export default function DiagnosticsPage() {
 
           {/* Write Card */}
           <div style={{ background: 'hsl(222 47% 7%)', border: '1px solid hsl(217 32% 14%)', borderRadius: '0.75rem', padding: '1.25rem' }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'hsl(215 20% 55%)', marginBottom: '0.5rem' }}>Database Write</div>
+            <div style={{ fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-2)', marginBottom: '0.5rem' }}>Database Write</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ color: dbWriteStatus === 'healthy' ? '#10b981' : dbWriteStatus === 'testing' ? '#f59e0b' : '#ef4444', fontSize: '1.25rem', fontWeight: '700' }}>
                 {dbWriteStatus === 'healthy' ? '🟢 Working' : dbWriteStatus === 'testing' ? '🟡 Testing...' : '🔴 Failed'}
@@ -345,7 +345,7 @@ export default function DiagnosticsPage() {
 
           {/* Tables Checklist Status */}
           <div style={{ background: 'hsl(222 47% 7%)', border: '1px solid hsl(217 32% 14%)', borderRadius: '0.75rem', padding: '1.25rem' }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'hsl(215 20% 55%)', marginBottom: '0.5rem' }}>Tables Status</div>
+            <div style={{ fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-2)', marginBottom: '0.5rem' }}>Tables Status</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ color: tablesStatus === 'healthy' ? '#10b981' : tablesStatus === 'warning' ? '#f59e0b' : '#ef4444', fontSize: '1.25rem', fontWeight: '700' }}>
                 {tablesStatus === 'healthy' ? '🟢 Working' : tablesStatus === 'warning' ? '🟡 Warnings' : '🔴 Failed'}
@@ -355,13 +355,13 @@ export default function DiagnosticsPage() {
 
           {/* Auth Card */}
           <div style={{ background: 'hsl(222 47% 7%)', border: '1px solid hsl(217 32% 14%)', borderRadius: '0.75rem', padding: '1.25rem' }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'hsl(215 20% 55%)', marginBottom: '0.5rem' }}>Authentication</div>
+            <div style={{ fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-2)', marginBottom: '0.5rem' }}>Authentication</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ color: authStatus === 'healthy' ? '#10b981' : authStatus === 'warning' ? '#f59e0b' : '#ef4444', fontSize: '1.25rem', fontWeight: '700' }}>
                 {authStatus === 'healthy' ? '🟢 Active User' : authStatus === 'warning' ? '🟡 No Active User' : '🔴 Failed'}
               </span>
             </div>
-            {activeUserEmail && <div style={{ fontSize: '0.7rem', color: 'hsl(215 20% 65%)', marginTop: '0.25rem', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeUserEmail}</div>}
+            {activeUserEmail && <div style={{ fontSize: '0.7rem', color: 'var(--text-2)', marginTop: '0.25rem', fontFamily: 'var(--font-m)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeUserEmail}</div>}
           </div>
         </div>
 
@@ -371,7 +371,7 @@ export default function DiagnosticsPage() {
           {/* Loaded env detail */}
           <div style={{ background: 'hsl(222 47% 7%)', border: '1px solid hsl(217 32% 14%)', borderRadius: '0.75rem', padding: '1.25rem' }}>
             <h3 style={{ fontSize: '0.875rem', color: '#38bdf8', textTransform: 'uppercase', margin: '0 0 0.75rem', fontWeight: '700' }}>1. Loaded Environment Variables</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.875rem', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.875rem', fontFamily: 'var(--font-m)', wordBreak: 'break-all' }}>
               <div><strong>NEXT_PUBLIC_SUPABASE_URL:</strong> {supabaseUrl || '⚠️ UNDEFINED'}</div>
               <div><strong>NEXT_PUBLIC_SUPABASE_ANON_KEY:</strong> {anonKeyLoaded ? '✅ LOADED (Valid token)' : '⚠️ UNDEFINED'}</div>
               <div><strong>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:</strong> {pubKeyLoaded ? '✅ LOADED (Valid token)' : '⚠️ UNDEFINED'}</div>
@@ -391,7 +391,7 @@ export default function DiagnosticsPage() {
                   border: '1px solid hsl(217 32% 12%)',
                   overflowX: 'auto',
                   fontSize: '0.8125rem',
-                  fontFamily: 'monospace',
+                  fontFamily: 'var(--font-m)',
                   marginTop: '0.25rem',
                   color: '#34d399'
                 }}>{billsDataReturned}</pre>
@@ -401,7 +401,7 @@ export default function DiagnosticsPage() {
                 <div style={{
                   color: billsError === 'None' ? '#10b981' : '#f87171',
                   fontWeight: '600',
-                  fontFamily: 'monospace',
+                  fontFamily: 'var(--font-m)',
                   marginTop: '0.25rem'
                 }}>{billsError}</div>
               </div>
@@ -417,7 +417,7 @@ export default function DiagnosticsPage() {
               <div style={{
                 color: insertError === 'None' ? '#10b981' : '#f87171',
                 fontWeight: '600',
-                fontFamily: 'monospace',
+                fontFamily: 'var(--font-m)',
                 marginTop: '0.25rem'
               }}>{insertError}</div>
             </div>
@@ -429,9 +429,9 @@ export default function DiagnosticsPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
                 <tr style={{ background: 'hsl(222 47% 10%)', borderBottom: '1px solid hsl(217 32% 14%)' }}>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left', color: 'hsl(215 20% 55%)' }}>Table Name</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'center', color: 'hsl(215 20% 55%)' }}>Status</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right', color: 'hsl(215 20% 55%)' }}>Details / Error</th>
+                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left', color: 'var(--text-2)' }}>Table Name</th>
+                  <th style={{ padding: '0.75rem 1rem', textAlign: 'center', color: 'var(--text-2)' }}>Status</th>
+                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right', color: 'var(--text-2)' }}>Details / Error</th>
                 </tr>
               </thead>
               <tbody>
@@ -463,7 +463,7 @@ export default function DiagnosticsPage() {
               border: '1px solid hsl(217 32% 14%)',
               borderRadius: '0.5rem',
               padding: '1rem',
-              fontFamily: 'monospace',
+              fontFamily: 'var(--font-m)',
               fontSize: '0.8125rem',
               color: '#34d399',
               maxHeight: '250px',

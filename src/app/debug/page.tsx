@@ -107,7 +107,7 @@ export default function DebugPage() {
     <div style={{
       minHeight: '100vh',
       background: 'hsl(222 47% 5%)',
-      color: 'hsl(210 40% 98%)',
+      color: 'var(--text-1)',
       padding: '2.5rem 1.5rem',
       fontFamily: 'Inter, system-ui, sans-serif'
     }}>
@@ -117,7 +117,7 @@ export default function DebugPage() {
             <h1 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0, letterSpacing: '-0.025em' }}>
               🛠️ Supabase Connectivity Diagnostics
             </h1>
-            <p style={{ fontSize: '0.875rem', color: 'hsl(215 20% 55%)', marginTop: '0.25rem' }}>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-2)', marginTop: '0.25rem' }}>
               Real-time integration check for environments, auth session, and database access
             </p>
           </div>
@@ -142,17 +142,17 @@ export default function DebugPage() {
           
           {/* Supabase URL Card */}
           <div style={{ background: 'hsl(222 47% 8%)', border: '1px solid hsl(217 32% 17%)', borderRadius: '0.75rem', padding: '1.25rem' }}>
-            <h3 style={{ fontSize: '0.8125rem', fontWeight: '700', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.5rem' }}>
+            <h3 style={{ fontSize: '0.8125rem', fontWeight: '700', color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.5rem' }}>
               Supabase URL Configured
             </h3>
-            <div style={{ fontFamily: 'monospace', fontSize: '0.875rem', color: 'hsl(199 89% 48%)', wordBreak: 'break-all' }}>
+            <div style={{ fontFamily: 'var(--font-m)', fontSize: '0.875rem', color: 'hsl(199 89% 48%)', wordBreak: 'break-all' }}>
               {supabaseUrl}
             </div>
           </div>
 
           {/* Connection Status Card */}
           <div style={{ background: 'hsl(222 47% 8%)', border: '1px solid hsl(217 32% 17%)', borderRadius: '0.75rem', padding: '1.25rem' }}>
-            <h3 style={{ fontSize: '0.8125rem', fontWeight: '700', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.5rem' }}>
+            <h3 style={{ fontSize: '0.8125rem', fontWeight: '700', color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.5rem' }}>
               Connection Health Status
             </h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -168,20 +168,20 @@ export default function DebugPage() {
 
           {/* Session Status Card */}
           <div style={{ background: 'hsl(222 47% 8%)', border: '1px solid hsl(217 32% 17%)', borderRadius: '0.75rem', padding: '1.25rem' }}>
-            <h3 style={{ fontSize: '0.8125rem', fontWeight: '700', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.5rem' }}>
+            <h3 style={{ fontSize: '0.8125rem', fontWeight: '700', color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.5rem' }}>
               Authentication Session
             </h3>
-            <div style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
+            <div style={{ fontFamily: 'var(--font-m)', fontSize: '0.875rem' }}>
               {sessionStatus}
             </div>
           </div>
 
           {/* Database Status Card */}
           <div style={{ background: 'hsl(222 47% 8%)', border: '1px solid hsl(217 32% 17%)', borderRadius: '0.75rem', padding: '1.25rem' }}>
-            <h3 style={{ fontSize: '0.8125rem', fontWeight: '700', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.5rem' }}>
+            <h3 style={{ fontSize: '0.8125rem', fontWeight: '700', color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.5rem' }}>
               Database Read/Write Verification
             </h3>
-            <div style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
+            <div style={{ fontFamily: 'var(--font-m)', fontSize: '0.875rem' }}>
               {databaseStatus}
             </div>
           </div>
@@ -198,7 +198,7 @@ export default function DebugPage() {
                 borderRadius: '0.5rem',
                 padding: '1rem',
                 fontSize: '0.8rem',
-                fontFamily: 'monospace',
+                fontFamily: 'var(--font-m)',
                 color: 'hsl(0 85% 85%)',
                 whiteSpace: 'pre-wrap',
                 margin: 0

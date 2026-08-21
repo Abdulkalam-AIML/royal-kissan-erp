@@ -1,26 +1,28 @@
 'use client'
+
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { Package, Plus, Edit, Check, X, Shield, RefreshCw } from 'lucide-react'
+import { formatCurrency } from '@/lib/utils/formatters'
+import { DataTable, Column } from '@/components/ui/DataTable'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Input, Select } from '@/components/ui/Input'
+import { SkeletonTable } from '@/components/ui/Skeleton'
 
 const DEFAULT_PRODUCTS = [
-  { name: 'Water Can (20L)',   category: 'Can',    unit: 'piece', default_rate: 15,  gst_rate: 18, hsn_code: '2201', is_active: true, manual_price: false },
-  { name: 'Cooling Can (20L)', category: 'Can',    unit: 'piece', default_rate: 30,  gst_rate: 18, hsn_code: '2201', is_active: true, manual_price: false },
-  { name: 'Water Packets',     category: 'Packet', unit: 'piece', default_rate: 0,   gst_rate: 12, hsn_code: '2201', is_active: true, manual_price: true  },
-  { name: '500ml Bottle Case', category: 'Bottle', unit: 'case',  default_rate: 140, gst_rate: 18, hsn_code: '2201', is_active: true, manual_price: false },
-  { name: '250ml Bottle Case', category: 'Bottle', unit: 'case',  default_rate: 150, gst_rate: 18, hsn_code: '2201', is_active: true, manual_price: false },
-  { name: '1L Bottle Case',    category: 'Bottle', unit: 'case',  default_rate: 120, gst_rate: 18, hsn_code: '2201', is_active: true, manual_price: false },
-  { name: '2L Bottle Case',    category: 'Bottle', unit: 'case',  default_rate: 150, gst_rate: 18, hsn_code: '2201', is_active: true, manual_price: false },
+  { id: '1', name: 'Water Can (20L)',   category: 'Can',    unit: 'piece', default_rate: 15,  gst_rate: 18, hsn_code: '2201', is_active: true },
+  { id: '2', name: 'Cooling Can (20L)', category: 'Can',    unit: 'piece', default_rate: 30,  gst_rate: 18, hsn_code: '2201', is_active: true },
+  { id: '3', name: 'Water Packets',     category: 'Packet', unit: 'piece', default_rate: 80,  gst_rate: 12, hsn_code: '2201', is_active: true },
+  { id: '4', name: '500ml Bottle Case', category: 'Bottle', unit: 'case',  default_rate: 140, gst_rate: 18, hsn_code: '2201', is_active: true },
+  { id: '5', name: '1L Bottle Case',    category: 'Bottle', unit: 'case',  default_rate: 120, gst_rate: 18, hsn_code: '2201', is_active: true },
+  { id: '6', name: '2L Bottle Case',    category: 'Bottle', unit: 'case',  default_rate: 150, gst_rate: 18, hsn_code: '2201', is_active: true },
 ]
-
-const CATEGORY_ICONS: Record<string, string> = { Can: '🪣', Packet: '🛍️', Bottle: '🍶' }
-const CATEGORY_GRADIENT: Record<string, string> = {
-  Can:    'linear-gradient(135deg, hsl(217 91% 30% / 0.4), hsl(217 91% 20% / 0.2))',
-  Packet: 'linear-gradient(135deg, hsl(142 60% 25% / 0.4), hsl(142 60% 15% / 0.2))',
-  Bottle: 'linear-gradient(135deg, hsl(270 60% 30% / 0.4), hsl(270 60% 20% / 0.2))',
-}
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<any[]>(DEFAULT_PRODUCTS)
+  const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<any>({})
   const [saving, setSaving] = useState(false)
@@ -31,14 +33,19 @@ export default function ProductsPage() {
   useEffect(() => { loadProducts() }, [])
 
   async function loadProducts() {
+    setLoading(true)
     try {
       const { data } = await supabase.from('products').select('id, name, category, default_rate, gst_rate, hsn_code, is_active, unit').order('name')
       if (data && data.length > 0) setProducts(data)
-    } catch { /* use defaults */ }
+    } catch {
+      // fallback
+    } finally {
+      setLoading(false)
+    }
   }
 
   function startEdit(p: any) {
-    setEditingId(p.id || p.name)
+    setEditingId(p.id)
     setEditForm({ ...p })
   }
 
@@ -55,17 +62,20 @@ export default function ProductsPage() {
           category: editForm.category,
         }).eq('id', editForm.id)
       }
-      // Update local state optimistically
-      setProducts(prev => prev.map(p => (p.id || p.name) === editingId ? { ...p, ...editForm } : p))
+      setProducts(prev => prev.map(p => p.id === editingId ? { ...p, ...editForm } : p))
     } catch { /* ignore */ }
     setEditingId(null)
     setSaving(false)
   }
 
   async function saveNewProduct() {
+    if (!addForm.name.trim()) {
+      alert('Product name is required')
+      return
+    }
     setSaving(true)
     try {
-      const { data } = await supabase.from('products').insert(addForm).select().single()
+      const { data } = await supabase.from('products').insert([addForm]).select().single()
       if (data) setProducts(prev => [...prev, data])
       else setProducts(prev => [...prev, { ...addForm, id: Date.now().toString() }])
     } catch {
@@ -76,167 +86,142 @@ export default function ProductsPage() {
     setSaving(false)
   }
 
-  async function toggleStatus(p: any) {
-    const newStatus = !p.is_active
-    if (p.id) {
-      await supabase.from('products').update({ is_active: newStatus }).eq('id', p.id)
-    }
-    setProducts(prev => prev.map(item => (item.id || item.name) === (p.id || p.name) ? { ...item, is_active: newStatus } : item))
-  }
-
-  const grouped = products.reduce((acc: Record<string, any[]>, p) => {
-    const cat = p.category || 'Other'
-    if (!acc[cat]) acc[cat] = []
-    acc[cat].push(p)
-    return acc
-  }, {})
+  const columns: Column<any>[] = [
+    {
+      key: 'name',
+      title: 'Product Name',
+      sortable: true,
+      render: (p) => (
+        editingId === p.id ? (
+          <Input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} style={{ marginBottom: 0 }} />
+        ) : (
+          <div style={{ fontWeight: 700, color: '#f4f4f5' }}>{p.name}</div>
+        )
+      ),
+    },
+    {
+      key: 'category',
+      title: 'Category',
+      render: (p) => (
+        <Badge variant="neutral">{p.category || 'Can'}</Badge>
+      ),
+    },
+    {
+      key: 'default_rate',
+      title: 'Default Rate (₹)',
+      align: 'right',
+      sortable: true,
+      render: (p) => (
+        editingId === p.id ? (
+          <Input type="number" value={editForm.default_rate} onChange={e => setEditForm({ ...editForm, default_rate: Number(e.target.value) })} style={{ marginBottom: 0, width: '100px', textAlign: 'right' }} />
+        ) : (
+          <span className="num" style={{ fontWeight: 700, color: '#fbbf24' }}>
+            {formatCurrency(Number(p.default_rate) || 0)}
+          </span>
+        )
+      ),
+    },
+    {
+      key: 'gst_rate',
+      title: 'GST Rate (%)',
+      align: 'right',
+      render: (p) => (
+        editingId === p.id ? (
+          <Input type="number" value={editForm.gst_rate} onChange={e => setEditForm({ ...editForm, gst_rate: Number(e.target.value) })} style={{ marginBottom: 0, width: '80px', textAlign: 'right' }} />
+        ) : (
+          <span className="num" style={{ color: '#a1a1aa' }}>{p.gst_rate || 18}%</span>
+        )
+      ),
+    },
+    {
+      key: 'hsn_code',
+      title: 'HSN Code',
+      render: (p) => (
+        <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#71717a' }}>{p.hsn_code || '2201'}</span>
+      ),
+    },
+    {
+      key: 'is_active',
+      title: 'Status',
+      render: (p) => (
+        <Badge variant={p.is_active !== false ? 'success' : 'danger'}>
+          {p.is_active !== false ? 'Active' : 'Inactive'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      title: 'Actions',
+      align: 'right',
+      render: (p) => (
+        editingId === p.id ? (
+          <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }}>
+            <Button variant="primary" size="sm" icon={<Check style={{ width: '12px', height: '12px' }} />} loading={saving} onClick={saveEdit} />
+            <Button variant="secondary" size="sm" icon={<X style={{ width: '12px', height: '12px' }} />} onClick={() => setEditingId(null)} />
+          </div>
+        ) : (
+          <Button variant="secondary" size="sm" icon={<Edit style={{ width: '12px', height: '12px' }} />} onClick={() => startEdit(p)}>
+            Edit Rate
+          </Button>
+        )
+      ),
+    },
+  ]
 
   return (
-    <div>
-      <div className="page-header">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2 className="page-title">💧 Product Master</h2>
-          <p className="page-subtitle">{products.length} products · {products.filter(p => p.is_active).length} active</p>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Package style={{ color: '#fbbf24', width: '28px', height: '28px' }} />
+            Product Master & Pricing Catalog
+          </h2>
+          <p style={{ color: '#a1a1aa', fontSize: '0.85rem', marginTop: '0.25rem' }}>
+            {products.length} products listed &bull; Manage default rates, GST tax slabs, and active SKU statuses.
+          </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowAdd(true)}>➕ Add Product</button>
+
+        <Button variant="primary" icon={<Plus style={{ width: '16px', height: '16px' }} />} onClick={() => setShowAdd(true)}>
+          Add New Product
+        </Button>
       </div>
 
-      {/* Summary Cards */}
-      <div className="stats-grid" style={{ marginBottom: '1.5rem' }}>
-        <div className="stat-card">
-          <div style={{ fontSize: '0.8rem', color: 'hsl(215 20% 55%)', fontWeight: '600' }}>Total Products</div>
-          <div style={{ fontSize: '2rem', fontWeight: '900', color: 'hsl(210 40% 98%)' }}>{products.length}</div>
-        </div>
-        <div className="stat-card">
-          <div style={{ fontSize: '0.8rem', color: 'hsl(215 20% 55%)', fontWeight: '600' }}>Active</div>
-          <div style={{ fontSize: '2rem', fontWeight: '900', color: 'hsl(142 71% 55%)' }}>{products.filter(p => p.is_active).length}</div>
-        </div>
-        <div className="stat-card">
-          <div style={{ fontSize: '0.8rem', color: 'hsl(215 20% 55%)', fontWeight: '600' }}>Categories</div>
-          <div style={{ fontSize: '2rem', fontWeight: '900', color: 'hsl(270 60% 70%)' }}>{Object.keys(grouped).length}</div>
-        </div>
-      </div>
+      {loading ? (
+        <SkeletonTable rows={6} />
+      ) : (
+        <DataTable
+          columns={columns}
+          data={products}
+          searchPlaceholder="Search product by name, category, HSN..."
+          exportFileName="royal-kissan-products"
+        />
+      )}
 
-      {/* Product Cards by Category */}
-      {Object.entries(grouped).map(([category, items]) => (
-        <div key={category} style={{ marginBottom: '2rem' }}>
-          <h3 style={{ fontSize: '0.875rem', fontWeight: '700', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span>{CATEGORY_ICONS[category] || '📦'}</span> {category}s
-          </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
-            {items.map((p) => {
-              const isEditing = editingId === (p.id || p.name)
-              return (
-                <div key={p.id || p.name} className="card" style={{ background: CATEGORY_GRADIENT[category] || 'var(--card-bg)', border: p.is_active ? '1px solid hsl(217 32% 22%)' : '1px solid hsl(0 60% 30% / 0.4)', opacity: p.is_active ? 1 : 0.65 }}>
-                  <div className="card-body">
-                    {isEditing ? (
-                      <div>
-                        <div className="form-group" style={{ marginBottom: '0.75rem' }}>
-                          <label className="form-label">Product Name</label>
-                          <input className="form-input" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                          <div className="form-group">
-                            <label className="form-label">Default Rate (₹)</label>
-                            <input className="form-input" type="number" value={editForm.default_rate} onChange={e => setEditForm({ ...editForm, default_rate: Number(e.target.value) })} />
-                          </div>
-                          <div className="form-group">
-                            <label className="form-label">GST %</label>
-                            <input className="form-input" type="number" value={editForm.gst_rate} onChange={e => setEditForm({ ...editForm, gst_rate: Number(e.target.value) })} />
-                          </div>
-                          <div className="form-group">
-                            <label className="form-label">HSN Code</label>
-                            <input className="form-input" value={editForm.hsn_code} onChange={e => setEditForm({ ...editForm, hsn_code: e.target.value })} />
-                          </div>
-                          <div className="form-group">
-                            <label className="form-label">Status</label>
-                            <select className="form-input" value={editForm.is_active ? 'active' : 'inactive'} onChange={e => setEditForm({ ...editForm, is_active: e.target.value === 'active' })}>
-                              <option value="active">Active</option>
-                              <option value="inactive">Inactive</option>
-                            </select>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button className="btn btn-primary btn-sm" onClick={saveEdit} disabled={saving} style={{ flex: 1 }}>{saving ? 'Saving...' : '✅ Save'}</button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => setEditingId(null)}>Cancel</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                          <div>
-                            <div style={{ fontWeight: '700', color: 'hsl(210 40% 98%)', fontSize: '1rem', marginBottom: '0.25rem' }}>{p.name}</div>
-                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                              <span className="badge badge-muted">{p.category}</span>
-                              <span className="badge badge-muted">{p.unit}</span>
-                              {p.manual_price && <span className="badge badge-warning">Manual Price</span>}
-                            </div>
-                          </div>
-                          <span className={`badge ${p.is_active ? 'badge-success' : 'badge-danger'}`}>{p.is_active ? 'Active' : 'Inactive'}</span>
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
-                          <div style={{ textAlign: 'center', padding: '0.5rem', background: 'hsl(217 32% 10% / 0.5)', borderRadius: '0.5rem' }}>
-                            <div style={{ fontSize: '0.7rem', color: 'hsl(215 20% 55%)', fontWeight: '600' }}>Rate</div>
-                            <div style={{ fontSize: '1.125rem', fontWeight: '800', color: 'hsl(142 71% 55%)' }} className="text-money">
-                              {p.default_rate > 0 ? `₹${p.default_rate}` : <span style={{ color: 'hsl(40 90% 60%)' }}>Manual</span>}
-                            </div>
-                          </div>
-                          <div style={{ textAlign: 'center', padding: '0.5rem', background: 'hsl(217 32% 10% / 0.5)', borderRadius: '0.5rem' }}>
-                            <div style={{ fontSize: '0.7rem', color: 'hsl(215 20% 55%)', fontWeight: '600' }}>GST</div>
-                            <div style={{ fontSize: '1.125rem', fontWeight: '800', color: 'hsl(270 60% 70%)' }}>{p.gst_rate}%</div>
-                          </div>
-                          <div style={{ textAlign: 'center', padding: '0.5rem', background: 'hsl(217 32% 10% / 0.5)', borderRadius: '0.5rem' }}>
-                            <div style={{ fontSize: '0.7rem', color: 'hsl(215 20% 55%)', fontWeight: '600' }}>HSN</div>
-                            <div style={{ fontSize: '1rem', fontWeight: '700', color: 'hsl(215 20% 70%)' }}>{p.hsn_code}</div>
-                          </div>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => startEdit(p)}>✏️ Edit</button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => toggleStatus(p)}>{p.is_active ? '⏸ Disable' : '▶ Enable'}</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      ))}
-
-      {/* Add Product Modal */}
+      {/* Add Modal */}
       {showAdd && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowAdd(false)}>
-          <div className="modal-content" style={{ maxWidth: '480px' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: 'hsl(210 40% 98%)', margin: 0 }}>➕ Add New Product</h3>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowAdd(false)}>✕</button>
+        <div className="modal-overlay">
+          <div className="modal-container">
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#fff' }}>Add New Product SKU</h3>
+              <button onClick={() => setShowAdd(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}>
+                <X style={{ width: '20px', height: '20px' }} />
+              </button>
             </div>
-            <div style={{ padding: '1.5rem' }}>
-              <div className="form-group"><label className="form-label">Product Name *</label><input className="form-input" placeholder="e.g. Water Can (20L)" value={addForm.name} onChange={e => setAddForm({ ...addForm, name: e.target.value })} /></div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Category</label>
-                  <select className="form-input" value={addForm.category} onChange={e => setAddForm({ ...addForm, category: e.target.value })}>
-                    <option>Can</option><option>Packet</option><option>Bottle</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Unit</label>
-                  <select className="form-input" value={addForm.unit} onChange={e => setAddForm({ ...addForm, unit: e.target.value })}>
-                    <option value="piece">Piece</option><option value="case">Case</option><option value="pack">Pack</option>
-                  </select>
-                </div>
-                <div className="form-group"><label className="form-label">Default Rate (₹)</label><input className="form-input" type="number" value={addForm.default_rate} onChange={e => setAddForm({ ...addForm, default_rate: Number(e.target.value) })} /></div>
-                <div className="form-group"><label className="form-label">GST %</label><input className="form-input" type="number" value={addForm.gst_rate} onChange={e => setAddForm({ ...addForm, gst_rate: Number(e.target.value) })} /></div>
-                <div className="form-group"><label className="form-label">HSN Code</label><input className="form-input" value={addForm.hsn_code} onChange={e => setAddForm({ ...addForm, hsn_code: e.target.value })} /></div>
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <Input label="Product Name" placeholder="e.g. 20L Water Can" value={addForm.name} onChange={e => setAddForm({ ...addForm, name: e.target.value })} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <Select label="Category" value={addForm.category} onChange={e => setAddForm({ ...addForm, category: e.target.value })} options={[{ value: 'Can', label: 'Water Can' }, { value: 'Bottle', label: 'Bottle Case' }, { value: 'Packet', label: 'Water Packets' }]} />
+                <Input label="Default Rate (₹)" type="number" value={addForm.default_rate} onChange={e => setAddForm({ ...addForm, default_rate: Number(e.target.value) })} />
               </div>
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', paddingTop: '0.75rem', borderTop: '1px solid hsl(217 32% 17%)' }}>
-                <button className="btn btn-ghost" onClick={() => setShowAdd(false)}>Cancel</button>
-                <button className="btn btn-primary" onClick={saveNewProduct} disabled={!addForm.name || saving}>{saving ? 'Saving...' : '✅ Save Product'}</button>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <Input label="GST Rate (%)" type="number" value={addForm.gst_rate} onChange={e => setAddForm({ ...addForm, gst_rate: Number(e.target.value) })} />
+                <Input label="HSN Code" value={addForm.hsn_code} onChange={e => setAddForm({ ...addForm, hsn_code: e.target.value })} />
               </div>
+            </div>
+            <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
+              <Button variant="primary" loading={saving} onClick={saveNewProduct}>Create Product</Button>
             </div>
           </div>
         </div>

@@ -669,7 +669,7 @@ export default function DriversPage() {
       
       {/* MONOSPACE THERMAL PRINTER RECEIPT OVERLAY */}
       {successData && (
-        <div id="print-area" style={{ display: 'none', backgroundColor: '#fff', color: '#000', padding: '1rem', fontFamily: 'monospace', fontSize: '12px' }}>
+        <div id="print-area" style={{ display: 'none', backgroundColor: '#fff', color: '#000', padding: '1rem', fontFamily: 'var(--font-m)', fontSize: '12px' }}>
           <div style={{ textAlign: 'center', marginBottom: '10px' }}>
             <h3 style={{ margin: '0 0 4px', fontWeight: 'bold' }}>ROYAL KISSAN DRINKING WATER</h3>
             <p style={{ margin: '0 0 2px' }}>Guntur Highway Road, Guntur</p>
@@ -758,20 +758,20 @@ export default function DriversPage() {
               <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
                 <span style={{ fontSize: '3rem' }}>🧾</span>
                 <h4 style={{ margin: '0.5rem 0 0.25rem', fontWeight: '700' }}>Bill Generated</h4>
-                <p style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>Invoice #: {successData.invoiceNumber}</p>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>Invoice #: {successData.invoiceNumber}</p>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '0.75rem', fontSize: '0.875rem', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', fontSize: '0.875rem', border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'hsl(215 20% 55%)' }}>Customer:</span>
+                  <span style={{ color: 'var(--text-2)' }}>Customer:</span>
                   <span style={{ fontWeight: '700' }}>{successData.customerName}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'hsl(215 20% 55%)' }}>Product:</span>
+                  <span style={{ color: 'var(--text-2)' }}>Product:</span>
                   <span>{successData.productName} ({successData.qty} units)</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
-                  <span style={{ color: 'hsl(215 20% 55%)' }}>Total Amount:</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
+                  <span style={{ color: 'var(--text-2)' }}>Total Amount:</span>
                   <span style={{ fontWeight: '700' }}>₹{successData.total}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: '#34d399' }}>
@@ -786,7 +786,7 @@ export default function DriversPage() {
                 )}
               </div>
             </div>
-            <div style={{ padding: '1rem', display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ padding: '1rem', display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
               <button className="btn btn-ghost" onClick={() => setSuccessData(null)}>Close</button>
               <button className="btn btn-primary" onClick={handlePrint}>🖨️ Print Receipt</button>
             </div>
@@ -812,7 +812,7 @@ export default function DriversPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: 'hsl(215 20% 65%)',
+              color: 'var(--text-2)',
               cursor: 'pointer',
               transition: 'all 0.2s ease'
             }}
@@ -827,7 +827,7 @@ export default function DriversPage() {
             {currentView === 'categories' && `🗺️ Route Category: ${selectedRoute?.name}`}
             {currentView === 'customers' && `👥 Stop List & Billing: ${selectedCategory?.toUpperCase()}`}
           </h2>
-          <p style={{ fontSize: '0.8125rem', color: 'hsl(215 20% 55%)', marginTop: '0.25rem' }}>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text-2)', marginTop: '0.25rem' }}>
             {currentView === 'drivers' && 'Select active driver to run daily route assignments, dispatches, and reconciliation'}
             {currentView === 'profile' && 'Assign daily routes, record truck stock, enter customer stops with auto/manual rates, and complete run reconciliation'}
             {currentView === 'categories' && 'Select product type to log sales'}
@@ -853,7 +853,7 @@ export default function DriversPage() {
               <div
                 key={d.id}
                 onClick={() => handleDriverSelect(d)}
-                className="glass-card-3d"
+                className="card"
                 style={{
                   padding: '2rem',
                   cursor: 'pointer',
@@ -882,29 +882,29 @@ export default function DriversPage() {
                     </h3>
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.25rem' }}>
                       <span className="badge badge-success">Active</span>
-                      {d.phone && <span style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>{d.phone}</span>}
+                      {d.phone && <span style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>{d.phone}</span>}
                     </div>
                   </div>
                 </div>
 
                 {/* Today Stats */}
                 <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)', paddingTop: '1.25rem' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: '800', color: 'hsl(215 20% 60%)', textTransform: 'uppercase', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>Today's Performance</div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-2)', textTransform: 'uppercase', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>Today's Performance</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', textAlign: 'center' }}>
                     <div>
-                      <div style={{ fontSize: '0.65rem', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', fontWeight: '600' }}>Sales</div>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase', fontWeight: '600' }}>Sales</div>
                       <div style={{ fontSize: '1rem', fontWeight: '800', color: '#fff', marginTop: '0.25rem' }}>
                         ₹{stats.sales.toLocaleString('en-IN')}
                       </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: '0.65rem', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', fontWeight: '600' }}>Collected</div>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase', fontWeight: '600' }}>Collected</div>
                       <div style={{ fontSize: '1rem', fontWeight: '800', color: '#34d399', marginTop: '0.25rem' }}>
                         ₹{stats.collection.toLocaleString('en-IN')}
                       </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: '0.65rem', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', fontWeight: '600' }}>Due</div>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase', fontWeight: '600' }}>Due</div>
                       <div style={{ fontSize: '1rem', fontWeight: '800', color: stats.due > 0 ? '#f87171' : 'hsl(215 20% 55%)', marginTop: '0.25rem' }}>
                         ₹{stats.due.toLocaleString('en-IN')}
                       </div>
@@ -914,16 +914,16 @@ export default function DriversPage() {
 
                 {/* Monthly Stats */}
                 <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)', paddingTop: '1.25rem' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: '800', color: 'hsl(215 20% 60%)', textTransform: 'uppercase', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>Monthly Performance</div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-2)', textTransform: 'uppercase', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>Monthly Performance</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div>
-                      <div style={{ fontSize: '0.65rem', color: 'hsl(215 20% 55%)' }}>Month Sales</div>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-2)' }}>Month Sales</div>
                       <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#60a5fa', marginTop: '0.125rem' }}>
                         ₹{stats.mSales.toLocaleString('en-IN')}
                       </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: '0.65rem', color: 'hsl(215 20% 55%)' }}>Month Collection</div>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-2)' }}>Month Collection</div>
                       <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#34d399', marginTop: '0.125rem' }}>
                         ₹{stats.mCollection.toLocaleString('en-IN')}
                       </div>
@@ -931,7 +931,7 @@ export default function DriversPage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.8125rem', color: 'hsl(215 20% 45%)', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--text-2)', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
                   <span>Salary: ₹{(d.salary || 10000).toLocaleString('en-IN')}/mo</span>
                   <span style={{ color: '#3b82f6', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                     Open Driver Workspace <span>→</span>
@@ -948,27 +948,27 @@ export default function DriversPage() {
         <div style={{ maxWidth: '1100px', margin: '0 auto' }} className="animate-fade-in">
           
           {/* Driver Stats summary strip */}
-          <div className="glass-card-3d" style={{ padding: '1.25rem 2rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+          <div className="card" style={{ padding: '1.25rem 2rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <span style={{ fontSize: '2rem' }}>🚛</span>
               <div>
                 <h4 style={{ margin: 0, fontWeight: '800', fontSize: '1.1rem', color: '#fff' }}>{selectedDriver.name}</h4>
-                <p style={{ margin: 0, fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>
+                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-2)' }}>
                   {dailyAssignment ? `Assigned Route: ${dailyAssignment.routes?.name || 'Local Route'} (${dailyAssignment.vehicle_number})` : 'No Route Assigned For Today'}
                 </p>
               </div>
             </div>
             <div style={{ display: 'flex', gap: '2rem' }}>
               <div>
-                <div style={{ fontSize: '0.65rem', color: 'hsl(215 20% 55%)', textTransform: 'uppercase' }}>Today Sales</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Today Sales</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff' }}>₹{(driverStats[selectedDriver.id]?.sales || 0).toLocaleString('en-IN')}</div>
               </div>
               <div>
-                <div style={{ fontSize: '0.65rem', color: 'hsl(215 20% 55%)', textTransform: 'uppercase' }}>Today Collection</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Today Collection</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#34d399' }}>₹{(driverStats[selectedDriver.id]?.collection || 0).toLocaleString('en-IN')}</div>
               </div>
               <div>
-                <div style={{ fontSize: '0.65rem', color: 'hsl(215 20% 55%)', textTransform: 'uppercase' }}>Status</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Status</div>
                 <div style={{ fontSize: '0.9rem', fontWeight: '800', color: dailyAssignment?.status === 'completed' ? '#34d399' : dailyAssignment?.status === 'in_progress' ? '#fbbf24' : '#60a5fa' }}>
                   {dailyAssignment?.status ? dailyAssignment.status.toUpperCase() : 'PENDING'}
                 </div>
@@ -977,13 +977,13 @@ export default function DriversPage() {
           </div>
 
           {/* 1. DAILY ROUTE ASSIGNMENT BANNER (LAYER) */}
-          <div className="glass-card-3d" style={{ padding: '1.5rem', marginBottom: '1.5rem', borderLeft: '4px solid #3b82f6' }}>
+          <div className="card" style={{ padding: '1.5rem', marginBottom: '1.5rem', borderLeft: '4px solid #3b82f6' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
               <div>
                 <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>
                   📅 Today's Temporary Driver Route Assignment
                 </h3>
-                <p style={{ fontSize: '0.8125rem', color: 'hsl(215 20% 55%)', margin: '0.25rem 0 0' }}>
+                <p style={{ fontSize: '0.8125rem', color: 'var(--text-2)', margin: '0.25rem 0 0' }}>
                   Assign driver to route temporarily for today without hardcoding permanent route links.
                 </p>
               </div>
@@ -994,7 +994,7 @@ export default function DriversPage() {
                     <div style={{ fontSize: '0.875rem', fontWeight: '700', color: '#fff' }}>
                       {dailyAssignment.routes?.name || selectedRoute?.name || 'Local Route'}
                     </div>
-                    <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>
                       Vehicle: {dailyAssignment.vehicle_number}
                     </div>
                   </div>
@@ -1040,13 +1040,13 @@ export default function DriversPage() {
           </div>
 
           {/* 2. TRUCK DISPATCH / STOCK LOADING SECTION */}
-          <div className="glass-card-3d" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
+          <div className="card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <div>
                 <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>
                   🚚 Truck Loading & Dispatch (Products Loaded)
                 </h3>
-                <p style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', margin: '0.25rem 0 0' }}>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-2)', margin: '0.25rem 0 0' }}>
                   {activeDispatch ? `Dispatched Stock Logged on ${activeDispatch.date}` : 'Log truck stock loaded before starting route run'}
                 </p>
               </div>
@@ -1060,10 +1060,10 @@ export default function DriversPage() {
 
             {/* Display Active Dispatch Summary */}
             {activeDispatch && !showDispatchForm && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '0.75rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '0.75rem', background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
                 {Array.isArray(activeDispatch.items) && activeDispatch.items.map((it: any, idx: number) => (
                   <div key={idx} style={{ fontSize: '0.8125rem' }}>
-                    <span style={{ color: 'hsl(215 20% 55%)' }}>{it.product_name}: </span>
+                    <span style={{ color: 'var(--text-2)' }}>{it.product_name}: </span>
                     <strong style={{ color: '#60a5fa' }}>{it.quantity} units</strong>
                   </div>
                 ))}
@@ -1072,7 +1072,7 @@ export default function DriversPage() {
 
             {/* Stock Loading Form */}
             {showDispatchForm && (
-              <div style={{ marginTop: '1rem', background: 'rgba(255,255,255,0.02)', padding: '1.25rem', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ marginTop: '1rem', background: 'var(--surface-3)', padding: '1.25rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
                   {Object.keys(dispatchItems).map(pName => (
                     <div key={pName} className="form-group">
@@ -1103,7 +1103,7 @@ export default function DriversPage() {
             overflowX: 'auto', 
             paddingBottom: '0.75rem', 
             marginBottom: '1.5rem', 
-            borderBottom: '1px solid rgba(255,255,255,0.06)' 
+            borderBottom: '1px solid var(--border)' 
           }}>
             {[
               ...(isNagaraju ? [{ id: 'local', label: 'Route Completion & Customer Stop Sheet', icon: '🗺️' }] : []),
@@ -1131,13 +1131,13 @@ export default function DriversPage() {
             <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               
               {/* Route Customer Stop Sheet with Auto/Manual Rates */}
-              <div className="glass-card-3d" style={{ padding: '1.5rem' }}>
+              <div className="card" style={{ padding: '1.5rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
                   <div>
                     <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>
                       📋 Route Customer Stop Registry ({selectedRoute?.name || 'Local Route'})
                     </h3>
-                    <p style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', margin: '0.25rem 0 0' }}>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-2)', margin: '0.25rem 0 0' }}>
                       Rates are pre-filled automatically from route_customers.default_rate with manual override per stop entry.
                     </p>
                   </div>
@@ -1288,30 +1288,30 @@ export default function DriversPage() {
               </div>
 
               {/* ROUTE RUN RECONCILIATION SUMMARY & TRIP EXPENSES FORM */}
-              <div className="glass-card-3d" style={{ padding: '2rem' }}>
+              <div className="card" style={{ padding: '2rem' }}>
                 <h3 style={{ fontSize: '1.15rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem' }}>
                   📊 Route Run Completion & Reconciliation Summary
                 </h3>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>Total Route Sales</div>
+                  <div style={{ background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>Total Route Sales</div>
                     <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#fff', marginTop: '0.25rem' }}>₹{summarySales.toLocaleString('en-IN')}</div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>Cash Collected</div>
+                  <div style={{ background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>Cash Collected</div>
                     <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#34d399', marginTop: '0.25rem' }}>₹{summaryCash.toLocaleString('en-IN')}</div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>UPI Collected</div>
+                  <div style={{ background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>UPI Collected</div>
                     <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#34d399', marginTop: '0.25rem' }}>₹{summaryUpi.toLocaleString('en-IN')}</div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>Outstanding Dues</div>
+                  <div style={{ background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>Outstanding Dues</div>
                     <div style={{ fontSize: '1.25rem', fontWeight: '800', color: summaryDue > 0 ? '#f87171' : '#34d399', marginTop: '0.25rem' }}>₹{summaryDue.toLocaleString('en-IN')}</div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>Returned / Leaked</div>
+                  <div style={{ background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>Returned / Leaked</div>
                     <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fbbf24', marginTop: '0.25rem' }}>
                       {summaryReturned} ret / {summaryLeaked} leak
                     </div>
@@ -1319,7 +1319,7 @@ export default function DriversPage() {
                 </div>
 
                 {/* Trip Expenses Form */}
-                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.25rem', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '1.5rem' }}>
+                <div style={{ background: 'var(--surface-3)', padding: '1.25rem', borderRadius: '0.75rem', border: '1px solid var(--border)', marginBottom: '1.5rem' }}>
                   <h4 style={{ fontSize: '0.9rem', fontWeight: '700', color: '#fff', margin: '0 0 1rem' }}>💸 Log Trip Expenses for Reconciliation</h4>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
                     <div className="form-group">
@@ -1365,9 +1365,9 @@ export default function DriversPage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
                   <div>
-                    <span style={{ fontSize: '0.8125rem', color: 'hsl(215 20% 55%)' }}>Net Reconciliation Collection: </span>
+                    <span style={{ fontSize: '0.8125rem', color: 'var(--text-2)' }}>Net Reconciliation Collection: </span>
                     <strong style={{ fontSize: '1.35rem', color: '#34d399', marginLeft: '0.5rem' }}>
                       ₹{(summaryCash + summaryUpi - summaryExpenses).toLocaleString('en-IN')}
                     </strong>
@@ -1390,7 +1390,7 @@ export default function DriversPage() {
 
           {/* TAB 3: COLLECTIONS */}
           {activeTab === 'collections' && (
-            <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
+            <div className="card" style={{ overflow: 'hidden' }}>
               <div className="card-header"><h3 className="card-title">💰 Today's Collections Log</h3></div>
               <div style={{ overflowX: 'auto' }}>
                 <table className="erp-table">
@@ -1417,7 +1417,7 @@ export default function DriversPage() {
                     ))}
                     {dailySalesList.filter(s => (s.cash_paid > 0 || s.upi_paid > 0)).length === 0 && (
                       <tr>
-                        <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'hsl(215 20% 45%)' }}>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
                           No collections registered today.
                         </td>
                       </tr>
@@ -1430,7 +1430,7 @@ export default function DriversPage() {
 
           {/* TAB 4: DUE REPORTS */}
           {activeTab === 'dues' && (
-            <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
+            <div className="card" style={{ overflow: 'hidden' }}>
               <div className="card-header"><h3 className="card-title">🔴 Pending Route Dues</h3></div>
               <div style={{ overflowX: 'auto' }}>
                 <table className="erp-table">
@@ -1451,7 +1451,7 @@ export default function DriversPage() {
                     ))}
                     {customers.filter(c => c.due_amount > 0).length === 0 && (
                       <tr>
-                        <td colSpan={3} style={{ textAlign: 'center', padding: '3rem', color: 'hsl(215 20% 45%)' }}>
+                        <td colSpan={3} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
                           No outstanding customer dues for active route.
                         </td>
                       </tr>
@@ -1464,7 +1464,7 @@ export default function DriversPage() {
 
           {/* TAB 5: DAILY SALES */}
           {activeTab === 'daily' && (
-            <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
+            <div className="card" style={{ overflow: 'hidden' }}>
               <div className="card-header"><h3 className="card-title">📅 Today's Sales Activity</h3></div>
               <div style={{ overflowX: 'auto' }}>
                 <table className="erp-table">
@@ -1481,7 +1481,7 @@ export default function DriversPage() {
                   <tbody>
                     {dailySalesList.map((s, idx) => (
                       <tr key={idx}>
-                        <td style={{ fontFamily: 'monospace', color: '#3b82f6', fontWeight: '600' }}>{s.invoice_number}</td>
+                        <td style={{ fontFamily: 'var(--font-m)', color: '#3b82f6', fontWeight: '600' }}>{s.invoice_number}</td>
                         <td style={{ fontWeight: '600', color: '#fff' }}>{s.customer_name}</td>
                         <td>{s.product_name}</td>
                         <td style={{ textAlign: 'center' }}>{s.quantity}</td>
@@ -1491,7 +1491,7 @@ export default function DriversPage() {
                     ))}
                     {dailySalesList.length === 0 && (
                       <tr>
-                        <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'hsl(215 20% 45%)' }}>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
                           No sales registered today.
                         </td>
                       </tr>
@@ -1504,7 +1504,7 @@ export default function DriversPage() {
 
           {/* TAB 6: MONTHLY SALES */}
           {activeTab === 'monthly' && (
-            <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
+            <div className="card" style={{ overflow: 'hidden' }}>
               <div className="card-header"><h3 className="card-title">📈 Monthly Consolidated Sales Log</h3></div>
               <div style={{ overflowX: 'auto' }}>
                 <table className="erp-table">
@@ -1521,7 +1521,7 @@ export default function DriversPage() {
                   <tbody>
                     {monthlySalesList.map((s, idx) => (
                       <tr key={idx}>
-                        <td style={{ fontFamily: 'monospace', color: '#3b82f6' }}>{s.invoice_number}</td>
+                        <td style={{ fontFamily: 'var(--font-m)', color: '#3b82f6' }}>{s.invoice_number}</td>
                         <td>{s.sale_date}</td>
                         <td style={{ fontWeight: '600', color: '#fff' }}>{s.customer_name}</td>
                         <td>{s.product_name}</td>
@@ -1531,7 +1531,7 @@ export default function DriversPage() {
                     ))}
                     {monthlySalesList.length === 0 && (
                       <tr>
-                        <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'hsl(215 20% 45%)' }}>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
                           No sales recorded this month.
                         </td>
                       </tr>
@@ -1547,7 +1547,7 @@ export default function DriversPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               
               {/* Log Expense Form */}
-              <div className="glass-card-3d" style={{ padding: '1.5rem' }}>
+              <div className="card" style={{ padding: '1.5rem' }}>
                 <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1rem' }}>
                   💸 Log Trip Expense
                 </h3>
@@ -1612,7 +1612,7 @@ export default function DriversPage() {
               </div>
 
               {/* Expenses History List */}
-              <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
+              <div className="card" style={{ overflow: 'hidden' }}>
                 <div className="card-header"><h3 className="card-title">📜 Expense History Log</h3></div>
                 <div style={{ overflowX: 'auto' }}>
                   <table className="erp-table">
@@ -1642,7 +1642,7 @@ export default function DriversPage() {
                       })}
                       {expensesList.length === 0 && (
                         <tr>
-                          <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'hsl(215 20% 45%)' }}>
+                          <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
                             No expenses logged yet.
                           </td>
                         </tr>
@@ -1673,7 +1673,7 @@ export default function DriversPage() {
               
               <div className="form-group">
                 <label className="form-label">Customer Name</label>
-                <input className="form-input" style={{ background: 'rgba(255,255,255,0.02)', color: 'hsl(215 20% 55%)' }} value={billingCustomer.name} readOnly />
+                <input className="form-input" style={{ background: 'var(--surface-3)', color: 'var(--text-2)' }} value={billingCustomer.name} readOnly />
               </div>
 
               <div className="form-group">
@@ -1737,22 +1737,22 @@ export default function DriversPage() {
               </div>
 
               <div style={{
-                background: 'rgba(255,255,255,0.02)',
+                background: 'var(--surface-3)',
                 padding: '1rem',
                 borderRadius: '0.75rem',
-                border: '1px solid rgba(255,255,255,0.05)',
+                border: '1px solid var(--border)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 fontSize: '0.875rem'
               }}>
                 <div>
-                  <span style={{ color: 'hsl(215 20% 55%)' }}>Total Amount:</span>
+                  <span style={{ color: 'var(--text-2)' }}>Total Amount:</span>
                   <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#fff', marginTop: '0.25rem' }}>
                     ₹{billingForm.qty * billingForm.rate}
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <span style={{ color: 'hsl(215 20% 55%)' }}>Outstanding Due:</span>
+                  <span style={{ color: 'var(--text-2)' }}>Outstanding Due:</span>
                   <div style={{
                     fontSize: '1.25rem',
                     fontWeight: '800',
@@ -1764,7 +1764,7 @@ export default function DriversPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '1rem' }}>
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
                 <button className="btn btn-ghost" onClick={() => setBillingModalOpen(false)}>Cancel</button>
                 <button
                   className="btn btn-primary"

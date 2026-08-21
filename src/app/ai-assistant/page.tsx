@@ -28,13 +28,13 @@ export default function AIAssistantPage() {
           <div style={{ height: '400px', overflowY: 'auto', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {messages.map((msg, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                <div style={{ maxWidth: '80%', padding: '0.875rem 1.125rem', borderRadius: msg.role === 'user' ? '1rem 1rem 0.25rem 1rem' : '1rem 1rem 1rem 0.25rem', background: msg.role === 'user' ? 'hsl(217 91% 60%)' : 'hsl(222 47% 11%)', border: msg.role === 'assistant' ? '1px solid hsl(217 32% 17%)' : 'none', color: 'hsl(210 40% 98%)', fontSize: '0.875rem', lineHeight: 1.6 }}>
+                <div style={{ maxWidth: '80%', padding: '0.875rem 1.125rem', borderRadius: msg.role === 'user' ? '1rem 1rem 0.25rem 1rem' : '1rem 1rem 1rem 0.25rem', background: msg.role === 'user' ? 'hsl(217 91% 60%)' : 'hsl(222 47% 11%)', border: msg.role === 'assistant' ? '1px solid hsl(217 32% 17%)' : 'none', color: 'var(--text-1)', fontSize: '0.875rem', lineHeight: 1.6 }}>
                   {msg.role === 'assistant' && <div style={{ fontSize: '0.7rem', color: 'hsl(217 91% 70%)', fontWeight: '700', marginBottom: '0.375rem' }}>🤖 Gemini AI</div>}
                   {msg.content}
                 </div>
               </div>
             ))}
-            {loading && <div style={{ display: 'flex', justifyContent: 'flex-start' }}><div style={{ padding: '0.875rem 1.125rem', borderRadius: '1rem 1rem 1rem 0.25rem', background: 'hsl(222 47% 11%)', border: '1px solid hsl(217 32% 17%)', color: 'hsl(215 20% 55%)', fontSize: '0.875rem' }}>🤖 Thinking...</div></div>}
+            {loading && <div style={{ display: 'flex', justifyContent: 'flex-start' }}><div style={{ padding: '0.875rem 1.125rem', borderRadius: '1rem 1rem 1rem 0.25rem', background: 'hsl(222 47% 11%)', border: '1px solid hsl(217 32% 17%)', color: 'var(--text-2)', fontSize: '0.875rem' }}>🤖 Thinking...</div></div>}
           </div>
           <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid hsl(217 32% 17%)', display: 'flex', gap: '0.75rem' }}>
             <input className="form-input" placeholder="Ask about sales, inventory, profits..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !loading && sendMessage()} />

@@ -8,7 +8,7 @@ export default function Loading() {
       gap: '0.75rem',
     }}>
       <span className="loading-spinner" style={{ width: '24px', height: '24px' }} />
-      <span style={{ color: 'hsl(215 20% 55%)', fontSize: '0.875rem', fontWeight: '500' }}>
+      <span style={{ color: 'var(--text-2)', fontSize: '0.875rem', fontWeight: '500' }}>
         Loading...
       </span>
     </div>

@@ -1,154 +1,195 @@
 'use client'
+
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { Users, Plus, Phone, MapPin, FileText, CheckCircle, X, Receipt } from 'lucide-react'
+import { formatCurrency } from '@/lib/utils/formatters'
+import { DataTable, Column } from '@/components/ui/DataTable'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Input } from '@/components/ui/Input'
+import { SkeletonTable } from '@/components/ui/Skeleton'
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState({ name: '', phone: '', address: '', area: '', gst_number: '' })
   const [saving, setSaving] = useState(false)
   const supabase = createClient()
 
-  useEffect(() => { loadCustomers() }, [])
+  useEffect(() => {
+    loadCustomers()
+  }, [])
 
   async function loadCustomers() {
-    const { data } = await supabase
-      .from('customers')
-      .select('id, name, address, phone, area, gst_number, outstanding_amount, is_active')
-      .order('name')
-    setCustomers(data || [])
-    setLoading(false)
+    setLoading(true)
+    try {
+      const { data } = await supabase
+        .from('customers')
+        .select('id, name, address, phone, area, gst_number, outstanding_amount, is_active')
+        .order('name')
+      setCustomers(data || [])
+    } catch (e) {
+      console.warn('Error loading customers:', e)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function saveCustomer() {
+    if (!form.name.trim()) {
+      alert('Please provide a customer name')
+      return
+    }
     setSaving(true)
-    await supabase.from('customers').insert(form)
-    setShowModal(false)
-    setForm({ name: '', phone: '', address: '', area: '', gst_number: '' })
-    setSaving(false)
-    loadCustomers()
+    try {
+      await supabase.from('customers').insert([form])
+      setShowModal(false)
+      setForm({ name: '', phone: '', address: '', area: '', gst_number: '' })
+      loadCustomers()
+    } catch (e: any) {
+      alert(`Error saving customer: ${e.message}`)
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const filtered = customers.filter(c =>
-    c.name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.phone?.includes(search) ||
-    c.area?.toLowerCase().includes(search.toLowerCase())
-  )
+  const columns: Column<any>[] = [
+    {
+      key: 'name',
+      title: 'Customer Name',
+      sortable: true,
+      render: (c) => (
+        <div>
+          <div style={{ fontWeight: 700, color: '#f4f4f5' }}>{c.name}</div>
+          {c.address && <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>{c.address}</div>}
+        </div>
+      ),
+    },
+    {
+      key: 'phone',
+      title: 'Phone Number',
+      render: (c) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#a1a1aa', fontSize: '0.8rem' }}>
+          <Phone style={{ width: '13px', height: '13px', color: '#fbbf24' }} />
+          <span>{c.phone || '—'}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'area',
+      title: 'Area / Location',
+      render: (c) => (
+        c.area ? (
+          <Badge variant="neutral" icon={<MapPin style={{ width: '11px', height: '11px' }} />}>
+            {c.area}
+          </Badge>
+        ) : '—'
+      ),
+    },
+    {
+      key: 'gst_number',
+      title: 'GST Number',
+      render: (c) => (
+        <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#a1a1aa' }}>
+          {c.gst_number || 'Non-GST'}
+        </span>
+      ),
+    },
+    {
+      key: 'outstanding_amount',
+      title: 'Outstanding Balance',
+      align: 'right',
+      sortable: true,
+      render: (c) => (
+        <span className="num" style={{ fontWeight: 700, color: Number(c.outstanding_amount) > 0 ? '#f87171' : '#34d399' }}>
+          {formatCurrency(Number(c.outstanding_amount) || 0)}
+        </span>
+      ),
+    },
+    {
+      key: 'is_active',
+      title: 'Status',
+      render: (c) => (
+        <Badge variant={c.is_active !== false ? 'success' : 'danger'}>
+          {c.is_active !== false ? 'Active' : 'Inactive'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      title: 'Quick Bill',
+      align: 'right',
+      render: (c) => (
+        <a href={`/billing?customer=${encodeURIComponent(c.name)}`}>
+          <Button variant="secondary" size="sm" icon={<Receipt style={{ width: '13px', height: '13px', color: '#fbbf24' }} />}>
+            Create Bill
+          </Button>
+        </a>
+      ),
+    },
+  ]
+
+  const totalOutstanding = customers.reduce((sum, c) => sum + (Number(c.outstanding_amount) || 0), 0)
 
   return (
-    <div>
-      <div className="page-header">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2 className="page-title">👥 Customers</h2>
-          <p className="page-subtitle">{customers.length} total customers</p>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Users style={{ color: '#fbbf24', width: '28px', height: '28px' }} />
+            Customer Directory
+          </h2>
+          <p style={{ color: '#a1a1aa', fontSize: '0.85rem', marginTop: '0.25rem' }}>
+            {customers.length} registered accounts &bull; Total Outstanding: {' '}
+            <span className="num" style={{ color: '#f87171', fontWeight: 700 }}>
+              {formatCurrency(totalOutstanding)}
+            </span>
+          </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>➕ Add Customer</button>
+
+        <Button variant="primary" icon={<Plus style={{ width: '16px', height: '16px' }} />} onClick={() => setShowModal(true)}>
+          Add Customer
+        </Button>
       </div>
 
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div className="card-body">
-          <input className="form-input" placeholder="🔍 Search customers by name, phone, or area..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-      </div>
-
-      <div className="card">
-        <div style={{ overflowX: 'auto' }}>
-          {loading ? (
-            <div style={{ padding: '3rem', textAlign: 'center' }}><span className="loading-spinner" /></div>
-          ) : filtered.length === 0 ? (
-            <div style={{ padding: '3rem', textAlign: 'center', color: 'hsl(215 20% 45%)' }}>
-              <div style={{ fontSize: '3rem' }}>👥</div>
-              <p>No customers found.<br />Add your first customer to get started.</p>
-            </div>
-          ) : (
-            <table className="erp-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Name</th>
-                  <th>Phone</th>
-                  <th>Area</th>
-                  <th>GST No</th>
-                  <th style={{ textAlign: 'right' }}>Outstanding</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((c, i) => (
-                  <tr key={c.id}>
-                    <td style={{ color: 'hsl(215 20% 45%)', fontSize: '0.8rem' }}>{i + 1}</td>
-                    <td>
-                      <div style={{ fontWeight: '600' }}>{c.name}</div>
-                      {c.address && <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 45%)' }}>{c.address}</div>}
-                    </td>
-                    <td>{c.phone || '—'}</td>
-                    <td>{c.area ? <span className="badge badge-muted">{c.area}</span> : '—'}</td>
-                    <td style={{ fontSize: '0.8rem', color: 'hsl(215 20% 55%)' }}>{c.gst_number || '—'}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      {c.outstanding_amount > 0
-                        ? <span className="due-amount text-money">₹{c.outstanding_amount?.toFixed(2)}</span>
-                        : <span style={{ color: 'hsl(142 71% 55%)' }}>₹0.00</span>
-                      }
-                    </td>
-                    <td>
-                      <span className={`badge ${c.is_active ? 'badge-success' : 'badge-danger'}`}>
-                        {c.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '0.375rem' }}>
-                        <a href={`/billing?customer=${c.name}`} className="btn btn-secondary btn-sm">🧾 Bill</a>
-                        <button className="btn btn-ghost btn-sm">✏️</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+      {/* Main Table */}
+      {loading ? (
+        <SkeletonTable rows={8} />
+      ) : (
+        <DataTable
+          columns={columns}
+          data={customers}
+          searchPlaceholder="Search customers by name, phone, area, or GST..."
+          exportFileName="royal-kissan-customers"
+        />
+      )}
 
       {/* Add Customer Modal */}
       {showModal && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
-          <div className="modal-content">
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: 'hsl(210 40% 98%)', margin: 0 }}>Add New Customer</h3>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowModal(false)}>✕</button>
+        <div className="modal-overlay">
+          <div className="modal-container">
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#fff' }}>Add New Customer Account</h3>
+              <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}>
+                <X style={{ width: '20px', height: '20px' }} />
+              </button>
             </div>
-            <div style={{ padding: '1.5rem' }}>
-              <div className="form-group">
-                <label className="form-label">Name *</label>
-                <input className="form-input" placeholder="Customer Name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <Input label="Customer / Firm Name" placeholder="e.g. Sri Venkateswara Water Supplies" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <Input label="Phone Number" placeholder="10-digit mobile number" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+                <Input label="Area / Route Location" placeholder="e.g. Guntur Highway" value={form.area} onChange={e => setForm({ ...form, area: e.target.value })} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Phone</label>
-                  <input className="form-input" placeholder="9876543210" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Area</label>
-                  <input className="form-input" placeholder="Area / Locality" value={form.area} onChange={e => setForm({ ...form, area: e.target.value })} />
-                </div>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Address</label>
-                <input className="form-input" placeholder="Full Address" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">GST Number</label>
-                <input className="form-input" placeholder="GST Registration Number" value={form.gst_number} onChange={e => setForm({ ...form, gst_number: e.target.value })} />
-              </div>
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', paddingTop: '0.75rem', borderTop: '1px solid hsl(217 32% 17%)' }}>
-                <button className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
-                <button className="btn btn-primary" onClick={saveCustomer} disabled={!form.name || saving}>
-                  {saving ? 'Saving...' : '✅ Save Customer'}
-                </button>
-              </div>
+              <Input label="GSTIN (Optional)" placeholder="37BABS2021G1Z3" value={form.gst_number} onChange={e => setForm({ ...form, gst_number: e.target.value })} />
+              <Input label="Delivery Address" placeholder="Full address details" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
+            </div>
+            <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
+              <Button variant="primary" loading={saving} onClick={saveCustomer}>Save Customer</Button>
             </div>
           </div>
         </div>

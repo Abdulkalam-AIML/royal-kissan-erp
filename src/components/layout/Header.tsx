@@ -2,342 +2,248 @@
 
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
+import Link from 'next/link'
+import {
+  Menu,
+  Search,
+  Printer,
+  Database,
+  Bell,
+  User,
+  Clock,
+  ChevronRight,
+  Wifi,
+  WifiOff,
+} from 'lucide-react'
 
 const breadcrumbMap: Record<string, string> = {
-  '/dashboard': 'Dashboard',
-  '/billing': 'Billing',
-  '/sales': 'Sales History',
-  '/customers': 'Customers',
-  '/dealers': 'Dealers',
-  '/drivers': 'Drivers',
-  '/routes': 'Routes',
-  '/non-local-routes': 'Non Local Routes',
-  '/deliveries': 'Deliveries',
-  '/stock': 'Stock Management',
-  '/products': 'Products',
-  '/expenses': 'Expenses',
-  '/collections': 'Collections',
-  '/dues': 'Due Management',
-  '/profit-loss': 'Profit & Loss',
-  '/employees': 'Employees',
-  '/attendance': 'Attendance',
-  '/salary': 'Salary',
-  '/reports': 'Reports',
-  '/analytics': 'Analytics',
-  '/ai-assistant': 'AI Assistant',
-  '/settings': 'Settings',
+  '/dashboard':       'Dashboard',
+  '/billing':         'Billing & POS',
+  '/sales':           'Sales History',
+  '/customers':       'Customers Directory',
+  '/dealers':         'Dealers & Ledger',
+  '/drivers':         'Drivers & Routes',
+  '/routes':          'Routes',
+  '/non-local-routes':'Non-Local Routes',
+  '/deliveries':      'Deliveries',
+  '/stock':           'Stock Management',
+  '/products':        'Product Catalog',
+  '/expenses':        'Expenses',
+  '/collections':     'Collections',
+  '/dues':            'Due Management',
+  '/profit-loss':     'Profit & Loss',
+  '/employees':       'Employees',
+  '/attendance':      'Attendance',
+  '/salary':          'Salary',
+  '/reports':         'Reports & Exports',
+  '/analytics':       'Analytics',
+  '/ai-assistant':    'AI Assistant',
+  '/settings':        'System Settings',
+  '/settings/printer':'TVS Thermal Printer Setup',
 }
 
 export default function Header({
   onMenuToggle,
-  userEmail,
+  userEmail = 'admin@royalkissan.com',
 }: {
   onMenuToggle: () => void
   userEmail?: string
 }) {
   const pathname = usePathname()
-  const pageTitle = breadcrumbMap[pathname] || 'Royal Kissan ERP'
-  
-  // Real-time Clock
+  const currentPageTitle = breadcrumbMap[pathname] || 'Dashboard'
+
   const [timeStr, setTimeStr] = useState('')
-  const [dateStr, setDateStr] = useState('')
-  
-  // Status check state
-  const [isOnline, setIsOnline] = useState(true)
-  const [supabaseConnected, setSupabaseConnected] = useState(true)
-  const [firebaseConnected, setFirebaseConnected] = useState(false)
-  const [themeMode, setThemeMode] = useState<'dark' | 'light'>('dark')
-  const [searchVal, setSearchVal] = useState('')
+  const [printerOnline, setPrinterOnline] = useState(true)
+  const [dbOnline, setDbOnline] = useState(true)
 
   useEffect(() => {
-    // Ticking clock
     const updateTime = () => {
-      const now = new Date()
-      setTimeStr(now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
-      setDateStr(now.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }))
+      setTimeStr(
+        new Date().toLocaleTimeString('en-IN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        })
+      )
     }
-    
     updateTime()
-    const timer = setInterval(updateTime, 1000)
-    
-    // Online check
-    setIsOnline(navigator.onLine)
-    const handleOnline = () => setIsOnline(true)
-    const handleOffline = () => setIsOnline(false)
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    
-    return () => {
-      clearInterval(timer)
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
+    const timer = setInterval(updateTime, 5000)
+
+    // Check Printer status ping
+    const checkHealth = async () => {
+      try {
+        const res = await fetch('/api/print/health')
+        const data = await res.json()
+        setPrinterOnline(data.online ?? true)
+      } catch (e) {
+        setPrinterOnline(false)
+      }
     }
+    checkHealth()
+
+    return () => clearInterval(timer)
   }, [])
 
   return (
-    <header className="header" style={{
-      background: 'rgba(14, 12, 8, 0.85)',
-      backdropFilter: 'blur(20px)',
-      borderBottom: '1px solid rgba(201, 162, 39, 0.12)',
-      display: 'flex',
-      alignItems: 'center',
-      padding: '0 1.5rem',
-      gap: '1.25rem',
-      position: 'sticky',
-      top: 0,
-      zIndex: 40,
-      justifyContent: 'space-between',
-      height: 'var(--header-height)',
-    }}>
-      {/* LEFT: Toggle, Title, & Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+    <header className="header no-print">
+      {/* Left: Sidebar Toggle + Breadcrumb */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
         <button
           onClick={onMenuToggle}
-          className="btn btn-ghost btn-sm"
-          style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          title="Toggle Sidebar"
+          style={{
+            background: 'none',
+            border: 'none',
+            color: '#a1a1aa',
+            cursor: 'pointer',
+            padding: '4px',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+          aria-label="Toggle Navigation Sidebar"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="3" y1="6" x2="21" y2="6"/>
-            <line x1="3" y1="12" x2="21" y2="12"/>
-            <line x1="3" y1="18" x2="21" y2="18"/>
-          </svg>
+          <Menu style={{ width: '20px', height: '20px' }} />
         </button>
 
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <h1 style={{
-            fontSize: '1rem',
-            fontWeight: '800',
-            color: '#fff',
-            letterSpacing: '-0.02em',
-            margin: 0,
-          }}>
-            {pageTitle}
-          </h1>
-          <span style={{
-            fontSize: '0.65rem',
-            color: '#60a5fa',
-            fontWeight: '600',
-            letterSpacing: '0.05em',
-            textTransform: 'uppercase',
-          }}>
-            Royal Kissan Premium ERP
+        {/* Breadcrumb */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', minWidth: 0 }}>
+          <Link href="/dashboard" style={{ color: '#a1a1aa', fontWeight: 500, textDecoration: 'none' }}>
+            ERP
+          </Link>
+          <ChevronRight style={{ width: '12px', height: '12px', color: '#71717a' }} />
+          <span style={{ color: '#f4f4f5', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {currentPageTitle}
           </span>
         </div>
       </div>
 
-      {/* MIDDLE: Global Quick Search */}
-      <div style={{ flex: 1, maxWidth: '280px', margin: '0 1rem', display: 'none', md: 'block' } as any} className="no-print">
-        <div style={{ position: 'relative' }}>
+      {/* Middle: Global Search bar */}
+      <div className="header-search" style={{ flex: 1, maxWidth: '320px', margin: '0 1rem' }}>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <Search style={{ position: 'absolute', left: '10px', width: '15px', height: '15px', color: '#71717a' }} />
           <input
             type="text"
-            className="form-input"
-            placeholder="🔍 Quick search command..."
+            placeholder="Search bills, customers, products (Press /)..."
             style={{
-              padding: '0.45rem 1rem 0.45rem 2.25rem',
-              fontSize: '0.8125rem',
-              background: 'rgba(15, 23, 42, 0.4)',
-              borderRadius: '0.625rem',
+              width: '100%',
+              padding: '0.45rem 0.75rem 0.45rem 2.2rem',
+              backgroundColor: '#18181b',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '12px',
+              color: '#f4f4f5',
+              fontSize: '0.8rem',
             }}
-            value={searchVal}
-            onChange={(e) => setSearchVal(e.target.value)}
           />
-          <span style={{
-            position: 'absolute',
-            right: '10px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            fontSize: '0.65rem',
-            color: 'rgba(255,255,255,0.3)',
-            background: 'rgba(255,255,255,0.06)',
-            padding: '2px 5px',
-            borderRadius: '4px',
-            border: '1px solid rgba(255,255,255,0.08)',
-          }}>
-            ⌘K
+          <span
+            style={{
+              position: 'absolute',
+              right: '8px',
+              fontSize: '0.65rem',
+              color: '#71717a',
+              backgroundColor: '#27272a',
+              padding: '2px 5px',
+              borderRadius: '4px',
+              fontFamily: 'monospace',
+            }}
+          >
+            /
           </span>
         </div>
       </div>
 
-      {/* RIGHT: Status Indicators, Clock, Theme Toggle, Avatar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        
-        {/* System Health Indicators */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingRight: '0.5rem', borderRight: '1px solid rgba(255,255,255,0.06)' }} className="no-print">
-          {/* Internet Indicator */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.375rem',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            background: 'rgba(0,0,0,0.2)',
-            border: '1px solid rgba(255,255,255,0.05)',
-            fontFamily: 'monospace',
-            fontSize: '0.68rem',
-            fontWeight: '600',
-            color: 'hsl(215 20% 65%)'
-          }} title={isOnline ? 'Internet: Online' : 'Internet: Offline'}>
-            <span style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              background: isOnline ? '#10b981' : '#ef4444',
-              display: 'inline-block',
-              boxShadow: isOnline ? '0 0 8px #10b981' : '0 0 8px #ef4444',
-            }} className={isOnline ? 'animate-pulse' : ''} />
-            <span>NET: {isOnline ? 'ON' : 'OFF'}</span>
-          </div>
+      {/* Right: Live Status Pills, Clock, User Profile */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        {/* Status Pills */}
+        <div className="header-status-pills" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {/* TVS Printer Status */}
+          <Link
+            href="/settings/printer"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              padding: '0.25rem 0.6rem',
+              borderRadius: '9999px',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              backgroundColor: printerOnline ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+              color: printerOnline ? '#34d399' : '#f87171',
+              border: `1px solid ${printerOnline ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`,
+              textDecoration: 'none',
+            }}
+            title="TVS Thermal Printer Network Connection"
+          >
+            <Printer style={{ width: '13px', height: '13px' }} />
+            <span>{printerOnline ? 'TVS ONLINE' : 'TVS OFFLINE'}</span>
+          </Link>
 
-          {/* Supabase Indicator */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.375rem',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            background: 'rgba(0,0,0,0.2)',
-            border: '1px solid rgba(255,255,255,0.05)',
-            fontFamily: 'monospace',
-            fontSize: '0.68rem',
-            fontWeight: '600',
-            color: 'hsl(215 20% 65%)'
-          }} title={supabaseConnected ? 'Supabase Database: Online' : 'Supabase Database: Offline'}>
-            <span style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              background: supabaseConnected ? '#0ea5e9' : '#ef4444',
-              display: 'inline-block',
-              boxShadow: supabaseConnected ? '0 0 8px #0ea5e9' : '0 0 8px #ef4444',
-            }} />
-            <span>DB: {supabaseConnected ? 'OK' : 'ERR'}</span>
-          </div>
-
-          {/* Firebase Indicator */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.375rem',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            background: 'rgba(0,0,0,0.2)',
-            border: '1px solid rgba(255,255,255,0.05)',
-            fontFamily: 'monospace',
-            fontSize: '0.68rem',
-            fontWeight: '600',
-            color: 'hsl(215 20% 65%)'
-          }} title="Firebase Sync: Inactive / Local storage fallback">
-            <span style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              background: '#f59e0b',
-              display: 'inline-block',
-              boxShadow: '0 0 8px #f59e0b',
-            }} />
-            <span>SYNC: LOC</span>
+          {/* Database Status */}
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              padding: '0.25rem 0.6rem',
+              borderRadius: '9999px',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              backgroundColor: 'rgba(59, 130, 246, 0.12)',
+              color: '#60a5fa',
+              border: '1px solid rgba(59, 130, 246, 0.25)',
+            }}
+            title="Supabase Database Status"
+          >
+            <Database style={{ width: '13px', height: '13px' }} />
+            <span>DB CONNECTED</span>
           </div>
         </div>
 
-        {/* Real-time Clock / Calendar widget */}
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-end',
-          lineHeight: 1.2,
-          paddingRight: '0.5rem',
-        }}>
-          <span style={{
-            fontSize: '0.8125rem',
-            fontWeight: '700',
-            color: '#fff',
-            fontFamily: 'monospace',
-          }}>
-            {timeStr || '--:--:--'}
-          </span>
-          <span style={{
-            fontSize: '0.65rem',
-            color: 'rgba(255,255,255,0.4)',
-            fontWeight: '600',
-          }}>
-            {dateStr || '...'}
-          </span>
-        </div>
-
-        {/* Theme Toggle Icon */}
-        <button
-          className="btn btn-ghost btn-sm"
-          style={{ padding: '0.4rem', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px' }}
-          onClick={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
-          title="Toggle UI Aesthetics"
+        {/* Live Clock */}
+        <div
+          className="header-time"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.35rem',
+            fontSize: '0.8rem',
+            color: '#a1a1aa',
+            fontVariantNumeric: 'tabular-nums',
+            fontWeight: 500,
+          }}
         >
-          {themeMode === 'dark' ? '🌙' : '☀️'}
-        </button>
-
-        {/* Notifications */}
-        <button
-          className="btn btn-ghost btn-sm"
-          style={{ padding: '0.4rem', position: 'relative', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px' }}
-          title="System Notifications"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-          </svg>
-          <span className="notification-dot" style={{
-            position: 'absolute',
-            top: '2px',
-            right: '2px',
-            width: '6px',
-            height: '6px',
-            background: '#38bdf8',
-            borderRadius: '50%',
-            boxShadow: '0 0 6px #38bdf8',
-          }} />
-        </button>
-
-        {/* User Card with Role Badge */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          padding: '0.3rem 0.625rem',
-          background: 'rgba(255,255,255,0.03)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          borderRadius: '0.75rem',
-        }}>
-          <div style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #2563eb 0%, #0284c7 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '0.75rem',
-            fontWeight: '800',
-            color: 'white',
-            boxShadow: '0 2px 8px rgba(37, 99, 235, 0.4)',
-          }}>
-            {userEmail ? userEmail[0].toUpperCase() : 'A'}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }} className="no-print">
-            <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#fff', lineHeight: 1.1 }}>
-              Admin
-            </span>
-            <span className="badge badge-info" style={{
-              fontSize: '0.55rem',
-              padding: '1px 4px',
-              marginTop: '2px',
-              letterSpacing: '0.02em',
-              fontWeight: '800',
-            }}>
-              MASTER OWNER
-            </span>
-          </div>
+          <Clock style={{ width: '14px', height: '14px', color: '#fbbf24' }} />
+          <span>{timeStr}</span>
         </div>
 
+        {/* User Badge */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.25rem 0.6rem',
+            borderRadius: '9999px',
+            backgroundColor: '#18181b',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+          }}
+        >
+          <div
+            style={{
+              width: '24px',
+              height: '24px',
+              borderRadius: '50%',
+              backgroundColor: '#fbbf24',
+              color: '#000',
+              fontWeight: 800,
+              fontSize: '0.75rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {userEmail[0].toUpperCase()}
+          </div>
+          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#f4f4f5' }}>Admin</span>
+        </div>
       </div>
     </header>
   )

@@ -23,8 +23,8 @@ export default function DashboardCharts({ salesTrendData, driverChartData }: Das
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
       <div className="glass-card-3d" style={{ padding: '1.5rem 1.25rem 0.5rem' }}>
         <div style={{ marginBottom: '1.25rem', padding: '0 0.5rem' }}>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>📊 Weekly Sales Trend</h3>
-          <p style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', margin: '0.125rem 0 0' }}>Sales vs collections this week</p>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>Weekly Sales Trend</h3>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-2)', margin: '0.125rem 0 0' }}>Sales vs collections this week</p>
         </div>
         <div style={{ width: '100%', height: '260px' }}>
           <ResponsiveContainer width="100%" height={260}>
@@ -53,8 +53,8 @@ export default function DashboardCharts({ salesTrendData, driverChartData }: Das
 
       <div className="glass-card-3d" style={{ padding: '1.5rem 1.25rem 0.5rem' }}>
         <div style={{ marginBottom: '1.25rem', padding: '0 0.5rem' }}>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>🚛 Driver Performance</h3>
-          <p style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', margin: '0.125rem 0 0' }}>Nagaraju vs Driver-2 breakdown</p>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>Driver Performance</h3>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-2)', margin: '0.125rem 0 0' }}>Nagaraju vs Driver-2 breakdown</p>
         </div>
         <div style={{ width: '100%', height: '260px' }}>
           <ResponsiveContainer width="100%" height={260}>

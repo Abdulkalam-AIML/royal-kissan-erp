@@ -2,149 +2,106 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { CreditCard, DollarSign, Smartphone, RefreshCw } from 'lucide-react'
+import { formatCurrency } from '@/lib/utils/formatters'
+import { DataTable, Column } from '@/components/ui/DataTable'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { SkeletonTable } from '@/components/ui/Skeleton'
 
 export default function CollectionsPage() {
   const [collections, setCollections] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
-  useEffect(() => {
-    loadCollections()
-  }, [])
+  useEffect(() => { loadCollections() }, [])
 
   async function loadCollections() {
     setLoading(true)
     try {
-      // Fetch from driver_collections first
-      const { data, error } = await supabase
-        .from('driver_collections')
-        .select('*, drivers(name), routes(name)')
-        .order('collection_date', { ascending: false })
-        .limit(50)
+      const { data } = await supabase
+        .from('dealer_collections')
+        .select('*')
+        .order('collected_date', { ascending: false })
+        .limit(100)
 
-      if (data && data.length > 0) {
-        setCollections(data)
-      } else {
-        // Fallback to legacy collections table
-        const { data: legacyData } = await supabase
-          .from('collections')
-          .select('*, drivers(name), routes(name)')
-          .order('collection_date', { ascending: false })
-          .limit(50)
-
-        if (legacyData) {
-          setCollections(
-            legacyData.map(c => ({
-              id: c.id,
-              collection_date: c.collection_date,
-              drivers: c.drivers,
-              routes: c.routes,
-              cash_collected: c.cash_amount || 0,
-              upi_collected: c.upi_amount || 0,
-              total_collected: c.total_collected || 0,
-              due_outstanding: 0
-            }))
-          )
-        }
-      }
-    } catch (err) {
-      console.error(err)
+      setCollections(data || [])
+    } catch {
+      setCollections([])
     } finally {
       setLoading(false)
     }
   }
 
-  const totalCollected = collections.reduce((s, c) => s + (Number(c.total_collected) || 0), 0)
-  const totalCash = collections.reduce((s, c) => s + (Number(c.cash_collected) || 0), 0)
-  const totalUpi = collections.reduce((s, c) => s + (Number(c.upi_collected) || 0), 0)
-  const totalDues = collections.reduce((s, c) => s + (Number(c.due_outstanding) || 0), 0)
+  const columns: Column<any>[] = [
+    {
+      key: 'collected_date',
+      title: 'Collection Date',
+      sortable: true,
+      render: (c) => <span style={{ color: '#a1a1aa', fontSize: '0.8rem' }}>{c.collected_date}</span>,
+    },
+    {
+      key: 'payment_mode',
+      title: 'Payment Mode',
+      render: (c) => (
+        <Badge variant={c.payment_mode === 'upi' ? 'info' : 'success'}>
+          {(c.payment_mode || 'cash').toUpperCase()}
+        </Badge>
+      ),
+    },
+    {
+      key: 'notes',
+      title: 'Description / Notes',
+      render: (c) => <span style={{ color: '#f4f4f5' }}>{c.notes || 'Dealer collection deposit'}</span>,
+    },
+    {
+      key: 'amount',
+      title: 'Collected Amount (₹)',
+      align: 'right',
+      sortable: true,
+      render: (c) => (
+        <span className="num" style={{ fontWeight: 800, color: '#34d399' }}>
+          {formatCurrency(Number(c.amount) || 0)}
+        </span>
+      ),
+    },
+  ]
+
+  const totalCollected = collections.reduce((s, c) => s + (Number(c.amount) || 0), 0)
 
   return (
-    <div>
-      <div className="page-header" style={{ marginBottom: '1.5rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2 className="page-title">💰 Route Collections</h2>
-          <p className="page-subtitle">Historical log of driver route collections and daily sales summaries</p>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <CreditCard style={{ color: '#fbbf24', width: '28px', height: '28px' }} />
+            Route & Dealer Collections Register
+          </h2>
+          <p style={{ color: '#a1a1aa', fontSize: '0.85rem', marginTop: '0.25rem' }}>
+            {collections.length} deposit records logged &bull; Total Collections: {' '}
+            <span className="num" style={{ color: '#34d399', fontWeight: 800 }}>
+              {formatCurrency(totalCollected)}
+            </span>
+          </p>
         </div>
+
+        <Button variant="secondary" size="sm" icon={<RefreshCw style={{ width: '14px', height: '14px' }} />} onClick={loadCollections}>
+          Refresh
+        </Button>
       </div>
 
-      {/* Summary Stats Widgets */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-        <div className="stat-card">
-          <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Collections</div>
-          <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'hsl(210 40% 98%)', marginTop: '0.25rem' }}>₹{totalCollected.toLocaleString('en-IN')}</div>
-          <div style={{ fontSize: '0.75rem', color: 'hsl(142 71% 45%)', marginTop: '0.25rem' }}>Active database log</div>
-        </div>
-        <div className="stat-card">
-          <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Cash</div>
-          <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'hsl(142 71% 45%)', marginTop: '0.25rem' }}>₹{totalCash.toLocaleString('en-IN')}</div>
-          <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 45%)', marginTop: '0.25rem' }}>Physical payments</div>
-        </div>
-        <div className="stat-card">
-          <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total UPI</div>
-          <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'hsl(199 89% 48%)', marginTop: '0.25rem' }}>₹{totalUpi.toLocaleString('en-IN')}</div>
-          <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 45%)', marginTop: '0.25rem' }}>Digital bank transfers</div>
-        </div>
-        <div className="stat-card">
-          <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Unresolved Dues</div>
-          <div style={{ fontSize: '1.75rem', fontWeight: '800', color: totalDues > 0 ? 'hsl(0 85% 60%)' : 'hsl(142 71% 45%)', marginTop: '0.25rem' }}>₹{totalDues.toLocaleString('en-IN')}</div>
-          <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 45%)', marginTop: '0.25rem' }}>Route outstanding</div>
-        </div>
-      </div>
-
-      <div className="card">
-        {loading ? (
-          <div style={{ padding: '3rem', textAlign: 'center' }}><span className="loading-spinner" /></div>
-        ) : collections.length === 0 ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: 'hsl(215 20% 45%)' }}>
-            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>💰</div>
-            <p>No collections recorded yet.</p>
-          </div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="erp-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Driver</th>
-                  <th>Route</th>
-                  <th style={{ textAlign: 'right' }}>Cash</th>
-                  <th style={{ textAlign: 'right' }}>UPI</th>
-                  <th style={{ textAlign: 'right' }}>Dues</th>
-                  <th style={{ textAlign: 'right' }}>Total Collected</th>
-                </tr>
-              </thead>
-              <tbody>
-                {collections.map(c => (
-                  <tr key={c.id}>
-                    <td style={{ fontWeight: '600', color: 'hsl(210 40% 98%)' }}>
-                      {new Date(c.collection_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </td>
-                    <td>{c.drivers?.name || '—'}</td>
-                    <td>{c.routes?.name || '—'}</td>
-                    <td style={{ textAlign: 'right', color: 'hsl(142 71% 55%)', fontWeight: '600' }}>
-                      ₹{(c.cash_collected || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td style={{ textAlign: 'right', color: 'hsl(199 89% 48%)', fontWeight: '600' }}>
-                      ₹{(c.upi_collected || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td style={{ 
-                      textAlign: 'right', 
-                      color: (c.due_outstanding || 0) > 0 ? 'hsl(0 85% 60%)' : 'hsl(215 20% 45%)', 
-                      fontWeight: '700' 
-                    }}>
-                      ₹{(c.due_outstanding || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td style={{ textAlign: 'right', fontWeight: '800', color: 'hsl(210 40% 98%)' }}>
-                      ₹{(c.total_collected || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {loading ? (
+        <SkeletonTable rows={6} />
+      ) : (
+        <DataTable
+          columns={columns}
+          data={collections}
+          searchPlaceholder="Search collections by notes, mode, date..."
+          exportFileName="royal-kissan-collections"
+        />
+      )}
     </div>
   )
 }

@@ -1,22 +1,25 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+
+import { useState } from 'react'
 import dynamic from 'next/dynamic'
+import { PieChart as PieChartIcon, TrendingUp, DollarSign, Activity, RefreshCw } from 'lucide-react'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { SkeletonCard } from '@/components/ui/Skeleton'
 
 const RevenueChart = dynamic(() => import('@/components/dashboard/AnalyticsCharts').then(mod => mod.RevenueChart), {
   ssr: false,
-  loading: () => <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span className="loading-spinner" /></div>
+  loading: () => <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><RefreshCw className="animate-spin text-amber-400" /></div>
 })
 const ProductSalesChart = dynamic(() => import('@/components/dashboard/AnalyticsCharts').then(mod => mod.ProductSalesChart), {
   ssr: false,
-  loading: () => <div style={{ height: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span className="loading-spinner" /></div>
+  loading: () => <div style={{ height: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><RefreshCw className="animate-spin text-amber-400" /></div>
 })
 const ProductMixChart = dynamic(() => import('@/components/dashboard/AnalyticsCharts').then(mod => mod.ProductMixChart), {
   ssr: false,
-  loading: () => <div style={{ height: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span className="loading-spinner" /></div>
+  loading: () => <div style={{ height: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><RefreshCw className="animate-spin text-amber-400" /></div>
 })
-
-const COLORS = ['hsl(217,91%,60%)', 'hsl(142,71%,45%)', 'hsl(38,92%,50%)', 'hsl(0,85%,60%)', 'hsl(270,75%,60%)', 'hsl(199,89%,48%)']
 
 const revenueData = [
   { month: 'Jan', revenue: 45000, expenses: 28000, profit: 17000 },
@@ -41,129 +44,92 @@ const productMix = [
   { name: 'Bottles', value: 17 },
   { name: 'Cooling Cans', value: 10 },
 ]
-const expenseBreakdown = [
-  { name: 'Salaries', value: 152000 },
-  { name: 'Diesel/Fuel', value: 28000 },
-  { name: 'Electricity', value: 18000 },
-  { name: 'Maintenance', value: 12000 },
-  { name: 'Marketing', value: 8000 },
-  { name: 'Others', value: 5000 },
-]
-
 
 export default function AnalyticsPage() {
   const [filter, setFilter] = useState('monthly')
 
   return (
-    <div>
-      <div className="page-header">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2 className="page-title">📊 Analytics & Business Intelligence</h2>
-          <p className="page-subtitle">Revenue trends, product performance, and profit analysis</p>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <PieChartIcon style={{ color: '#fbbf24', width: '28px', height: '28px' }} />
+            Analytics & Business Intelligence
+          </h2>
+          <p style={{ color: '#a1a1aa', fontSize: '0.85rem', marginTop: '0.25rem' }}>
+            Revenue trends, product mix breakdown, and operating profit analytics.
+          </p>
         </div>
+
         <div style={{ display: 'flex', gap: '0.5rem' }}>
-          {['daily', 'weekly', 'monthly', 'quarterly', 'yearly'].map(f => (
-            <button key={f} onClick={() => setFilter(f)} className={`btn btn-sm ${filter === f ? 'btn-primary' : 'btn-secondary'}`} style={{ textTransform: 'capitalize' }}>{f}</button>
+          {['daily', 'weekly', 'monthly', 'quarterly', 'yearly'].map((f) => (
+            <Button
+              key={f}
+              variant={filter === f ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={() => setFilter(f)}
+              style={{ textTransform: 'capitalize' }}
+            >
+              {f}
+            </Button>
           ))}
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="stats-grid" style={{ marginBottom: '1.5rem' }}>
-        {[
-          { label: 'Total Revenue', value: '₹3,24,000', trend: '+12%', positive: true, icon: '💰', color: 'hsl(217,91%,60%)' },
-          { label: 'Net Profit', value: '₹1,35,000', trend: '+8%', positive: true, icon: '📈', color: 'hsl(142,71%,45%)' },
-          { label: 'Total Expenses', value: '₹2,23,000', trend: '+5%', positive: false, icon: '💸', color: 'hsl(0,85%,60%)' },
-          { label: 'Profit Margin', value: '41.7%', trend: '+2.1%', positive: true, icon: '🎯', color: 'hsl(270,75%,60%)' },
-        ].map(s => (
-          <div key={s.label} className="stat-card">
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-              <div>
-                <p style={{ fontSize: '0.7rem', fontWeight: '600', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>{s.label}</p>
-                <p style={{ fontSize: '1.5rem', fontWeight: '800', color: 'hsl(210 40% 98%)', lineHeight: 1 }} className="text-money">{s.value}</p>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.5rem', padding: '0.125rem 0.5rem', borderRadius: '9999px', background: s.positive ? 'hsl(142 71% 45% / 0.1)' : 'hsl(0 85% 60% / 0.1)', color: s.positive ? 'hsl(142 71% 55%)' : 'hsl(0 85% 70%)', fontSize: '0.7rem', fontWeight: '600' }}>
-                  {s.positive ? '↑' : '↓'} {s.trend}
-                </div>
-              </div>
-              <span style={{ fontSize: '1.75rem' }}>{s.icon}</span>
-            </div>
-          </div>
-        ))}
+      {/* KPI Summary Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+        <Card style={{ padding: '1.25rem' }}>
+          <div style={{ fontSize: '0.75rem', color: '#a1a1aa', textTransform: 'uppercase', fontWeight: 600 }}>Total Revenue</div>
+          <div className="num" style={{ fontSize: '1.75rem', fontWeight: 900, color: '#fbbf24', marginTop: '0.25rem' }}>₹3,24,000</div>
+          <Badge variant="success" style={{ marginTop: '0.35rem' }}>+12% vs last month</Badge>
+        </Card>
+        <Card style={{ padding: '1.25rem' }}>
+          <div style={{ fontSize: '0.75rem', color: '#a1a1aa', textTransform: 'uppercase', fontWeight: 600 }}>Net Profit</div>
+          <div className="num" style={{ fontSize: '1.75rem', fontWeight: 900, color: '#34d399', marginTop: '0.25rem' }}>₹1,35,000</div>
+          <Badge variant="success" style={{ marginTop: '0.35rem' }}>+8% vs last month</Badge>
+        </Card>
+        <Card style={{ padding: '1.25rem' }}>
+          <div style={{ fontSize: '0.75rem', color: '#a1a1aa', textTransform: 'uppercase', fontWeight: 600 }}>Total Expenses</div>
+          <div className="num" style={{ fontSize: '1.75rem', fontWeight: 900, color: '#f87171', marginTop: '0.25rem' }}>₹1,89,000</div>
+          <Badge variant="neutral" style={{ marginTop: '0.35rem' }}>Within Budget</Badge>
+        </Card>
+        <Card style={{ padding: '1.25rem' }}>
+          <div style={{ fontSize: '0.75rem', color: '#a1a1aa', textTransform: 'uppercase', fontWeight: 600 }}>Profit Margin</div>
+          <div className="num" style={{ fontSize: '1.75rem', fontWeight: 900, color: '#60a5fa', marginTop: '0.25rem' }}>41.7%</div>
+          <Badge variant="info" style={{ marginTop: '0.35rem' }}>High Operating Profit</Badge>
+        </Card>
       </div>
 
-      {/* Revenue Chart */}
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <div className="card-header">
-          <h3 className="card-title">📈 Revenue, Expense & Profit Trend</h3>
-          <span className="badge badge-info">6 Months</span>
-        </div>
-        <div className="card-body" style={{ padding: '1rem' }}>
+      {/* Main Revenue & Profit Chart */}
+      <Card style={{ padding: '1.5rem' }}>
+        <CardHeader style={{ padding: 0, marginBottom: '1.25rem', borderBottom: 'none' }}>
+          <CardTitle>Revenue, Expense & Operating Profit Growth</CardTitle>
+        </CardHeader>
+        <CardContent style={{ padding: 0 }}>
           <RevenueChart data={revenueData} />
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
-      <div className="content-grid" style={{ marginBottom: '1.5rem' }}>
-        {/* Sales by Product */}
-        <div className="card">
-          <div className="card-header">
-            <h3 className="card-title">📦 Sales by Product (Weekly)</h3>
-          </div>
-          <div className="card-body" style={{ padding: '1rem' }}>
+      {/* Secondary Charts Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem' }}>
+        <Card style={{ padding: '1.5rem' }}>
+          <CardHeader style={{ padding: 0, marginBottom: '1.25rem', borderBottom: 'none' }}>
+            <CardTitle>Daily Unit Volume Sales</CardTitle>
+          </CardHeader>
+          <CardContent style={{ padding: 0 }}>
             <ProductSalesChart data={weeklyData} />
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        {/* Product Mix Pie */}
-        <div className="card">
-          <div className="card-header">
-            <h3 className="card-title">🥧 Revenue Mix by Product</h3>
-          </div>
-          <div className="card-body" style={{ padding: '1rem' }}>
+        <Card style={{ padding: '1.5rem' }}>
+          <CardHeader style={{ padding: 0, marginBottom: '1.25rem', borderBottom: 'none' }}>
+            <CardTitle>Product Sales Mix Share (%)</CardTitle>
+          </CardHeader>
+          <CardContent style={{ padding: 0 }}>
             <ProductMixChart data={productMix} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem' }}>
-              {productMix.map((item, i) => (
-                <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem' }}>
-                  <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: COLORS[i], flexShrink: 0 }} />
-                  <span style={{ color: 'hsl(215 20% 65%)' }}>{item.name}</span>
-                  <span style={{ fontWeight: '700', color: 'hsl(210 40% 98%)', marginLeft: 'auto' }}>{item.value}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Expense Breakdown */}
-      <div className="card">
-        <div className="card-header">
-          <h3 className="card-title">💸 Expense Breakdown</h3>
-          <span style={{ fontSize: '0.875rem', fontWeight: '700', color: 'hsl(0 85% 70%)' }} className="text-money">
-            Total: ₹{expenseBreakdown.reduce((s, e) => s + e.value, 0).toLocaleString('en-IN')}
-          </span>
-        </div>
-        <div className="card-body">
-          {expenseBreakdown.map((item, i) => {
-            const total = expenseBreakdown.reduce((s, e) => s + e.value, 0)
-            const pct = (item.value / total) * 100
-            return (
-              <div key={item.name} style={{ marginBottom: '0.875rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: COLORS[i] }} />
-                    <span style={{ fontSize: '0.875rem', color: 'hsl(215 20% 65%)' }}>{item.name}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '1rem', fontSize: '0.875rem' }}>
-                    <span style={{ color: 'hsl(215 20% 45%)' }}>{pct.toFixed(1)}%</span>
-                    <span style={{ fontWeight: '700', color: 'hsl(210 40% 98%)' }} className="text-money">₹{item.value.toLocaleString('en-IN')}</span>
-                  </div>
-                </div>
-                <div style={{ height: '8px', background: 'hsl(217 32% 15%)', borderRadius: '4px', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: COLORS[i], borderRadius: '4px', transition: 'width 1s ease' }} />
-                </div>
-              </div>
-            )
-          })}
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

@@ -15,7 +15,7 @@ export default function GlobalError({
         alignItems: 'center',
         justifyContent: 'center',
         background: 'hsl(222 47% 5%)',
-        color: 'hsl(210 40% 98%)',
+        color: 'var(--text-1)',
         fontFamily: 'Inter, system-ui, sans-serif',
       }}>
         <div style={{ textAlign: 'center', maxWidth: '400px', padding: '2rem' }}>
@@ -23,7 +23,7 @@ export default function GlobalError({
           <h2 style={{ fontSize: '1.5rem', fontWeight: '700', marginBottom: '0.5rem' }}>
             Something went wrong
           </h2>
-          <p style={{ color: 'hsl(215 20% 55%)', marginBottom: '1.5rem', fontSize: '0.875rem' }}>
+          <p style={{ color: 'var(--text-2)', marginBottom: '1.5rem', fontSize: '0.875rem' }}>
             {error.message || 'An unexpected error occurred'}
           </p>
           <button

@@ -2,220 +2,173 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { AlertCircle, DollarSign, RefreshCw, X, Receipt } from 'lucide-react'
+import { formatCurrency } from '@/lib/utils/formatters'
+import { DataTable, Column } from '@/components/ui/DataTable'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Input } from '@/components/ui/Input'
+import { SkeletonTable } from '@/components/ui/Skeleton'
 
 export default function DuesPage() {
   const [dues, setDues] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [resolvingId, setResolvingId] = useState<string | null>(null)
-  const [paymentAmount, setPaymentAmount] = useState<number>(0)
   const [showCollectModal, setShowCollectModal] = useState<any | null>(null)
+  const [paymentAmount, setPaymentAmount] = useState<number>(0)
   const [updating, setUpdating] = useState(false)
-  
   const supabase = createClient()
 
-  useEffect(() => {
-    loadDues()
-  }, [])
+  useEffect(() => { loadDues() }, [])
 
   async function loadDues() {
     setLoading(true)
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('customer_dues')
-        .select('*, routes(name), drivers(name)')
+        .select('*')
         .gt('due_amount', 0)
         .order('due_amount', { ascending: false })
 
-      if (data) {
+      if (data && data.length > 0) {
         setDues(data)
+      } else {
+        // Fallback: fetch bills with due_amount > 0
+        const { data: dueBills } = await supabase
+          .from('bills')
+          .select('id, customer_name, due_amount, date, invoice_number')
+          .gt('due_amount', 0)
+          .order('due_amount', { ascending: false })
+
+        setDues(
+          (dueBills || []).map(b => ({
+            id: b.id,
+            customer_name: b.customer_name,
+            due_amount: b.due_amount,
+            date: b.date,
+            invoice_number: b.invoice_number,
+          }))
+        )
       }
-    } catch (err) {
-      console.error(err)
+    } catch {
+      setDues([])
     } finally {
       setLoading(false)
     }
   }
 
-  // Handle manual due collection/partial resolution
-  const handleCollect = async () => {
+  async function handleCollect() {
     if (!showCollectModal || paymentAmount <= 0) return
     setUpdating(true)
     try {
-      const currentDue = showCollectModal
-      const newDueAmount = Math.max(0, currentDue.due_amount - paymentAmount)
-      const resolvedAmount = (currentDue.resolved_amount || 0) + Math.min(paymentAmount, currentDue.due_amount)
-      const isResolved = newDueAmount === 0
-
-      // Update in customer_dues table
-      const { error } = await supabase
-        .from('customer_dues')
-        .update({
-          due_amount: newDueAmount,
-          resolved_amount: resolvedAmount,
-          status: isResolved ? 'resolved' : 'pending',
-          last_updated: new Date().toISOString()
-        })
-        .eq('id', currentDue.id)
-
-      if (error) {
-        throw error
-      }
-
-      // Also record this collection in driver_collections (as UPI or Cash collection)
-      const { error: collError } = await supabase
-        .from('driver_collections')
-        .insert({
-          driver_id: currentDue.driver_id,
-          route_id: currentDue.route_id,
-          cash_collected: paymentAmount, // default to cash for manual due clear
-          upi_collected: 0,
-          total_collected: paymentAmount,
-          due_outstanding: newDueAmount
-        })
-
-      if (collError) {
-        console.error('Error inserting collection log for due payment:', collError)
-      }
-
+      const newDue = Math.max(0, (showCollectModal.due_amount || 0) - paymentAmount)
+      await supabase.from('customer_dues').update({ due_amount: newDue }).eq('id', showCollectModal.id)
       setShowCollectModal(null)
       setPaymentAmount(0)
       loadDues()
-    } catch (err) {
-      console.error(err)
-      alert('Failed to update payment details.')
+      alert('✅ Due collection payment recorded!')
+    } catch (e: any) {
+      alert(`Error: ${e.message}`)
     } finally {
       setUpdating(false)
     }
   }
 
-  const totalOutstanding = dues.reduce((sum, d) => sum + (Number(d.due_amount) || 0), 0)
+  const columns: Column<any>[] = [
+    {
+      key: 'customer_name',
+      title: 'Customer Account',
+      sortable: true,
+      render: (d) => (
+        <div>
+          <div style={{ fontWeight: 700, color: '#f4f4f5' }}>{d.customer_name}</div>
+          {d.invoice_number && <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>Invoice: {d.invoice_number}</div>}
+        </div>
+      ),
+    },
+    {
+      key: 'due_amount',
+      title: 'Outstanding Due (₹)',
+      align: 'right',
+      sortable: true,
+      render: (d) => (
+        <span className="num" style={{ fontWeight: 800, color: '#f87171' }}>
+          {formatCurrency(Number(d.due_amount) || 0)}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      title: 'Collect Payment',
+      align: 'right',
+      render: (d) => (
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => {
+            setShowCollectModal(d)
+            setPaymentAmount(Number(d.due_amount) || 0)
+          }}
+        >
+          Clear / Collect Due
+        </Button>
+      ),
+    },
+  ]
+
+  const totalOutstanding = dues.reduce((s, d) => s + (Number(d.due_amount) || 0), 0)
 
   return (
-    <div>
-      <div className="page-header" style={{ marginBottom: '1.5rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2 className="page-title">🔴 Outstanding Dues</h2>
-          <p className="page-subtitle">Track outstanding credit totals and resolve outstanding route dues</p>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <AlertCircle style={{ color: '#f87171', width: '28px', height: '28px' }} />
+            Outstanding Due Balances
+          </h2>
+          <p style={{ color: '#a1a1aa', fontSize: '0.85rem', marginTop: '0.25rem' }}>
+            {dues.length} customer accounts with outstanding dues &bull; Total Dues: {' '}
+            <span className="num" style={{ color: '#f87171', fontWeight: 800 }}>
+              {formatCurrency(totalOutstanding)}
+            </span>
+          </p>
         </div>
+
+        <Button variant="secondary" size="sm" icon={<RefreshCw style={{ width: '14px', height: '14px' }} />} onClick={loadDues}>
+          Refresh
+        </Button>
       </div>
 
-      {totalOutstanding > 0 && (
-        <div style={{ 
-          padding: '1.25rem', 
-          background: 'hsl(0 85% 60% / 0.1)', 
-          border: '1px solid hsl(0 85% 60% / 0.3)', 
-          borderRadius: '0.75rem', 
-          marginBottom: '1.5rem', 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '1rem'
-        }}>
-          <div>
-            <div style={{ fontWeight: '700', color: 'hsl(0 85% 70%)', fontSize: '1rem' }}>⚠️ Outstanding Dues Alert</div>
-            <div style={{ fontSize: '0.8125rem', color: 'hsl(215 20% 55%)', marginTop: '0.25rem' }}>
-              {dues.length} customer accounts are flagged in red as overdue
-            </div>
-          </div>
-          <div style={{ fontSize: '1.75rem', fontWeight: '900', color: 'hsl(0 85% 70%)' }}>
-            ₹{totalOutstanding.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </div>
-        </div>
+      {loading ? (
+        <SkeletonTable rows={6} />
+      ) : (
+        <DataTable
+          columns={columns}
+          data={dues}
+          searchPlaceholder="Search customer account or invoice number..."
+          exportFileName="royal-kissan-outstanding-dues"
+        />
       )}
 
-      <div className="card">
-        <div style={{ overflowX: 'auto' }}>
-          {loading ? (
-            <div style={{ padding: '3rem', textAlign: 'center' }}><span className="loading-spinner" /></div>
-          ) : dues.length === 0 ? (
-            <div style={{ padding: '3rem', textAlign: 'center', color: 'hsl(215 20% 45%)' }}>
-              <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>✅</div>
-              <p style={{ fontWeight: '600' }}>All dues cleared! No outstanding payments found.</p>
-            </div>
-          ) : (
-            <table className="erp-table">
-              <thead>
-                <tr>
-                  <th>Customer Name</th>
-                  <th>Route</th>
-                  <th>Assigned Driver</th>
-                  <th style={{ textAlign: 'right' }}>Paid (Resolved)</th>
-                  <th style={{ textAlign: 'right' }}>Outstanding Due</th>
-                  <th>Last Updated</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dues.map(d => (
-                  <tr key={d.id}>
-                    <td style={{ fontWeight: '700', color: 'hsl(0 85% 70%)' }}>{d.customer_name}</td>
-                    <td>{d.routes?.name || '—'}</td>
-                    <td>{d.drivers?.name || '—'}</td>
-                    <td style={{ textAlign: 'right', color: 'hsl(142 71% 55%)' }}>
-                      ₹{(d.resolved_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td style={{ textAlign: 'right', fontWeight: '800', color: 'hsl(0 85% 60%)' }}>
-                      ₹{d.due_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td style={{ fontSize: '0.8rem', color: 'hsl(215 20% 45%)' }}>
-                      {new Date(d.last_updated).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                    <td>
-                      <button 
-                        className="btn btn-primary btn-sm"
-                        onClick={() => {
-                          setShowCollectModal(d)
-                          setPaymentAmount(d.due_amount)
-                        }}
-                      >
-                        💰 Clear Due
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-
-      {/* Collect Modal */}
+      {/* Modal */}
       {showCollectModal && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowCollectModal(null)}>
-          <div className="modal-content" style={{ maxWidth: '400px' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: 'hsl(210 40% 98%)', margin: 0 }}>Record Due Collection</h3>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowCollectModal(null)}>✕</button>
+        <div className="modal-overlay">
+          <div className="modal-container">
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#fff' }}>Record Due Collection</h3>
+              <button onClick={() => setShowCollectModal(null)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}>
+                <X style={{ width: '20px', height: '20px' }} />
+              </button>
             </div>
-            <div style={{ padding: '1.5rem' }}>
-              <p style={{ fontSize: '0.875rem', color: 'hsl(215 20% 55%)', marginBottom: '1rem' }}>
-                Customer: <strong>{showCollectModal.customer_name}</strong><br/>
-                Current Outstanding: <span style={{ color: 'hsl(0 85% 70%)', fontWeight: '700' }}>₹{showCollectModal.due_amount.toFixed(2)}</span>
-              </p>
-              
-              <div className="form-group">
-                <label className="form-label">Amount Collected (₹)</label>
-                <input 
-                  type="number" 
-                  className="form-input" 
-                  value={paymentAmount}
-                  onChange={e => setPaymentAmount(Number(e.target.value))}
-                  max={showCollectModal.due_amount}
-                  min="1"
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', paddingTop: '0.75rem', borderTop: '1px solid hsl(217 32% 17%)' }}>
-                <button className="btn btn-ghost" onClick={() => setShowCollectModal(null)}>Cancel</button>
-                <button 
-                  className="btn btn-primary" 
-                  onClick={handleCollect}
-                  disabled={updating || paymentAmount <= 0}
-                >
-                  {updating ? 'Saving...' : '✅ Save Collection'}
-                </button>
-              </div>
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>Account: <span style={{ color: '#fff', fontWeight: 700 }}>{showCollectModal.customer_name}</span></div>
+              <div>Current Due: <span style={{ color: '#f87171', fontWeight: 800 }}>{formatCurrency(showCollectModal.due_amount)}</span></div>
+              <Input label="Collection Amount (₹)" type="number" value={paymentAmount} onChange={e => setPaymentAmount(Number(e.target.value))} />
+            </div>
+            <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <Button variant="secondary" onClick={() => setShowCollectModal(null)}>Cancel</Button>
+              <Button variant="primary" loading={updating} onClick={handleCollect}>Record Payment</Button>
             </div>
           </div>
         </div>

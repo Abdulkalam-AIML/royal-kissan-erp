@@ -2,183 +2,163 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import Image from 'next/image'
+import { formatCurrency } from '@/lib/utils/formatters'
+import { generateBillPDF } from '@/lib/utils/pdf-generator'
 import { 
   Receipt, 
-  ArrowRight, 
   Plus, 
   Trash2, 
-  Download, 
   Printer, 
-  Smartphone, 
-  Send, 
-  X, 
-  Settings, 
-  User, 
-  CreditCard, 
+  Clock, 
+  Wifi, 
+  Zap, 
   Package, 
-  Coins, 
-  Shuffle, 
-  AlertCircle, 
-  Truck, 
-  Building2, 
-  Store, 
-  FileCheck, 
-  FileText, 
-  AlertTriangle 
+  RotateCcw, 
+  Eye, 
+  Save,
+  Search,
+  CheckCircle,
+  AlertTriangle,
+  FileText,
+  Share2,
+  X,
+  CreditCard,
+  Percent,
+  ShoppingCart,
+  UserCheck,
+  Truck,
+  Building2,
+  Barcode,
+  Settings2,
+  Sliders,
+  DollarSign
 } from 'lucide-react'
+import ReceiptPreviewModal from '@/components/printer/ReceiptPreviewModal'
+import { executePrintJob } from '@/lib/printer/printer'
+import { BillData } from '@/lib/printer/receipt'
+import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Input, Select } from '@/components/ui/Input'
 
 type BillType = 'driver_sale' | 'company_sale' | 'dealer_invoice' | 'gst_invoice' | 'non_gst_invoice'
-type PaymentMode = 'cash' | 'upi' | 'due' | 'mixed'
+type PaymentMode = 'cash' | 'upi' | 'card' | 'due' | 'mixed'
+type InvoiceFormat = '80mm' | '58mm' | 'A4'
+type PrintMode = 'auto' | 'preview' | 'save_only'
 
 interface SaleItem {
   id: string
   product_name: string
-  product_id: string
+  product_id?: string
   quantity: number
-  rate: number
+  rate: number // Editable Selling Price per item
+  mrp?: number
+  item_discount: number
+  discount_type: 'flat' | 'percent'
   gst_rate: number
-  amount: number
+  taxable_amount: number
   gst_amount: number
-  total: number
+  amount: number
 }
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(amount)
-}
-
-function numberToWords(num: number): string {
-  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
-    'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
-  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
-  if (num === 0) return 'Zero Rupees Only'
-  function convert(n: number): string {
-    if (n < 20) return ones[n]
-    if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '')
-    if (n < 1000) return ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + convert(n % 100) : '')
-    if (n < 100000) return convert(Math.floor(n / 1000)) + ' Thousand' + (n % 1000 ? ' ' + convert(n % 1000) : '')
-    if (n < 10000000) return convert(Math.floor(n / 100000)) + ' Lakh' + (n % 100000 ? ' ' + convert(n % 100000) : '')
-    return convert(Math.floor(n / 10000000)) + ' Crore' + (n % 10000000 ? ' ' + convert(n % 10000000) : '')
-  }
-  const integer = Math.floor(num)
-  const decimal = Math.round((num - integer) * 100)
-  let result = convert(integer) + ' Rupees'
-  if (decimal > 0) result += ' and ' + convert(decimal) + ' Paise'
-  return result + ' Only'
-}
-
-const PRODUCTS = [
-  { id: 'p1', name: 'Water Can (20L)', rate: 15, gst_rate: 18, category: 'can' },
-  { id: 'p2', name: 'Cooling Can (20L)', rate: 30, gst_rate: 18, category: 'can' },
-  { id: 'p3', name: 'Bags (100 Pack)', rate: 80, gst_rate: 12, category: 'bag' },
-  { id: 'p4', name: '500ml Bottle Case', rate: 140, gst_rate: 18, category: 'bottle' },
-  { id: 'p5', name: '1L Bottle Case', rate: 120, gst_rate: 18, category: 'bottle' },
-  { id: 'p6', name: '2L Bottle Case', rate: 150, gst_rate: 18, category: 'bottle' },
+const DEFAULT_PRODUCTS = [
+  { id: 'p1', name: 'Water Can (20L)', rate: 15, mrp: 20, gst_rate: 18, category: 'can' },
+  { id: 'p2', name: 'Cooling Can (20L)', rate: 30, mrp: 35, gst_rate: 18, category: 'can' },
+  { id: 'p3', name: 'Bags (100 Pack)', rate: 80, mrp: 100, gst_rate: 12, category: 'bag' },
+  { id: 'p4', name: '500ml Bottle Case', rate: 140, mrp: 160, gst_rate: 18, category: 'bottle' },
+  { id: 'p5', name: '1L Bottle Case', rate: 120, mrp: 140, gst_rate: 18, category: 'bottle' },
+  { id: 'p6', name: '2L Bottle Case', rate: 150, mrp: 180, gst_rate: 18, category: 'bottle' },
 ]
 
-const BILL_TYPE_LABELS: Record<BillType, string> = {
-  driver_sale:    'Driver Sale',
-  company_sale:   'Company Sale',
-  dealer_invoice: 'Dealer Invoice',
-  gst_invoice:    'GST Invoice',
-  non_gst_invoice:'Non-GST Invoice',
-}
-
-const BILL_TYPE_ICONS: Record<BillType, any> = {
-  driver_sale:    Truck,
-  company_sale:   Building2,
-  dealer_invoice: Store,
-  gst_invoice:    FileCheck,
-  non_gst_invoice:FileText,
-}
-
-const PAYMENT_ICONS: Record<PaymentMode, any> = {
-  cash:  Coins,
-  upi:   Smartphone,
-  mixed: Shuffle,
-  due:   AlertCircle,
-}
-
-const PAYMENT_STATUS = (total: number, paid: number) => {
-  if (paid <= 0) return { label: 'Due', color: '#f87171', badge: 'badge-danger' }
-  if (paid >= total) return { label: 'Paid', color: '#34d399', badge: 'badge-success' }
-  return { label: 'Partial', color: '#fbbf24', badge: 'badge-warning' }
-}
-
-// ── Logo component (works in both print and screen) ──────────
-function RKLogo({ size = 60, forPrint = false }: { size?: number; forPrint?: boolean }) {
-  return (
-    <Image
-      src="/royal-kissan-logo.png"
-      alt="Royal Kissan Packaged Drinking Water"
-      width={size}
-      height={size}
-      priority
-      unoptimized
-      style={{
-        objectFit: 'contain',
-        borderRadius: forPrint ? '4px' : '0',
-        display: 'block',
-      }}
-    />
-  )
-}
-
 export default function BillingPage() {
+  // Settings Panel State
+  const [showSettings, setShowSettings] = useState(false)
+  const [askCustomerName, setAskCustomerName] = useState(true)
+  const [isGstOn, setIsGstOn] = useState(true)
+  const [invoiceFormat, setInvoiceFormat] = useState<InvoiceFormat>('80mm')
+  const [printMode, setPrintMode] = useState<PrintMode>('preview')
+  const [enabledPayments, setEnabledPayments] = useState<Record<PaymentMode, boolean>>({
+    cash: true,
+    upi: true,
+    card: true,
+    mixed: true,
+    due: true,
+  })
+
+  // Bill Core State
   const [billType, setBillType] = useState<BillType>('company_sale')
-  const [isGst, setIsGst] = useState(true)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
+  const [customerGstin, setCustomerGstin] = useState('')
   const [customerAddress, setCustomerAddress] = useState('')
-  const [shippedTo, setShippedTo] = useState('')
-  const [customerGst, setCustomerGst] = useState('')
+  const [selectedCustomerId, setSelectedCustomerId] = useState('')
+  const [selectedDealerId, setSelectedDealerId] = useState('')
+  const [selectedDriverId, setSelectedDriverId] = useState('')
+  
   const [items, setItems] = useState<SaleItem[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeCategory, setActiveCategory] = useState<string>('all')
+  
+  // Overall Bill Discount
+  const [billDiscountValue, setBillDiscountValue] = useState(0)
+  const [billDiscountType, setBillDiscountType] = useState<'flat' | 'percent'>('flat')
+  const [couponCode, setCouponCode] = useState('')
+  
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('cash')
   const [cashAmount, setCashAmount] = useState(0)
   const [upiAmount, setUpiAmount] = useState(0)
+  const [cardAmount, setCardAmount] = useState(0)
   const [paidAmount, setPaidAmount] = useState(0)
+  const [notes, setNotes] = useState('')
+
   const [invoiceNumber, setInvoiceNumber] = useState(() => {
     const d = new Date()
     return `RK-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${Date.now().toString().slice(-4)}`
   })
-  const [date, setDate] = useState(new Date().toLocaleDateString('en-CA'))
-  const [notes, setNotes] = useState('')
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [currentTime, setCurrentTime] = useState('')
   const [saving, setSaving] = useState(false)
-  const [showPrint, setShowPrint] = useState(false)
   const [savedSale, setSavedSale] = useState<any>(null)
-  const [dbProducts, setDbProducts] = useState<any[]>(PRODUCTS)
-  const [dealers, setDealers] = useState<any[]>([])
-  const [selectedDealerId, setSelectedDealerId] = useState('')
+  
+  const [dbProducts, setDbProducts] = useState<any[]>(DEFAULT_PRODUCTS)
   const [customers, setCustomers] = useState<any[]>([])
-  const [saveStatus, setSaveStatus] = useState<string[]>([])
-  const [printFormat, setPrintFormat] = useState<'a4' | '58mm' | '80mm'>('a4')
-  const [isAutoPrint, setIsAutoPrint] = useState(false)
-  const [settings, setSettings] = useState<Record<string, string>>({
-    company_name: 'ROYAL KISSAN',
-    company_address: 'Guntur Highway Road, Guntur, AP',
-    company_phone: '81849 18757',
-    company_email: 'royalkissan@gmail.com',
-    company_gst: '37BABS2021G1Z3'
-  })
-  const printRef = useRef<HTMLDivElement>(null)
+  const [dealers, setDealers] = useState<any[]>([])
+  const [drivers, setDrivers] = useState<any[]>([])
+  
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [printingThermal, setPrintingThermal] = useState(false)
+  const [recentBills, setRecentBills] = useState<any[]>([])
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+  
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [printerIp, setPrinterIp] = useState('192.168.0.2')
+
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const supabase = createClient()
 
-  // Computed totals
-  const subtotal = items.reduce((sum, item) => sum + item.amount, 0)
-  const totalGst = items.reduce((sum, item) => sum + item.gst_amount, 0)
-  const totalAmount = subtotal + totalGst
+  // Live Clock
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
+    }, 1000)
+    setCurrentTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
+    return () => clearInterval(timer)
+  }, [])
 
+  // Load Initial Data
   useEffect(() => {
     loadBillingInitialData()
   }, [])
 
   async function loadBillingInitialData() {
     try {
-      const [productsRes, dealersRes, customersRes, settingsRes] = await Promise.all([
+      const [productsRes, customersRes, dealersRes, driversRes, billsRes, printerRes] = await Promise.all([
         supabase.from('products').select('id, name, default_rate, gst_rate, category').eq('is_active', true),
-        supabase.from('dealers').select('id, name, area').order('name'),
-        supabase.from('bills').select('customer_name, customer_phone, customer_address').not('customer_name', 'is', null).limit(50),
-        supabase.from('system_settings').select('setting_key, setting_value')
+        supabase.from('customers').select('id, name, phone, address, gstin').limit(100),
+        supabase.from('dealers').select('id, name, phone').order('name'),
+        supabase.from('drivers').select('id, name, phone').order('name'),
+        supabase.from('bills').select('*').order('created_at', { ascending: false }).limit(20),
+        supabase.from('printer_settings').select('printer_ip, paper_width').eq('is_default', true).maybeSingle()
       ])
 
       if (productsRes.data && productsRes.data.length > 0) {
@@ -187,1039 +167,969 @@ export default function BillingPage() {
         productsRes.data.forEach((p: any) => {
           if (!seen.has(p.name)) {
             seen.add(p.name)
-            unique.push({ id: p.id, name: p.name, rate: Number(p.default_rate) || 0, gst_rate: Number(p.gst_rate) || 18, category: p.category || 'bottle' })
+            unique.push({ id: p.id, name: p.name, rate: Number(p.default_rate) || 0, mrp: (Number(p.default_rate) || 0) + 5, gst_rate: Number(p.gst_rate) || 18, category: p.category || 'bottle' })
           }
         })
         if (unique.length > 0) setDbProducts(unique)
       }
 
+      if (customersRes.data) setCustomers(customersRes.data)
       if (dealersRes.data) setDealers(dealersRes.data)
-
-      if (customersRes.data) {
-        const map = new Map()
-        customersRes.data.forEach((c: any) => {
-          if (c.customer_name && !map.has(c.customer_name)) {
-            map.set(c.customer_name, { name: c.customer_name, phone: c.customer_phone || '', address: c.customer_address || '' })
-          }
-        })
-        setCustomers(Array.from(map.values()))
-      }
-
-      if (settingsRes.data) {
-        const map: Record<string, string> = { ...settings }
-        settingsRes.data.forEach((s: any) => { if (s.setting_key) map[s.setting_key] = s.setting_value })
-        setSettings(map)
-      }
-    } catch (err) {
-      console.error('Failed to load initial billing data:', err)
+      if (driversRes.data) setDrivers(driversRes.data)
+      if (billsRes.data) setRecentBills(billsRes.data)
+      if (printerRes.data?.printer_ip) setPrinterIp(printerRes.data.printer_ip)
+      if (printerRes.data?.paper_width) setInvoiceFormat(printerRes.data.paper_width as InvoiceFormat)
+    } catch {
+      // Fallback
     }
   }
 
-  useEffect(() => { setIsGst(billType !== 'non_gst_invoice') }, [billType])
-
+  // Keyboard Shortcuts (F2: Search focus, F8: Save, F9: Save & Print, Esc: Clear)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl + I -> Add Item
-      if (e.ctrlKey && e.key === 'i') {
-        e.preventDefault()
-        addItem()
-      }
-      // Ctrl + S -> Save Bill
-      if (e.ctrlKey && e.key === 's') {
-        e.preventDefault()
-        saveBill()
-      }
-      // F2 -> Focus Customer Name
       if (e.key === 'F2') {
         e.preventDefault()
-        const el = document.getElementById('billing-customer-name')
-        if (el) (el as HTMLInputElement).focus()
+        searchInputRef.current?.focus()
+      }
+      if (e.key === 'F8') {
+        e.preventDefault()
+        saveBill(false)
+      }
+      if (e.key === 'F9') {
+        e.preventDefault()
+        saveBill(true)
+      }
+      if (e.key === 'Escape') {
+        if (items.length > 0 && confirm('Clear cart items?')) {
+          setItems([])
+        }
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [items, customerName, paidAmount, cashAmount, upiAmount, paymentMode, selectedDealerId, invoiceNumber, date, notes, subtotal, totalGst, totalAmount])
+  }, [items, customerName, paidAmount, cashAmount, upiAmount, paymentMode, invoiceNumber, date, billDiscountValue])
 
+  // Live Item & Financial Calculations
+  const rawSubtotal = items.reduce((sum, item) => sum + (item.quantity * item.rate), 0)
+  const itemDiscountsTotal = items.reduce((sum, item) => {
+    if (item.discount_type === 'percent') {
+      return sum + ((item.quantity * item.rate) * item.item_discount) / 100
+    }
+    return sum + (item.item_discount * item.quantity)
+  }, 0)
+
+  const subtotalAfterItemDiscounts = Math.max(0, rawSubtotal - itemDiscountsTotal)
+
+  const overallDiscountAmount = billDiscountType === 'percent'
+    ? (subtotalAfterItemDiscounts * billDiscountValue) / 100
+    : billDiscountValue
+
+  const totalDiscountAmount = itemDiscountsTotal + overallDiscountAmount
+  const taxableAmount = Math.max(0, rawSubtotal - totalDiscountAmount)
+
+  // GST Calculation (0 if GST is OFF)
+  const totalGst = isGstOn ? items.reduce((sum, item) => {
+    const itemSubtotal = item.quantity * item.rate
+    const itemDisc = item.discount_type === 'percent' ? (itemSubtotal * item.item_discount) / 100 : item.item_discount * item.quantity
+    const itemTaxable = Math.max(0, itemSubtotal - itemDisc)
+    return sum + (itemTaxable * item.gst_rate) / 100
+  }, 0) : 0
+
+  const cgstAmount = isGstOn ? totalGst / 2 : 0
+  const sgstAmount = isGstOn ? totalGst / 2 : 0
+  const igstAmount = 0
+
+  const unroundedTotal = taxableAmount + totalGst
+  const grandTotal = Math.round(unroundedTotal)
+  const roundOff = Math.round((grandTotal - unroundedTotal) * 100) / 100
+
+  // Payment Auto Synchronizer
   useEffect(() => {
     if (paymentMode === 'cash') {
-      setCashAmount(totalAmount)
+      setCashAmount(grandTotal)
       setUpiAmount(0)
-      setPaidAmount(totalAmount)
+      setCardAmount(0)
+      setPaidAmount(grandTotal)
     } else if (paymentMode === 'upi') {
-      setUpiAmount(totalAmount)
+      setUpiAmount(grandTotal)
       setCashAmount(0)
-      setPaidAmount(totalAmount)
+      setCardAmount(0)
+      setPaidAmount(grandTotal)
+    } else if (paymentMode === 'card') {
+      setCardAmount(grandTotal)
+      setCashAmount(0)
+      setUpiAmount(0)
+      setPaidAmount(grandTotal)
     } else if (paymentMode === 'due') {
       setCashAmount(0)
       setUpiAmount(0)
+      setCardAmount(0)
       setPaidAmount(0)
     }
-  }, [totalAmount, paymentMode])
+  }, [grandTotal, paymentMode])
 
   useEffect(() => {
     if (paymentMode === 'mixed') {
-      setPaidAmount(cashAmount + upiAmount)
+      setPaidAmount(cashAmount + upiAmount + cardAmount)
     }
-  }, [cashAmount, upiAmount, paymentMode])
+  }, [cashAmount, upiAmount, cardAmount, paymentMode])
 
-  const dueAmount = Math.max(0, totalAmount - paidAmount)
-  const payStatus = PAYMENT_STATUS(totalAmount, paidAmount)
+  const dueAmount = Math.max(0, grandTotal - paidAmount)
 
-  function addItem() {
-    const defaultProd = dbProducts[0] || PRODUCTS[0]
-    const newItem: SaleItem = {
-      id: Date.now().toString() + Math.random(),
-      product_id: defaultProd.id,
-      product_name: defaultProd.name,
-      quantity: 1,
-      rate: defaultProd.rate,
-      gst_rate: defaultProd.gst_rate,
-      amount: defaultProd.rate,
-      gst_amount: isGst ? (defaultProd.rate * defaultProd.gst_rate) / 100 : 0,
-      total: isGst ? defaultProd.rate + (defaultProd.rate * defaultProd.gst_rate) / 100 : defaultProd.rate,
+  // Cart Handlers
+  function addQuickProduct(prod: any, addQty = 1) {
+    const existingIndex = items.findIndex(i => i.product_name === prod.name)
+    if (existingIndex >= 0) {
+      const updated = [...items]
+      const curr = updated[existingIndex]
+      const newQty = curr.quantity + addQty
+      const amount = newQty * curr.rate
+      const gstAmount = isGstOn ? (amount * curr.gst_rate) / 100 : 0
+      updated[existingIndex] = { ...curr, quantity: newQty, amount, gst_amount: gstAmount }
+      setItems(updated)
+    } else {
+      const newItem: SaleItem = {
+        id: Date.now().toString() + Math.random(),
+        product_id: prod.id,
+        product_name: prod.name,
+        quantity: addQty,
+        rate: prod.rate,
+        mrp: prod.mrp || prod.rate,
+        item_discount: 0,
+        discount_type: 'flat',
+        gst_rate: prod.gst_rate,
+        taxable_amount: prod.rate * addQty,
+        gst_amount: isGstOn ? ((prod.rate * addQty) * prod.gst_rate) / 100 : 0,
+        amount: prod.rate * addQty,
+      }
+      setItems([...items, newItem])
     }
-    setItems([...items, newItem])
   }
 
-  function updateItem(id: string, field: string, value: string | number) {
+  function updateItem(id: string, field: string, value: any) {
     setItems(items.map(item => {
       if (item.id !== id) return item
       const updated = { ...item, [field]: value }
-      if (field === 'product_id') {
-        const product = dbProducts.find(p => p.id === value) || PRODUCTS.find(p => p.id === value)
-        if (product) { updated.product_name = product.name; updated.rate = product.rate; updated.gst_rate = product.gst_rate }
+      const qty = Number(updated.quantity) || 1
+      const rate = Number(updated.rate) || 0
+      const disc = Number(updated.item_discount) || 0
+      const itemSubtotal = qty * rate
+      const itemDiscVal = updated.discount_type === 'percent' ? (itemSubtotal * disc) / 100 : disc * qty
+      const taxable = Math.max(0, itemSubtotal - itemDiscVal)
+      const gstAmount = isGstOn ? (taxable * (Number(updated.gst_rate) || 0)) / 100 : 0
+      
+      return { 
+        ...updated, 
+        quantity: qty, 
+        rate: rate, 
+        taxable_amount: taxable, 
+        gst_amount: gstAmount, 
+        amount: taxable + gstAmount 
       }
-      const amount = updated.quantity * updated.rate
-      const gstAmount = isGst ? (amount * updated.gst_rate) / 100 : 0
-      return { ...updated, amount, gst_amount: gstAmount, total: amount + gstAmount }
     }))
   }
 
   function removeItem(id: string) { setItems(items.filter(item => item.id !== id)) }
 
-  async function saveBill() {
-    if (!customerName || items.length === 0) {
-      alert('Please fill customer name and add at least one item')
-      return
-    }
-
-    setSaving(true)
-    setSaveStatus([])
-    const statusLog: string[] = []
-
-    try {
-      // 1. Resolve dealer_id
-      let dealerId = selectedDealerId || null
-      if (!dealerId && billType === 'dealer_invoice') {
-        const { data: dData } = await supabase.from('dealers').select('id').ilike('name', `%${customerName}%`).limit(1).maybeSingle()
-        dealerId = dData?.id || null
-      }
-
-      // 2. Resolve driver_id + route_id for driver_sale
-      let driverId = null
-      let routeId = null
-      if (billType === 'driver_sale') {
-        const { data: drData } = await supabase.from('drivers').select('id').order('created_at').limit(1).maybeSingle()
-        driverId = drData?.id || null
-        const { data: rtData } = await supabase.from('routes').select('id').limit(1).maybeSingle()
-        routeId = rtData?.id || null
-      }
-
-      const paymentStatus = paidAmount <= 0 ? 'due' : paidAmount >= totalAmount ? 'paid' : 'partial'
-
-      let finalInvoiceNumber = invoiceNumber.trim()
-      if (!finalInvoiceNumber) {
-        const d = new Date()
-        finalInvoiceNumber = `RK-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${Date.now().toString().slice(-4)}`
-      }
-
-      // 3. Build complete bills payload — all columns must match DB schema
-      const payload = {
-        invoice_number:   finalInvoiceNumber,
-        bill_type:        billType,
-        customer_name:    customerName,
-        customer_phone:   customerPhone || null,
-        customer_address: customerAddress || null,
-        dealer_id:        dealerId,
-        driver_id:        driverId,
-        route_id:         routeId,
-        subtotal:         subtotal,
-        gst_amount:       totalGst,
-        total_amount:     totalAmount,
-        payment_method:   paymentMode,
-        cash_amount:      cashAmount,
-        upi_amount:       upiAmount,
-        paid_amount:      paidAmount,
-        due_amount:       dueAmount,
-        payment_status:   paymentStatus,
-        date:             date,
-        notes:            notes || null,
-      }
-
-      // 4. Insert main bill
-      const { data: bill, error: billError } = await supabase.from('bills').insert(payload).select().single()
-
-      if (billError) {
-        console.error('Bill insert error:', billError)
-        throw new Error(`Failed to save bill: ${billError.message}`)
-      }
-
-      statusLog.push('✅ Bill saved to database')
-
-      if (bill) {
-        // 5. Insert bill items
-        const billItemsPayload = items.map(item => ({
-          bill_id:      bill.id,
-          product_id:   item.product_id.startsWith('p') ? null : item.product_id, // fallback products have fake IDs
-          product_name: item.product_name,
-          quantity:     item.quantity,
-          rate:         item.rate,
-          amount:       item.amount,
-          gst_rate:     item.gst_rate,
-          gst_amount:   item.gst_amount,
-          total:        item.total,
-        }))
-
-        const { error: itemsErr } = await supabase.from('bill_items').insert(billItemsPayload)
-        if (itemsErr) {
-          console.error('Bill items insert error:', itemsErr)
-          statusLog.push(`⚠️ Bill items warning: ${itemsErr.message}`)
-        } else {
-          statusLog.push('✅ Bill items saved')
-        }
-
-        // 6. Deduct stock (uses product_id FK, skip for fallback products)
-        try {
-          const stockTxs = items
-            .filter(item => !item.product_id.startsWith('p')) // skip fake IDs
-            .map(item => ({
-              product_id:       item.product_id,
-              transaction_type: 'out' as const,
-              quantity:         Number(item.quantity),
-              reason:           `Bill #${invoiceNumber}`,
-              reference_type:   'sale',
-              reference_id:     bill.id,
-              notes:            `Auto-deducted on billing for ${item.product_name}`,
-            }))
-
-          if (stockTxs.length > 0) {
-            const { error: stockErr } = await supabase.from('stock_transactions').insert(stockTxs)
-            if (stockErr) {
-              console.warn('Stock transactions warning:', stockErr.message)
-            } else {
-              statusLog.push('✅ Inventory stock deducted')
-            }
-          }
-        } catch (stockEx) {
-          console.warn('Stock deduction skipped:', stockEx)
-        }
-
-        // 7. Dealer outstanding — handled by DB trigger sync_bills_data()
-        if (billType === 'dealer_invoice' && dealerId) {
-          statusLog.push('✅ Dealer outstanding updated (via trigger)')
-        }
-
-        // 8. Customer ledger
-        try {
-          const { error: ledgerErr } = await supabase.from('customer_ledger').insert({
-            customer_name:    customerName,
-            transaction_type: 'bill',
-            bill_id:          bill.id,
-            debit:            totalAmount,
-            credit:           paidAmount,
-            balance:          dueAmount,
-            description:      `Bill #${invoiceNumber} — ${BILL_TYPE_LABELS[billType]}`,
-            transaction_date: date,
-          })
-          if (ledgerErr) console.warn('Ledger warning:', ledgerErr.message)
-          else statusLog.push('✅ Customer ledger updated')
-        } catch (ledgerEx) {
-          console.warn('Ledger insert skipped:', ledgerEx)
-        }
-
-        // 9. Driver route sales
-        if (billType === 'driver_sale' && driverId) {
-          try {
-            const { error: rsErr } = await supabase.from('route_sales').insert({
-              invoice_number: invoiceNumber,
-              driver_id:      driverId,
-              route_id:       routeId,
-              customer_name:  customerName,
-              product_name:   items.map(i => i.product_name).join(', '),
-              quantity:       items.reduce((s, i) => s + i.quantity, 0),
-              rate:           items[0]?.rate || 0,
-              total_amount:   totalAmount,
-              cash_paid:      cashAmount,
-              upi_paid:       upiAmount,
-              due_amount:     dueAmount,
-              payment_status: paymentStatus,
-              sale_date:      date,
-            })
-            if (rsErr) console.warn('Route sales warning:', rsErr.message)
-            else statusLog.push('✅ Driver route sales recorded')
-          } catch (rsEx) {
-            console.warn('Route sales skipped:', rsEx)
-          }
-        }
-
-        setSaveStatus(statusLog)
-        setSavedSale(bill)
-        setShowPrint(true)
-        if (isAutoPrint) {
-          setTimeout(() => window.print(), 300)
-        }
-      }
-    } catch (err: any) {
-      console.error('saveBill error:', err)
-      alert(`❌ Error saving bill:\n\n${err?.message || JSON.stringify(err)}\n\nCheck browser console for details.`)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleCancelBill() {
-    if (!savedSale) return
-    if (!confirm('⚠️ Are you sure you want to cancel and void this bill?')) return
-
-    setSaving(true)
-    try {
-      const { error } = await supabase.rpc('cancel_and_archive_bill', { p_bill_id: savedSale.id })
-      if (error) {
-        // Function may not exist; fallback: just delete the bill
-        const { error: delErr } = await supabase.from('bills').delete().eq('id', savedSale.id)
-        if (delErr) alert(`❌ Cancellation failed: ${delErr.message}`)
-        else { alert('✅ Invoice cancelled'); newBill() }
-      } else {
-        alert('✅ Invoice successfully cancelled and archived!')
-        newBill()
-      }
-    } catch (e: any) {
-      alert(`Error: ${e?.message}`)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  function newBill() {
-    setCustomerName(''); setCustomerPhone(''); setCustomerAddress('')
-    setCustomerGst(''); setShippedTo('')
-    setItems([]); setPaymentMode('cash'); setPaidAmount(0); setCashAmount(0); setUpiAmount(0)
-    setNotes(''); setSelectedDealerId(''); setSaveStatus([])
+  function resetForm() {
     const d = new Date()
     setInvoiceNumber(`RK-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${Date.now().toString().slice(-4)}`)
-    setShowPrint(false); setSavedSale(null)
+    setCustomerName('')
+    setCustomerPhone('')
+    setCustomerGstin('')
+    setCustomerAddress('')
+    setSelectedCustomerId('')
+    setSelectedDealerId('')
+    setSelectedDriverId('')
+    setItems([])
+    setBillDiscountValue(0)
+    setCouponCode('')
+    setNotes('')
+    setPaymentMode('cash')
+    setCashAmount(0)
+    setUpiAmount(0)
+    setCardAmount(0)
+    setPaidAmount(0)
+    setSavedSale(null)
+    setErrorMessage(null)
   }
 
-  // ── PDF download via print ────────────────────────────────
-  function handleDownloadPDF() {
-    const style = document.createElement('style')
-    style.id = 'pdf-print-override'
-    style.innerHTML = `@page { size: A4; margin: 10mm; } .no-print { display: none !important; }`
-    document.head.appendChild(style)
-    window.print()
-    setTimeout(() => { const el = document.getElementById('pdf-print-override'); if (el) el.remove() }, 1000)
+  function getCurrentBillDataObject(): BillData {
+    return {
+      id: savedSale?.id,
+      invoice_number: savedSale?.invoice_number || invoiceNumber,
+      bill_type: isGstOn ? billType : 'non_gst_invoice',
+      customer_name: customerName || 'Walk-in Customer',
+      customer_phone: customerPhone || null,
+      customer_address: customerAddress || null,
+      customer_gstin: customerGstin || null,
+      subtotal: rawSubtotal,
+      gst_amount: totalGst,
+      total_amount: grandTotal,
+      paid_amount: paidAmount,
+      due_amount: dueAmount,
+      payment_method: paymentMode,
+      payment_status: paidAmount >= grandTotal ? 'paid' : (paidAmount > 0 ? 'partial' : 'due'),
+      date: date,
+      items: items.map(i => ({
+        product_name: i.product_name,
+        quantity: i.quantity,
+        rate: i.rate,
+        amount: i.amount,
+        gst_rate: isGstOn ? i.gst_rate : 0,
+        gst_amount: isGstOn ? i.gst_amount : 0,
+        total: i.amount,
+      })),
+    }
   }
 
-  // ── PRINT / INVOICE VIEW ──────────────────────────────────
-  if (showPrint && savedSale) {
-    const isThermal = printFormat !== 'a4'
-    const formattedDate = new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    const formattedTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+  // Transactional Bill Save
+  async function saveBill(shouldPrint = false) {
+    if (items.length === 0) {
+      alert('Please add at least one product to the POS bill cart.')
+      return
+    }
+    setSaving(true)
+    setErrorMessage(null)
+    try {
+      const salePayload = {
+        invoice_number: invoiceNumber,
+        bill_type: isGstOn ? billType : 'non_gst_invoice',
+        customer_name: askCustomerName ? (customerName || 'Walk-in Customer') : 'Walk-in Customer',
+        customer_phone: customerPhone || null,
+        customer_address: customerAddress || null,
+        customer_gstin: customerGstin || null,
+        customer_id: selectedCustomerId || null,
+        dealer_id: selectedDealerId || null,
+        driver_id: selectedDriverId || null,
+        subtotal: rawSubtotal,
+        taxable_amount: taxableAmount,
+        gst_amount: totalGst,
+        cgst_amount: cgstAmount,
+        sgst_amount: sgstAmount,
+        igst_amount: igstAmount,
+        discount_amount: totalDiscountAmount,
+        round_off: roundOff,
+        grand_total: grandTotal,
+        total_amount: grandTotal,
+        paid_amount: paidAmount,
+        due_amount: dueAmount,
+        cash_amount: cashAmount,
+        upi_amount: upiAmount,
+        card_amount: cardAmount,
+        wallet_amount: 0,
+        bank_amount: 0,
+        mixed_amount: paymentMode === 'mixed' ? paidAmount : 0,
+        payment_mode: paymentMode,
+        payment_status: paidAmount >= grandTotal ? 'paid' : (paidAmount > 0 ? 'partial' : 'due'),
+        status: 'active',
+        invoice_type: invoiceFormat,
+        date: date,
+        items_count: items.length,
+        coupon_code: couponCode || null,
+        notes: notes || null,
+        created_by: 'POS Cashier',
+      }
 
-    return (
-      <div className="animate-fade-in" style={{ padding: '0.25rem' }}>
-        {/* ── Control Bar ── */}
-        <div className="no-print bg-slate-900/50 border border-slate-800 rounded-xl p-6 shadow-xl" style={{ marginBottom: '2rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <FileCheck className="w-5 h-5 text-emerald-400" />
-                <h2 className="page-title" style={{ fontSize: '1.5rem', margin: 0 }}>Invoice Generated Successfully</h2>
-              </div>
-              <p className="page-subtitle">Invoice #{invoiceNumber} saved to database</p>
-              <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                {saveStatus.map((s, i) => <span key={i} style={{ fontSize: '0.75rem', color: '#34d399' }}>{s}</span>)}
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fff', fontSize: '0.8rem', cursor: 'pointer' }}>
-                <input type="checkbox" checked={isAutoPrint} onChange={e => setIsAutoPrint(e.target.checked)} style={{ width: '16px', height: '16px' }} />
-                <span>Auto-Print</span>
-              </label>
-              <button onClick={newBill} className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                <Plus className="w-4 h-4" />
-                <span>New Invoice</span>
-              </button>
-            </div>
+      const itemsPayload = items.map(i => ({
+        product_id: i.product_id || null,
+        product_name: i.product_name,
+        quantity: i.quantity,
+        rate: i.rate,
+        item_discount: i.item_discount || 0,
+        discount_type: i.discount_type || 'flat',
+        gst_rate: isGstOn ? i.gst_rate : 0,
+        gst_amount: isGstOn ? i.gst_amount : 0,
+        amount: i.amount,
+      }))
+
+      let createdBill: any = null
+
+      // 1. Try atomic PostgreSQL RPC process_pos_bill
+      const rpcResult = await supabase.rpc('process_pos_bill', {
+        p_bill: salePayload,
+        p_items: itemsPayload,
+      })
+
+      if (!rpcResult.error && rpcResult.data) {
+        createdBill = rpcResult.data
+      } else {
+        // 2. Direct clean insert into bills table
+        const { data, error } = await supabase.from('bills').insert([salePayload]).select().single()
+        if (error) throw error
+        createdBill = data
+
+        if (itemsPayload.length > 0 && createdBill?.id) {
+          const itemsWithBillId = itemsPayload.map(i => ({ ...i, bill_id: createdBill.id }))
+          await supabase.from('bill_items').insert(itemsWithBillId)
+        }
+      }
+
+      setSavedSale(createdBill)
+      setRecentBills(prev => [createdBill, ...prev.slice(0, 19)])
+
+      if (printMode === 'preview' || shouldPrint) {
+        setIsPreviewOpen(true)
+      }
+
+      if (shouldPrint && printMode === 'auto') {
+        setPrintingThermal(true)
+        const billDataObj = getCurrentBillDataObject()
+        await executePrintJob(billDataObj, { copyType: 'customer' })
+        setPrintingThermal(false)
+      }
+
+      alert(`✅ Bill ${invoiceNumber} saved successfully!`)
+    } catch (e: any) {
+      setErrorMessage(`Unable to save bill. Reason: ${e.message || 'Database error'}. Retry?`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Filter products
+  const filteredProducts = dbProducts.filter(p => {
+    const matchesCategory = activeCategory === 'all' || p.category === activeCategory
+    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase())
+    return matchesCategory && matchesSearch
+  })
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minHeight: 'calc(100vh - 80px)' }}>
+      
+      {/* ── TOP STATUS & CONTROLS HEADER BAR ── */}
+      <Card style={{ padding: '0.75rem 1.25rem', backgroundColor: '#18181b', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Zap style={{ color: '#fbbf24', width: '22px', height: '22px' }} />
+              Enterprise POS Billing Operator
+            </h2>
+            <Badge variant="neutral" style={{ fontFamily: 'monospace', fontWeight: 800, color: '#fbbf24' }}>
+              {invoiceNumber}
+            </Badge>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '1rem', alignItems: 'center' }}>
-            <div style={{ display: 'flex', gap: '0.375rem', marginRight: '0.5rem' }}>
-              {(['a4', '58mm', '80mm'] as const).map(fmt => (
-                <button key={fmt} type="button" onClick={() => setPrintFormat(fmt)}
-                  className={printFormat === fmt ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-                  style={{ fontSize: '0.75rem', fontWeight: '700' }}>
-                  {fmt.toUpperCase()}
-                </button>
-              ))}
-            </div>
-            <button onClick={() => window.print()} className="btn btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              <Printer className="w-4 h-4" />
-              <span>Print</span>
-            </button>
-            <button onClick={handleDownloadPDF} className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              <Download className="w-4 h-4" />
-              <span>Download PDF</span>
-            </button>
-            <button onClick={() => window.open(`https://wa.me/?text=Invoice%20${invoiceNumber}%20Total:%20Rs.${totalAmount}`, '_blank')} className="btn btn-sm" style={{ background: '#25D366', color: 'white', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              <Smartphone className="w-4 h-4" />
-              <span>WhatsApp</span>
-            </button>
-            <button onClick={handleCancelBill} className="btn btn-sm" style={{ background: '#ef4444', color: 'white', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              <Trash2 className="w-4 h-4" />
-              <span>Cancel Bill</span>
-            </button>
-          </div>
-        </div>
-
-        {/* ── INVOICE TEMPLATE ── */}
-        <div
-          ref={printRef}
-          id="printable-invoice"
-          className={printFormat === 'a4' ? 'print-a4' : printFormat === '80mm' ? 'print-80mm' : 'print-58mm'}
-          style={{
-            background: 'white',
-            color: 'black',
-            padding: printFormat === 'a4' ? '12mm 15mm' : printFormat === '80mm' ? '4mm' : '3mm',
-            maxWidth: printFormat === 'a4' ? '210mm' : printFormat === '80mm' ? '80mm' : '58mm',
-            margin: '0 auto',
-            fontFamily: printFormat === 'a4' ? "'Arial', sans-serif" : 'monospace',
-            boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
-            borderRadius: printFormat === 'a4' ? '0.5rem' : '0',
-            minHeight: printFormat === 'a4' ? '297mm' : 'auto',
-          }}
-        >
-          {/* ════════════════════════════════════════
-              A4 INVOICE TEMPLATE
-          ════════════════════════════════════════ */}
-          {printFormat === 'a4' ? (
-            <div>
-              {/* Logo block centered at the top */}
-              <div style={{
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.8rem', color: '#a1a1aa' }}>
+            
+            <button
+              type="button"
+              onClick={() => setShowSettings(!showSettings)}
+              style={{
                 display: 'flex',
-                justifyContent: 'center',
                 alignItems: 'center',
-                width: '100%',
-                paddingBottom: '5mm',
-                marginBottom: '5mm',
-                borderBottom: '1px dashed #e5e7eb'
-              }}>
-                <Image
-                  src="/royal-kissan-logo.png"
-                  alt="Royal Kissan Logo"
-                  width={90}
-                  height={90}
-                  priority
-                  unoptimized
-                  style={{
-                    objectFit: 'contain',
-                    borderRadius: '8px',
-                    display: 'block'
-                  }}
+                gap: '0.35rem',
+                padding: '0.35rem 0.75rem',
+                borderRadius: '6px',
+                backgroundColor: showSettings ? '#fbbf24' : '#27272a',
+                color: showSettings ? '#000' : '#fff',
+                border: 'none',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              <Settings2 style={{ width: '15px', height: '15px' }} />
+              Invoice Settings
+            </button>
+
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <Clock style={{ width: '14px', height: '14px', color: '#fbbf24' }} />
+              <strong style={{ color: '#fff', fontFamily: 'monospace' }}>{currentTime}</strong>
+            </span>
+
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <Wifi style={{ width: '14px', height: '14px', color: '#34d399' }} />
+              Thermal: <strong style={{ color: '#34d399' }}>{printerIp}:9100 ({invoiceFormat})</strong>
+            </span>
+
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<RotateCcw style={{ width: '14px', height: '14px' }} />}
+              onClick={() => setIsHistoryOpen(true)}
+            >
+              History ({recentBills.length})
+            </Button>
+          </div>
+
+        </div>
+      </Card>
+
+      {/* ── EXPANDABLE INVOICE SETTINGS PANEL ── */}
+      {showSettings && (
+        <Card style={{ padding: '1rem 1.25rem', backgroundColor: '#09090b', border: '1px solid #fbbf24' }}>
+          <h4 style={{ fontSize: '0.95rem', fontWeight: 800, color: '#fbbf24', margin: '0 0 0.85rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Sliders style={{ width: '16px', height: '16px' }} />
+            POS & Invoice Configuration Settings
+          </h4>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+            
+            {/* Customer Toggle */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#a1a1aa', marginBottom: '0.35rem' }}>
+                Customer Preference
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fff', fontSize: '0.85rem', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={askCustomerName}
+                  onChange={(e) => setAskCustomerName(e.target.checked)}
                 />
-              </div>
+                ☑ Ask Customer Name
+              </label>
+            </div>
 
-              {/* Header */}
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                borderBottom: '3px solid #1e3a8a',
-                paddingBottom: '8mm',
-                marginBottom: '6mm',
-              }}>
-                {/* Left: Company details from database settings */}
-                <div>
-                  <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#1e3a8a', margin: '0 0 2px', letterSpacing: '-0.5px' }}>
-                    {settings.company_name}
-                  </h1>
-                  <p style={{ fontSize: '11px', color: '#4b5563', margin: '0 0 4px', fontWeight: '700', letterSpacing: '1px' }}>
-                    PACKAGED DRINKING WATER
-                  </p>
-                  <p style={{ fontSize: '9.5px', color: '#6b7280', margin: '2px 0' }}>📍 {settings.company_address}</p>
-                  <p style={{ fontSize: '9.5px', color: '#6b7280', margin: '2px 0' }}>📞 +91 {settings.company_phone} &nbsp;|&nbsp; ✉ {settings.company_email}</p>
-                  {settings.company_gst && <p style={{ fontSize: '9.5px', color: '#6b7280', margin: '2px 0', fontWeight: '700' }}>GSTIN: {settings.company_gst}</p>}
-                </div>
-                {/* Right: Invoice Badge */}
-                <div style={{ textAlign: 'right', minWidth: '160px' }}>
-                  <div style={{
-                    display: 'inline-block',
-                    background: isGst ? '#1e3a8a' : '#374151',
-                    color: 'white',
-                    padding: '6px 18px',
-                    borderRadius: '6px',
-                    marginBottom: '8px',
-                  }}>
-                    <div style={{ fontSize: '13px', fontWeight: '900', letterSpacing: '1.5px' }}>
-                      {isGst ? 'TAX INVOICE' : 'BILL OF SUPPLY'}
-                    </div>
-                    <div style={{ fontSize: '9px', opacity: 0.8, marginTop: '2px' }}>
-                      {BILL_TYPE_LABELS[billType]}
-                    </div>
-                  </div>
-                  <div style={{ fontSize: '10.5px', margin: '3px 0' }}>
-                    Invoice: <strong style={{ color: '#1e3a8a' }}>#{invoiceNumber}</strong>
-                  </div>
-                  <div style={{ fontSize: '10.5px', margin: '3px 0' }}>Date: {formattedDate}</div>
-                  <div style={{ fontSize: '10px', margin: '3px 0', color: '#6b7280' }}>Time: {formattedTime}</div>
-                </div>
-              </div>
-
-              {/* Billed To / Shipped To */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6mm', marginBottom: '6mm' }}>
-                <div style={{ padding: '10px 14px', border: '1px solid #e5e7eb', borderRadius: '8px', borderLeft: '4px solid #1e3a8a' }}>
-                  <p style={{ fontSize: '9px', fontWeight: '900', color: '#1e3a8a', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                    BILLED TO
-                  </p>
-                  <p style={{ fontWeight: '800', fontSize: '13px', margin: '0 0 3px', color: '#111827' }}>{customerName || 'Walk-In Customer'}</p>
-                  {customerAddress && <p style={{ fontSize: '10px', color: '#374151', margin: '2px 0' }}>{customerAddress}</p>}
-                  {customerPhone && <p style={{ fontSize: '10px', color: '#374151', margin: '2px 0' }}>📞 {customerPhone}</p>}
-                  {customerGst && <p style={{ fontSize: '10px', color: '#374151', margin: '2px 0', fontWeight: '700' }}>GSTIN: {customerGst}</p>}
-                </div>
-                <div style={{ padding: '10px 14px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
-                  <p style={{ fontSize: '9px', fontWeight: '900', color: '#6b7280', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                    SHIPPED TO
-                  </p>
-                  <p style={{ fontWeight: '800', fontSize: '13px', margin: '0 0 3px', color: '#111827' }}>{customerName || 'Walk-In Customer'}</p>
-                  <p style={{ fontSize: '10px', color: '#374151', margin: '2px 0' }}>{shippedTo || customerAddress || 'Same as billing address'}</p>
-                </div>
-              </div>
-
-              {/* Items Table */}
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10.5px', marginBottom: '6mm' }}>
-                <thead>
-                  <tr style={{ background: '#1e3a8a', color: 'white' }}>
-                    <th style={{ padding: '9px 10px', textAlign: 'left', width: '4%' }}>#</th>
-                    <th style={{ padding: '9px 10px', textAlign: 'left', width: '38%' }}>Product / Description</th>
-                    <th style={{ padding: '9px 10px', textAlign: 'center', width: '10%' }}>HSN</th>
-                    <th style={{ padding: '9px 10px', textAlign: 'center', width: '8%' }}>Qty</th>
-                    <th style={{ padding: '9px 10px', textAlign: 'right', width: '12%' }}>Rate (₹)</th>
-                    {isGst && <th style={{ padding: '9px 10px', textAlign: 'right', width: '12%' }}>Taxable (₹)</th>}
-                    {isGst && <th style={{ padding: '9px 10px', textAlign: 'center', width: '8%' }}>GST%</th>}
-                    <th style={{ padding: '9px 10px', textAlign: 'right', width: '14%' }}>Total (₹)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item, i) => (
-                    <tr key={item.id} style={{ borderBottom: '1px solid #e5e7eb', background: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
-                      <td style={{ padding: '8px 10px', color: '#6b7280' }}>{i + 1}</td>
-                      <td style={{ padding: '8px 10px', fontWeight: '700', color: '#1f2937' }}>{item.product_name}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'center', color: '#6b7280' }}>2201</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>{item.quantity}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>₹{item.rate.toFixed(2)}</td>
-                      {isGst && <td style={{ padding: '8px 10px', textAlign: 'right' }}>₹{item.amount.toFixed(2)}</td>}
-                      {isGst && <td style={{ padding: '8px 10px', textAlign: 'center', color: '#6b7280' }}>{item.gst_rate}%</td>}
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: '800', color: '#111827' }}>₹{item.total.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                  {/* Empty rows for aesthetics if few items */}
-                  {items.length < 3 && Array.from({ length: 3 - items.length }).map((_, i) => (
-                    <tr key={`empty-${i}`} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                      <td style={{ padding: '8px 10px', color: 'transparent' }}>-</td>
-                      <td colSpan={isGst ? 6 : 3} style={{ padding: '8px 10px' }}></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {/* Totals + Amount in Words */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8mm' }}>
-                <div style={{ width: '50%' }}>
-                  <div style={{ padding: '12px 14px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
-                    <p style={{ margin: '0 0 4px', fontSize: '9px', fontWeight: '800', textTransform: 'uppercase', color: '#6b7280', letterSpacing: '1px' }}>
-                      AMOUNT IN WORDS
-                    </p>
-                    <p style={{ margin: 0, fontWeight: '700', color: '#1e3a8a', fontSize: '11px', lineHeight: 1.5 }}>
-                      {numberToWords(totalAmount)}
-                    </p>
-                    {notes && <p style={{ margin: '8px 0 0', color: '#4b5563', fontSize: '10px' }}><strong>Notes:</strong> {notes}</p>}
-                  </div>
-                </div>
-
-                <div style={{ width: '220px', borderRadius: '8px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-                  <table style={{ width: '100%', fontSize: '10.5px', borderCollapse: 'collapse' }}>
-                    <tbody>
-                      <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                        <td style={{ padding: '7px 10px', color: '#6b7280' }}>Subtotal</td>
-                        <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: '700' }}>₹{subtotal.toFixed(2)}</td>
-                      </tr>
-                      {isGst && <>
-                        <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                          <td style={{ padding: '7px 10px', color: '#6b7280' }}>CGST (9%)</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right' }}>₹{(totalGst / 2).toFixed(2)}</td>
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                          <td style={{ padding: '7px 10px', color: '#6b7280' }}>SGST (9%)</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right' }}>₹{(totalGst / 2).toFixed(2)}</td>
-                        </tr>
-                      </>}
-                      <tr style={{ background: '#1e3a8a', color: 'white' }}>
-                        <td style={{ padding: '9px 10px', fontWeight: '900', fontSize: '12px' }}>GRAND TOTAL</td>
-                        <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: '900', fontSize: '14px' }}>₹{totalAmount.toFixed(2)}</td>
-                      </tr>
-                      <tr style={{ borderBottom: '1px solid #e5e7eb', background: '#f0fdf4' }}>
-                        <td style={{ padding: '7px 10px', color: '#059669', fontSize: '10px' }}>💵 Cash Paid</td>
-                        <td style={{ padding: '7px 10px', textAlign: 'right', color: '#059669', fontWeight: '700' }}>₹{cashAmount.toFixed(2)}</td>
-                      </tr>
-                      <tr style={{ borderBottom: '1px solid #e5e7eb', background: '#faf5ff' }}>
-                        <td style={{ padding: '7px 10px', color: '#7c3aed', fontSize: '10px' }}>📱 UPI Paid</td>
-                        <td style={{ padding: '7px 10px', textAlign: 'right', color: '#7c3aed', fontWeight: '700' }}>₹{upiAmount.toFixed(2)}</td>
-                      </tr>
-                      {dueAmount > 0 && (
-                        <tr style={{ background: '#fef2f2' }}>
-                          <td style={{ padding: '7px 10px', color: '#dc2626', fontWeight: '800', fontSize: '11px' }}>⚠️ OUTSTANDING</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', color: '#dc2626', fontWeight: '900', fontSize: '13px' }}>₹{dueAmount.toFixed(2)}</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '8mm', paddingTop: '6mm', borderTop: '1px solid #e5e7eb' }}>
-                <div style={{ fontSize: '9px', color: '#9ca3af' }}>
-                  <p style={{ margin: '0 0 2px' }}>Computer generated {isGst ? 'tax invoice' : 'bill of supply'}.</p>
-                  <p style={{ margin: '0 0 2px' }}>Subject to Guntur jurisdiction. E&OE.</p>
-                  <p style={{ margin: 0, fontWeight: '700', color: '#1e3a8a' }}>Thank You! Visit Again. 🙏</p>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ borderTop: '1px solid #374151', width: '140px', marginBottom: '4px' }} />
-                  <p style={{ fontSize: '9px', color: '#6b7280', margin: 0 }}>Authorized Signatory</p>
-                  <p style={{ fontSize: '11px', fontWeight: '900', color: '#1e3a8a', margin: '2px 0 0' }}>Royal Kissan Drinking Water</p>
-                </div>
+            {/* GST ON/OFF Toggle */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#a1a1aa', marginBottom: '0.35rem' }}>
+                Tax Regime
+              </label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsGstOn(true)}
+                  style={{ padding: '0.35rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, backgroundColor: isGstOn ? '#34d399' : '#27272a', color: isGstOn ? '#000' : '#a1a1aa', border: 'none', cursor: 'pointer' }}
+                >
+                  GST ON
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsGstOn(false)}
+                  style={{ padding: '0.35rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, backgroundColor: !isGstOn ? '#f87171' : '#27272a', color: !isGstOn ? '#000' : '#a1a1aa', border: 'none', cursor: 'pointer' }}
+                >
+                  GST OFF (Non-GST)
+                </button>
               </div>
             </div>
 
-          ) : (
-            /* ════════════════════════════════════════
-                THERMAL RECEIPT (58mm / 80mm)
-            ════════════════════════════════════════ */
-            <div style={{ fontFamily: 'monospace', fontSize: printFormat === '80mm' ? '11px' : '9px', color: '#000', lineHeight: 1.4 }}>
-              {/* Thermal Header with Logo */}
-              <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '6px', marginBottom: '6px' }}>
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '4px' }}>
-                  <Image
-                    src="/royal-kissan-logo.png"
-                    alt="Royal Kissan"
-                    width={printFormat === '80mm' ? 70 : 52}
-                    height={printFormat === '80mm' ? 70 : 52}
-                    priority
-                    unoptimized
+            {/* Invoice Layout Type */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#a1a1aa', marginBottom: '0.35rem' }}>
+                Default Invoice Layout
+              </label>
+              <div style={{ display: 'flex', gap: '0.35rem' }}>
+                {(['80mm', '58mm', 'A4'] as InvoiceFormat[]).map(fmt => (
+                  <button
+                    key={fmt}
+                    type="button"
+                    onClick={() => setInvoiceFormat(fmt)}
+                    style={{ padding: '0.35rem 0.65rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 700, backgroundColor: invoiceFormat === fmt ? '#fbbf24' : '#27272a', color: invoiceFormat === fmt ? '#000' : '#a1a1aa', border: 'none', cursor: 'pointer' }}
+                  >
+                    {fmt}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Print Mode */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#a1a1aa', marginBottom: '0.35rem' }}>
+                Print Execution Mode
+              </label>
+              <div style={{ display: 'flex', gap: '0.35rem' }}>
+                {[
+                  { id: 'preview', label: 'Preview then Print' },
+                  { id: 'auto', label: 'Print Automatically' },
+                  { id: 'save_only', label: 'Save Only' },
+                ].map(pm => (
+                  <button
+                    key={pm.id}
+                    type="button"
+                    onClick={() => setPrintMode(pm.id as PrintMode)}
+                    style={{ padding: '0.35rem 0.55rem', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 700, backgroundColor: printMode === pm.id ? '#60a5fa' : '#27272a', color: printMode === pm.id ? '#000' : '#a1a1aa', border: 'none', cursor: 'pointer' }}
+                  >
+                    {pm.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        </Card>
+      )}
+
+      {/* Error Alert Message */}
+      {errorMessage && (
+        <Card style={{ padding: '0.85rem 1.25rem', backgroundColor: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#f87171', fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <AlertTriangle style={{ width: '18px', height: '18px' }} />
+              {errorMessage}
+            </span>
+            <button type="button" onClick={() => setErrorMessage(null)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer' }}>
+              <X style={{ width: '18px', height: '18px' }} />
+            </button>
+          </div>
+        </Card>
+      )}
+
+      {/* ── MAIN 12-COLUMN POS GRID LAYOUT ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '1.25rem', flex: 1 }}>
+        
+        {/* ── LEFT 7 COLUMNS: PRODUCT CATALOG & SELECTION GRID ── */}
+        <div style={{ gridColumn: 'span 7', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          
+          <Card style={{ padding: '1rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <div style={{ flex: 1, position: 'relative' }}>
+                  <Search style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', width: '18px', height: '18px', color: '#71717a' }} />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    placeholder="Search product (Press F2) or scan barcode..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && filteredProducts.length > 0) {
+                        addQuickProduct(filteredProducts[0])
+                        setSearchQuery('')
+                      }
+                    }}
                     style={{
-                      objectFit: 'contain',
-                      borderRadius: '4px',
+                      width: '100%',
+                      padding: '0.65rem 0.75rem 0.65rem 2.5rem',
+                      borderRadius: '8px',
+                      backgroundColor: '#09090b',
+                      border: '1px solid #27272a',
+                      color: '#fff',
+                      fontSize: '0.9rem',
                     }}
                   />
                 </div>
-                <div style={{ fontWeight: '900', fontSize: printFormat === '80mm' ? '14px' : '11px', letterSpacing: '1px' }}>{settings.company_name}</div>
-                <div style={{ fontSize: printFormat === '80mm' ? '10px' : '8px', margin: '1px 0' }}>Packaged Drinking Water</div>
-                <div style={{ fontSize: printFormat === '80mm' ? '9px' : '8px' }}>Ph: {settings.company_phone}</div>
-                {isGst && settings.company_gst && <div style={{ fontSize: printFormat === '80mm' ? '9px' : '7.5px' }}>GSTIN: {settings.company_gst}</div>}
-                <div style={{ fontSize: printFormat === '80mm' ? '9px' : '7.5px', marginTop: '2px', fontWeight: '700' }}>
-                  {isGst ? '— TAX INVOICE —' : '— BILL OF SUPPLY —'}
-                </div>
+
+                <Badge variant="neutral" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0 0.75rem' }}>
+                  <Barcode style={{ width: '16px', height: '16px', color: '#fbbf24' }} />
+                  SCAN READY
+                </Badge>
               </div>
 
-              {/* Bill Info */}
-              <div style={{ marginBottom: '5px', fontSize: printFormat === '80mm' ? '10px' : '8.5px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Bill#</span><span><strong>{invoiceNumber}</strong></span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Date</span><span>{formattedDate}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Time</span><span>{formattedTime}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Cust</span><span>{customerName || 'Walk-in'}</span>
-                </div>
-                {customerPhone && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Ph</span><span>{customerPhone}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Items */}
-              <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '4px 0', margin: '4px 0' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: printFormat === '80mm' ? '9px' : '8px', fontWeight: '700', marginBottom: '3px' }}>
-                  <span style={{ flex: 2 }}>Item</span>
-                  <span style={{ textAlign: 'center', width: '30px' }}>Qty</span>
-                  <span style={{ textAlign: 'right', width: '50px' }}>Rate</span>
-                  <span style={{ textAlign: 'right', width: '50px' }}>Amt</span>
-                </div>
-                <div style={{ borderTop: '1px solid #000', marginBottom: '3px' }} />
-                {items.map(item => (
-                  <div key={item.id} style={{ marginBottom: '4px' }}>
-                    <div style={{ fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.product_name}</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ flex: 2 }}></span>
-                      <span style={{ textAlign: 'center', width: '30px' }}>{item.quantity}</span>
-                      <span style={{ textAlign: 'right', width: '50px' }}>₹{item.rate}</span>
-                      <span style={{ textAlign: 'right', width: '50px' }}>₹{item.total.toFixed(0)}</span>
-                    </div>
-                  </div>
+              {/* Category Filter Pills */}
+              <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
+                {[
+                  { id: 'all', label: 'All Products' },
+                  { id: 'can', label: 'Water Cans (20L)' },
+                  { id: 'bottle', label: 'Cases & Bottles' },
+                  { id: 'bag', label: 'Packs & Bags' },
+                ].map(cat => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setActiveCategory(cat.id)}
+                    style={{
+                      padding: '0.4rem 0.85rem',
+                      borderRadius: '20px',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      backgroundColor: activeCategory === cat.id ? '#fbbf24' : '#27272a',
+                      color: activeCategory === cat.id ? '#000' : '#a1a1aa',
+                      border: 'none',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {cat.label}
+                  </button>
                 ))}
               </div>
-
-              {/* Totals */}
-              <div style={{ fontSize: printFormat === '80mm' ? '10px' : '8.5px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Subtotal</span><span>₹{subtotal.toFixed(2)}</span>
-                </div>
-                {isGst && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>GST (CGST+SGST)</span><span>₹{totalGst.toFixed(2)}</span>
-                  </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '900', fontSize: printFormat === '80mm' ? '13px' : '11px', borderTop: '1px solid #000', marginTop: '3px', paddingTop: '3px' }}>
-                  <span>TOTAL</span><span>₹{totalAmount.toFixed(2)}</span>
-                </div>
-                <div style={{ borderTop: '1px dashed #000', margin: '3px 0' }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Cash</span><span>₹{cashAmount.toFixed(2)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>UPI</span><span>₹{upiAmount.toFixed(2)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Paid</span><span>₹{paidAmount.toFixed(2)}</span>
-                </div>
-                {dueAmount > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '900', color: '#000', borderTop: '1px solid #000', marginTop: '2px', paddingTop: '2px' }}>
-                    <span>DUE BALANCE</span><span>₹{dueAmount.toFixed(2)}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Footer */}
-              <div style={{ textAlign: 'center', marginTop: '8px', borderTop: '1px dashed #000', paddingTop: '6px', fontSize: printFormat === '80mm' ? '10px' : '8px' }}>
-                <div style={{ fontWeight: '700' }}>Thank You! Visit Again. 🙏</div>
-                <div style={{ marginTop: '2px', fontSize: '8px', color: '#333' }}>royalkissan@gmail.com</div>
-              </div>
             </div>
-          )}
-        </div>
-      </div>
-    )
-  }
+          </Card>
 
-  // ── BILLING FORM ──────────────────────────────────────────
-  return (
-    <div className="animate-fade-in" style={{ padding: '0.25rem' }}>
-      <div className="page-header" style={{ marginBottom: '2rem' }}>
-        <div>
-          <h2 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-            <Receipt className="w-6 h-6 text-sky-500" />
-            <span>Smart Billing System</span>
-          </h2>
-          <p className="page-subtitle">Generate bills — auto-updates dealer ledger, driver sales & dashboard</p>
-        </div>
-        <a href="/sales" className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span>Sales History</span>
-          <ArrowRight className="w-4 h-4" />
-        </a>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1.5rem' }}>
-        {/* LEFT PANEL */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-
-          {/* Bill Configuration */}
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 shadow-xl">
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Settings className="w-5 h-5 text-sky-400" />
-              <span>Bill Configuration</span>
-            </h3>
-
-            <div className="form-group">
-              <label className="form-label">Bill Type</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.5rem' }}>
-                {(Object.entries(BILL_TYPE_LABELS) as [BillType, string][]).map(([type, label]) => {
-                  const IconComponent = BILL_TYPE_ICONS[type]
-                  return (
-                    <button key={type} type="button" onClick={() => setBillType(type)}
-                      className={billType === type ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-                      style={{ fontSize: '0.75rem', borderRadius: '0.5rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.375rem', justifyContent: 'center', padding: '0.5rem 0.75rem' }}>
-                      {IconComponent && <IconComponent className="w-3.5 h-3.5" />}
-                      <span>{label}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '1rem', background: isGst ? 'rgba(16,185,129,0.05)' : 'rgba(255,255,255,0.02)',
-              borderRadius: '0.75rem', border: `1px solid ${isGst ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.05)'}`,
-              marginBottom: '1.25rem'
-            }}>
-              <div>
-                <div style={{ fontWeight: '800', fontSize: '0.875rem', color: '#fff' }}>GST Status</div>
-                <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', marginTop: '0.125rem' }}>
-                  {isGst ? 'Auto-calculating 18% CGST & SGST' : 'GST excluded'}
-                </div>
-              </div>
-              <button type="button" onClick={() => setIsGst(!isGst)}
-                style={{ borderRadius: '99px', background: isGst ? '#10b981' : 'rgba(255,255,255,0.05)', color: '#fff', padding: '0.375rem 1rem', fontSize: '0.75rem', fontWeight: '800', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                <FileCheck className="w-4 h-4" />
-                <span>{isGst ? 'GST ACTIVE' : 'EXEMPTED'}</span>
-              </button>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-              <div className="form-group">
-                <label className="form-label">Invoice Number</label>
-                <input className="form-input font-mono" style={{ fontWeight: '700' }} value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Date</label>
-                <input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)} />
-              </div>
-            </div>
-          </div>
-
-          {/* Customer Info */}
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 shadow-xl">
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <User className="w-5 h-5 text-sky-400" />
-              <span>Customer Information</span>
-            </h3>
-
-            {billType === 'dealer_invoice' && dealers.length > 0 && (
-              <div className="form-group">
-                <label className="form-label">Select Dealer</label>
-                <select className="form-input" value={selectedDealerId} onChange={e => {
-                  setSelectedDealerId(e.target.value)
-                  const dealer = dealers.find(d => d.id === e.target.value)
-                  if (dealer) setCustomerName(dealer.name)
-                }}>
-                  <option value="">— Select Dealer —</option>
-                  {dealers.map(d => <option key={d.id} value={d.id}>{d.name} ({d.area})</option>)}
-                </select>
-              </div>
-            )}
-
-            <div className="form-group">
-              <label className="form-label">Customer Name *</label>
-              <input
-                id="billing-customer-name"
-                className="form-input"
-                placeholder="Customer / Business Name"
-                value={customerName}
-                list="customers-list"
-                onChange={e => {
-                  const val = e.target.value
-                  setCustomerName(val)
-                  const matched = customers.find(c => c.name.toLowerCase() === val.toLowerCase())
-                  if (matched) {
-                    setCustomerPhone(matched.phone || '')
-                    setCustomerAddress(matched.address || '')
-                    setCustomerGst(matched.gst_number || '')
-                  }
+          {/* Product Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.85rem', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
+            {filteredProducts.map((prod) => (
+              <Card
+                key={prod.id}
+                style={{
+                  padding: '1rem',
+                  backgroundColor: '#18181b',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
                 }}
-              />
-              <datalist id="customers-list">
-                {customers.map(c => (
-                  <option key={c.id} value={c.name}>
-                    {c.phone ? `${c.name} (${c.phone})` : c.name}
-                  </option>
-                ))}
-              </datalist>
-            </div>
+                onClick={() => addQuickProduct(prod)}
+              >
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <Badge variant="neutral" style={{ fontSize: '0.65rem' }}>
+                      {prod.category?.toUpperCase() || 'ITEM'}
+                    </Badge>
+                    {prod.mrp && (
+                      <span style={{ fontSize: '0.7rem', color: '#71717a', textDecoration: 'line-through' }}>
+                        MRP ₹{prod.mrp}
+                      </span>
+                    )}
+                  </div>
+                  
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff', margin: '0 0 0.5rem 0' }}>
+                    {prod.name}
+                  </h4>
+                </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-              <div className="form-group">
-                <label className="form-label">Phone</label>
-                <input className="form-input" placeholder="Phone Number" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">GST Number</label>
-                <input className="form-input" placeholder="GSTIN (optional)" value={customerGst} onChange={e => setCustomerGst(e.target.value)} />
-              </div>
-            </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem' }}>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#34d399', fontFamily: 'monospace' }}>
+                    {formatCurrency(prod.rate)}
+                  </span>
 
-            <div className="form-group">
-              <label className="form-label">Address</label>
-              <input className="form-input" placeholder="Billing Address" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} />
-            </div>
+                  <div style={{ display: 'flex', gap: '0.25rem' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); addQuickProduct(prod, 1) }}
+                      style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', backgroundColor: '#27272a', border: '1px solid #3f3f46', color: '#fff', fontSize: '0.75rem', fontWeight: 700 }}
+                    >
+                      +1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); addQuickProduct(prod, 5) }}
+                      style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', backgroundColor: '#27272a', border: '1px solid #3f3f46', color: '#fbbf24', fontSize: '0.75rem', fontWeight: 700 }}
+                    >
+                      +5
+                    </button>
+                  </div>
+                </div>
+              </Card>
+            ))}
           </div>
 
-          {/* Payment */}
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 shadow-xl">
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <CreditCard className="w-5 h-5 text-sky-400" />
-              <span>Payment Details</span>
-            </h3>
+        </div>
 
-            <div className="form-group">
-              <label className="form-label">Payment Mode</label>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                {(Object.keys(PAYMENT_ICONS) as PaymentMode[]).map(mode => {
-                  const IconComponent = PAYMENT_ICONS[mode]
-                  const modeLabels: Record<PaymentMode, string> = {
-                    cash: 'Cash',
-                    upi: 'UPI',
-                    mixed: 'Cash+UPI',
-                    due: 'Due'
-                  }
-                  return (
-                    <button key={mode} type="button" onClick={() => setPaymentMode(mode)}
-                      className={paymentMode === mode ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-                      style={{ fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                      {IconComponent && <IconComponent className="w-3.5 h-3.5" />}
-                      <span>{modeLabels[mode]}</span>
-                    </button>
-                  )
-                })}
+        {/* ── RIGHT 5 COLUMNS: CART, EDITABLE PRICES & BILL SUMMARY ── */}
+        <div style={{ gridColumn: 'span 5', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          
+          <Card style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', flex: 1, backgroundColor: '#18181b' }}>
+            
+            {/* Header: Sale Type & Item Count */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <ShoppingCart style={{ width: '20px', height: '20px', color: '#fbbf24' }} />
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: 0 }}>
+                  POS Billing Cart
+                </h3>
               </div>
+              <Badge variant="neutral">{items.length} items</Badge>
             </div>
 
-            {paymentMode === 'mixed' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.75rem' }}>
-                <div className="form-group">
-                  <label className="form-label">💵 Cash Amount</label>
-                  <input type="number" className="form-input font-mono" value={cashAmount === 0 ? '' : cashAmount} onChange={e => setCashAmount(e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} placeholder="0" />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">📱 UPI Amount</label>
-                  <input type="number" className="form-input font-mono" value={upiAmount === 0 ? '' : upiAmount} onChange={e => setUpiAmount(e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} placeholder="0" />
-                </div>
+            {/* Customer Inputs (Hidden if askCustomerName is false) */}
+            {askCustomerName && (
+              <div style={{ display: 'grid', gridTemplateColumns: isGstOn ? '1fr 1fr 1fr' : '1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
+                <Input
+                  label="Customer Name"
+                  value={customerName}
+                  placeholder="Walk-in Customer"
+                  onChange={(e) => setCustomerName(e.target.value)}
+                />
+                <Input
+                  label="Phone Number"
+                  value={customerPhone}
+                  placeholder="9876543210"
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                />
+                {isGstOn && (
+                  <Input
+                    label="Customer GSTIN"
+                    value={customerGstin}
+                    placeholder="37ABC..."
+                    onChange={(e) => setCustomerGstin(e.target.value)}
+                  />
+                )}
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', padding: '0.875rem', background: 'rgba(255,255,255,0.02)', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.7rem', color: 'hsl(215 20% 55%)', textTransform: 'uppercase' }}>Total Bill</div>
-                <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#fff', fontFamily: 'monospace' }}>{formatCurrency(totalAmount)}</div>
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.7rem', color: 'hsl(215 20% 55%)', textTransform: 'uppercase' }}>Paid</div>
-                <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#34d399', fontFamily: 'monospace' }}>{formatCurrency(paidAmount)}</div>
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.7rem', color: 'hsl(215 20% 55%)', textTransform: 'uppercase' }}>Due</div>
-                <div style={{ fontSize: '1.2rem', fontWeight: '800', color: dueAmount > 0 ? '#f87171' : '#34d399', fontFamily: 'monospace' }}>{formatCurrency(dueAmount)}</div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                <span className={`badge ${payStatus.badge}`} style={{ fontSize: '0.75rem', fontWeight: '800' }}>{payStatus.label}</span>
-              </div>
-            </div>
-
-            <div className="form-group" style={{ marginTop: '1rem' }}>
-              <label className="form-label">Notes</label>
-              <input className="form-input" placeholder="Optional notes..." value={notes} onChange={e => setNotes(e.target.value)} />
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT PANEL: Items */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 shadow-xl" style={{ flex: 1 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Package className="w-5 h-5 text-sky-400" />
-                <span>Line Items</span>
-              </h3>
-              <button className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }} onClick={addItem}>
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Item</span>
-              </button>
-            </div>
-
-            {items.length === 0 ? (
-              <div style={{ padding: '3rem', textAlign: 'center', color: 'hsl(215 20% 45%)', border: '2px dashed rgba(255,255,255,0.06)', borderRadius: '0.75rem' }}>
-                <Package className="w-8 h-8 mx-auto mb-2 text-slate-600 animate-pulse" />
-                <p style={{ margin: 0 }}>Click "+ Add Item" to start billing</p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {items.map((item, i) => (
-                  <div key={item.id} style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', fontWeight: '700' }}>Item #{i + 1}</span>
-                      <button className="btn btn-danger btn-sm" style={{ padding: '0.2rem 0.4rem', borderRadius: '0.375rem' }} onClick={() => removeItem(item.id)}>
-                        <Trash2 className="w-3.5 h-3.5" />
+            {/* Cart Items List with Editable Price & Item Discount */}
+            <div style={{ flex: 1, overflowY: 'auto', maxHeight: '280px', display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
+              {items.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2rem 1rem', color: '#71717a' }}>
+                  <Package style={{ width: '36px', height: '36px', margin: '0 auto 0.5rem auto', opacity: 0.4 }} />
+                  <p style={{ margin: 0, fontSize: '0.85rem' }}>Cart is empty. Click products on left to add.</p>
+                </div>
+              ) : (
+                items.map((item) => (
+                  <div
+                    key={item.id}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.4rem',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      backgroundColor: '#09090b',
+                      border: '1px solid rgba(255,255,255,0.06)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>{item.product_name}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeItem(item.id)}
+                        style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer' }}
+                      >
+                        <Trash2 style={{ width: '14px', height: '14px' }} />
                       </button>
                     </div>
-                    <div className="form-group">
-                      <label className="form-label" style={{ fontSize: '0.7rem' }}>Product</label>
-                      <select className="form-input" value={item.product_id} onChange={e => updateItem(item.id, 'product_id', e.target.value)} style={{ fontSize: '0.8125rem' }}>
-                        {dbProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </select>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                      <div className="form-group">
-                        <label className="form-label" style={{ fontSize: '0.7rem' }}>Quantity</label>
-                        <input type="number" className="form-input font-mono" value={item.quantity === 0 ? '' : item.quantity} onChange={e => updateItem(item.id, 'quantity', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} style={{ fontSize: '0.875rem' }} />
+
+                    {/* Editable Price, Qty & Item Discount Controls */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '0.5rem', alignItems: 'center' }}>
+                      {/* Qty Modifier */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => updateItem(item.id, 'quantity', Math.max(1, item.quantity - 1))}
+                          style={{ padding: '0.2rem 0.4rem', borderRadius: '4px', backgroundColor: '#27272a', border: 'none', color: '#fff', cursor: 'pointer' }}
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          value={item.quantity}
+                          onChange={(e) => updateItem(item.id, 'quantity', Math.max(1, Number(e.target.value)))}
+                          style={{ width: '38px', textAlign: 'center', backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '4px', color: '#fff', fontSize: '0.8rem', padding: '2px' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => updateItem(item.id, 'quantity', item.quantity + 1)}
+                          style={{ padding: '0.2rem 0.4rem', borderRadius: '4px', backgroundColor: '#27272a', border: 'none', color: '#fff', cursor: 'pointer' }}
+                        >
+                          +
+                        </button>
                       </div>
-                      <div className="form-group">
-                        <label className="form-label" style={{ fontSize: '0.7rem' }}>Rate (₹)</label>
-                        <input type="number" className="form-input font-mono" value={item.rate === 0 ? '' : item.rate} onChange={e => updateItem(item.id, 'rate', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))} style={{ fontSize: '0.875rem' }} />
+
+                      {/* Editable Selling Price Rate */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>Rate ₹:</span>
+                        <input
+                          type="number"
+                          value={item.rate}
+                          onChange={(e) => updateItem(item.id, 'rate', Math.max(0, Number(e.target.value)))}
+                          style={{ width: '54px', backgroundColor: '#18181b', border: '1px solid #fbbf24', borderRadius: '4px', color: '#fbbf24', fontSize: '0.8rem', fontWeight: 700, padding: '2px 4px' }}
+                        />
+                      </div>
+
+                      {/* Item Total */}
+                      <div style={{ textAlign: 'right', fontSize: '0.85rem', fontWeight: 800, color: '#34d399', fontFamily: 'monospace' }}>
+                        {formatCurrency(item.amount)}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderTop: '1px solid rgba(255,255,255,0.05)', marginTop: '0.25rem', fontSize: '0.8125rem' }}>
-                      <span style={{ color: 'hsl(215 20% 55%)' }}>Amt: <span className="font-mono">₹{item.amount.toFixed(0)}</span></span>
-                      {isGst && <span style={{ color: 'hsl(215 20% 55%)' }}>GST: <span className="font-mono">₹{item.gst_amount.toFixed(0)}</span></span>}
-                      <span style={{ fontWeight: '800', color: '#fff' }}>Total: <span className="font-mono">₹{item.total.toFixed(0)}</span></span>
-                    </div>
+
                   </div>
+                ))
+              )}
+            </div>
+
+            {/* Invoice Level Discount & Bill Summary */}
+            <div style={{ backgroundColor: '#09090b', borderRadius: '8px', padding: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1rem', border: '1px solid rgba(255,255,255,0.06)' }}>
+              
+              {/* Bill Discount Input */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>Bill Discount:</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <input
+                    type="number"
+                    value={billDiscountValue}
+                    placeholder="0"
+                    onChange={(e) => setBillDiscountValue(Math.max(0, Number(e.target.value)))}
+                    style={{ width: '60px', backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '4px', color: '#fff', fontSize: '0.8rem', padding: '2px 4px', textAlign: 'right' }}
+                  />
+                  <select
+                    value={billDiscountType}
+                    onChange={(e) => setBillDiscountType(e.target.value as any)}
+                    style={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '4px', color: '#fff', fontSize: '0.75rem', padding: '2px' }}
+                  >
+                    <option value="flat">₹ Flat</option>
+                    <option value="percent">% Off</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#a1a1aa' }}>
+                <span>Subtotal:</span>
+                <span style={{ fontFamily: 'monospace', color: '#fff' }}>{formatCurrency(rawSubtotal)}</span>
+              </div>
+
+              {totalDiscountAmount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#f87171' }}>
+                  <span>Total Discount:</span>
+                  <span style={{ fontFamily: 'monospace' }}>-{formatCurrency(totalDiscountAmount)}</span>
+                </div>
+              )}
+
+              {isGstOn ? (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#a1a1aa' }}>
+                    <span>CGST (9%):</span>
+                    <span style={{ fontFamily: 'monospace', color: '#fff' }}>{formatCurrency(cgstAmount)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#a1a1aa' }}>
+                    <span>SGST (9%):</span>
+                    <span style={{ fontFamily: 'monospace', color: '#fff' }}>{formatCurrency(sgstAmount)}</span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: '0.75rem', color: '#fbbf24', fontStyle: 'italic' }}>
+                  Non-GST Invoice Mode Active
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.15rem', fontWeight: 800, color: '#fbbf24', paddingTop: '0.4rem', borderTop: '1px dashed #3f3f46' }}>
+                <span>Grand Total:</span>
+                <span style={{ fontFamily: 'monospace' }}>{formatCurrency(grandTotal)}</span>
+              </div>
+            </div>
+
+            {/* Payment Method Selector */}
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#a1a1aa', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+                Payment Method
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.35rem' }}>
+                {(['cash', 'upi', 'card', 'mixed', 'due'] as PaymentMode[]).map(mode => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setPaymentMode(mode)}
+                    style={{
+                      padding: '0.55rem 0.2rem',
+                      borderRadius: '6px',
+                      fontSize: '0.7rem',
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                      backgroundColor: paymentMode === mode ? '#fbbf24' : '#09090b',
+                      color: paymentMode === mode ? '#000' : '#a1a1aa',
+                      border: `1px solid ${paymentMode === mode ? '#fbbf24' : '#27272a'}`,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {mode}
+                  </button>
                 ))}
               </div>
-            )}
+            </div>
 
-            {items.length > 0 && (
-              <div style={{ marginTop: '1.5rem', padding: '1.25rem', background: 'rgba(255,255,255,0.02)', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.06)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-                  <span style={{ color: 'hsl(215 20% 55%)' }}>Subtotal</span>
-                  <span style={{ color: '#fff', fontWeight: '700', fontFamily: 'monospace' }}>₹{subtotal.toFixed(2)}</span>
-                </div>
-                {isGst && (<>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-                    <span style={{ color: 'hsl(215 20% 55%)' }}>CGST (9%)</span>
-                    <span style={{ color: '#fff', fontFamily: 'monospace' }}>₹{(totalGst / 2).toFixed(2)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-                    <span style={{ color: 'hsl(215 20% 55%)' }}>SGST (9%)</span>
-                    <span style={{ color: '#fff', fontFamily: 'monospace' }}>₹{(totalGst / 2).toFixed(2)}</span>
-                  </div>
-                </>)}
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '1.1rem', fontWeight: '900' }}>
-                  <span style={{ color: '#fff' }}>GRAND TOTAL</span>
-                  <span style={{ color: '#60a5fa', fontFamily: 'monospace' }}>₹{totalAmount.toFixed(2)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.8rem' }}>
-                  <span style={{ color: '#34d399', fontFamily: 'monospace' }}>Paid: ₹{paidAmount.toFixed(2)}</span>
-                  <span style={{ color: dueAmount > 0 ? '#f87171' : '#34d399', fontWeight: '700', fontFamily: 'monospace' }}>Due: ₹{dueAmount.toFixed(2)}</span>
-                </div>
-              </div>
-            )}
+            {/* Action Buttons */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <Button
+                variant="secondary"
+                size="lg"
+                icon={<Save style={{ width: '18px', height: '18px' }} />}
+                loading={saving && !printingThermal}
+                onClick={() => saveBill(false)}
+              >
+                Save Bill (F8)
+              </Button>
 
-            <button
-              className="btn btn-primary"
-              style={{ width: '100%', marginTop: '1.5rem', padding: '0.875rem', fontSize: '1rem', fontWeight: '800', borderRadius: '0.75rem', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
-              onClick={saveBill}
-              disabled={saving || items.length === 0 || !customerName}
-            >
-              <Receipt className="w-5 h-5" />
-              <span>{saving ? 'Saving Bill...' : 'Save & Generate Bill'}</span>
-            </button>
+              <Button
+                variant="primary"
+                size="lg"
+                icon={<Printer style={{ width: '18px', height: '18px' }} />}
+                loading={saving || printingThermal}
+                onClick={() => saveBill(true)}
+              >
+                Save & Print (F9)
+              </Button>
+            </div>
+
+          </Card>
+        </div>
+
+      </div>
+
+      {/* Bill Preview Modal */}
+      {isPreviewOpen && (
+        <ReceiptPreviewModal
+          isOpen={isPreviewOpen}
+          onClose={() => setIsPreviewOpen(false)}
+          bill={getCurrentBillDataObject()}
+          initialFormat={invoiceFormat}
+          onPrint={async (copyType) => {
+            setPrintingThermal(true)
+            await executePrintJob(getCurrentBillDataObject(), { copyType })
+            setPrintingThermal(false)
+          }}
+        />
+      )}
+
+      {/* Bill History Drawer Modal */}
+      {isHistoryOpen && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'flex-end', zIndex: 1000 }}>
+          <div style={{ width: '500px', backgroundColor: '#18181b', borderLeft: '1px solid rgba(255,255,255,0.1)', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', overflowY: 'auto' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff', margin: 0 }}>Recent Bill History</h3>
+              <button type="button" onClick={() => setIsHistoryOpen(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}>
+                <X style={{ width: '20px', height: '20px' }} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {recentBills.map((b) => (
+                <Card key={b.id || b.invoice_number} style={{ padding: '0.85rem', backgroundColor: '#09090b' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <Badge variant="neutral">{b.invoice_number}</Badge>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#34d399', fontFamily: 'monospace' }}>
+                      {formatCurrency(Number(b.grand_total || b.total_amount) || 0)}
+                    </span>
+                  </div>
+                  
+                  <div style={{ fontSize: '0.8rem', color: '#a1a1aa', marginBottom: '0.75rem' }}>
+                    {b.customer_name || 'Walk-in'} | {b.date || 'Today'}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      icon={<Printer style={{ width: '12px', height: '12px' }} />}
+                      onClick={() => executePrintJob({
+                        invoice_number: b.invoice_number,
+                        date: b.date,
+                        customer_name: b.customer_name,
+                        subtotal: Number(b.subtotal) || Number(b.total_amount),
+                        gst_amount: Number(b.gst_amount) || 0,
+                        total_amount: Number(b.grand_total || b.total_amount),
+                        paid_amount: Number(b.paid_amount) || Number(b.total_amount),
+                        due_amount: Number(b.due_amount) || 0,
+                        payment_method: b.payment_mode || 'cash',
+                        items: [{ product_name: 'Water Can / Bottle', quantity: 1, rate: Number(b.total_amount), amount: Number(b.total_amount) }]
+                      })}
+                    >
+                      Reprint
+                    </Button>
+
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<FileText style={{ width: '12px', height: '12px' }} />}
+                      onClick={() => generateBillPDF(b)}
+                    >
+                      A4 PDF
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<Share2 style={{ width: '12px', height: '12px' }} />}
+                      onClick={() => {
+                        const url = `https://wa.me/?text=Invoice%20${b.invoice_number}%20Amount:%20₹${b.total_amount}`
+                        window.open(url, '_blank')
+                      }}
+                    >
+                      Share
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+
           </div>
         </div>
-      </div>
+      )}
+
     </div>
   )
 }

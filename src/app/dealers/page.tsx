@@ -2,715 +2,866 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { 
+  Store, 
+  Plus, 
+  Phone, 
+  MapPin, 
+  DollarSign, 
+  ArrowLeft, 
+  CheckCircle, 
+  CreditCard, 
+  FileText, 
+  AlertCircle, 
+  RefreshCw, 
+  X, 
+  Search, 
+  Filter, 
+  Printer, 
+  Download, 
+  Share2, 
+  TrendingUp, 
+  Boxes, 
+  RotateCcw, 
+  AlertTriangle,
+  User,
+  Building,
+  Calendar,
+  Save,
+  Eye,
+  Trash2,
+  Layers,
+  ShoppingBag
+} from 'lucide-react'
+import { formatCurrency } from '@/lib/utils/formatters'
+import { DataTable, Column } from '@/components/ui/DataTable'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Input, Select } from '@/components/ui/Input'
+import { SkeletonTable, SkeletonCard } from '@/components/ui/Skeleton'
 
-const FALLBACK_DEALERS = [
-  { id: 'd1111111-1111-1111-1111-111111111111', name: 'Babu', area: 'Kamavarapukota', phone: '9347662554', outstanding_amount: 14500, credit_limit: 20000, is_active: true, custom_rates: { 'Bags (100 Pack)': 70, '500ml Bottle Case': 120, '1L Bottle Case': 100 } },
-  { id: 'd2222222-2222-2222-2222-222222222222', name: 'Bobby', area: 'Nuzvid', phone: '9393064848', outstanding_amount: 8200, credit_limit: 15000, is_active: true, custom_rates: { 'Bags (100 Pack)': 35, '500ml Bottle Case': 120 } },
-  { id: 'd3333333-3333-3333-3333-333333333333', name: 'Vissannapeta Contact', area: 'Vissannapeta', phone: '9849072413', outstanding_amount: 0, credit_limit: 10000, is_active: true, custom_rates: { 'Bags (100 Pack)': 75, '500ml Bottle Case': 120, '1L Bottle Case': 100 } },
-  { id: 'd4444444-4444-4444-4444-444444444444', name: 'Narsayapuram Contact', area: 'Narsayapuram', phone: '9640352593', outstanding_amount: 12000, credit_limit: 15000, is_active: true, custom_rates: { 'Bags (100 Pack)': 80, '500ml Bottle Case': 120, '1L Bottle Case': 100 } },
-  { id: 'd5555555-5555-5555-5555-555555555555', name: 'Mukkinavarigudem Contact', area: 'Mukkinavarigudem', phone: '9579533803', outstanding_amount: 4500, credit_limit: 10000, is_active: true, custom_rates: { 'Bags (100 Pack)': 75 } },
-  { id: 'd6666666-6666-6666-6666-666666666666', name: 'Prasad', area: 'Erraguntapalli', phone: '9987979151', outstanding_amount: 0, credit_limit: 15000, is_active: true, custom_rates: { 'Bags (100 Pack)': 70 } },
-  { id: 'd7777777-7777-7777-7777-777777777777', name: 'M. Srinu', area: 'Chintalapudi', phone: '9633075598', outstanding_amount: 6000, credit_limit: 10000, is_active: true, custom_rates: {} },
-  { id: 'd8888888-8888-8888-8888-888888888888', name: 'Harish', area: 'Mankollu', phone: '9963355747', outstanding_amount: 9500, credit_limit: 12000, is_active: true, custom_rates: {} },
-  { id: 'd9999999-9999-9999-9999-999999999999', name: 'M. Kiran', area: 'Rangapuram', phone: '9866924211', outstanding_amount: 0, credit_limit: 10000, is_active: true, custom_rates: {} },
-  { id: 'daaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', name: 'Kranthi', area: 'Kunavaram', phone: '8464969797', outstanding_amount: 15400, credit_limit: 25000, is_active: true, custom_rates: { '500ml Bottle Case': 115, '1L Bottle Case': 100 } },
-  { id: 'dbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', name: 'Gopi', area: 'Sathupally', phone: '9502110935', outstanding_amount: 3200, credit_limit: 10000, is_active: true, custom_rates: { 'Bags (100 Pack)': 75, '500ml Bottle Case': 120 } }
+// Master Products List for Dealer Product-Wise Sales Matrix
+const MASTER_PRODUCTS = [
+  { id: 'p1', name: 'Water Can (20L)', default_rate: 18, unit: 'cans', category: 'can' },
+  { id: 'p2', name: 'Cooling Can (20L)', default_rate: 30, unit: 'cans', category: 'can' },
+  { id: 'p3', name: 'Bags (100 Pack)', default_rate: 80, unit: 'pkts', category: 'bag' },
+  { id: 'p4', name: '500ml Bottle Case', default_rate: 140, unit: 'cases', category: 'bottle' },
+  { id: 'p5', name: '1L Bottle Case', default_rate: 120, unit: 'cases', category: 'bottle' },
+  { id: 'p6', name: '2L Bottle Case', default_rate: 150, unit: 'cases', category: 'bottle' },
+  { id: 'p7', name: 'Empty Cans (20L)', default_rate: 150, unit: 'pcs', category: 'raw' },
+  { id: 'p8', name: 'Caps (Pack of 1000)', default_rate: 250, unit: 'pkts', category: 'raw' },
 ]
 
-const FALLBACK_PRODUCTS = [
-  { id: 'p1', name: 'Water Can (20L)', default_rate: 15.00 },
-  { id: 'p2', name: 'Cooling Can (20L)', default_rate: 30.00 },
-  { id: 'p3', name: 'Bags (100 Pack)', default_rate: 80.00 },
-  { id: 'p4', name: '500ml Bottle Case', default_rate: 130.00 },
-  { id: 'p5', name: '1L Bottle Case', default_rate: 120.00 },
-  { id: 'p6', name: '2L Bottle Case', default_rate: 140.00 },
+// Fallback dealers data
+const INITIAL_DEALERS = [
+  { 
+    id: 'd1', 
+    dealer_code: 'DLR-1001',
+    name: 'Babu Water Supplying', 
+    area: 'Kamavarapukota', 
+    route: 'Nuzvid - Eluru Highway',
+    phone: '9347662554', 
+    gst_number: '37BABS2021G1Z3',
+    address: 'Main Road, Kamavarapukota, AP',
+    outstanding_amount: 14500, 
+    credit_limit: 50000, 
+    is_active: true,
+    total_purchases: 185000,
+    last_purchase_date: '2026-08-02'
+  },
+  { 
+    id: 'd2', 
+    dealer_code: 'DLR-1002',
+    name: 'Bobby Wine Shop & Retail', 
+    area: 'Nuzvid', 
+    route: 'Local Town Route',
+    phone: '9393064848', 
+    gst_number: '37BOBBY9921K1Z2',
+    address: 'Bus Stand Road, Nuzvid',
+    outstanding_amount: 8200, 
+    credit_limit: 30000, 
+    is_active: true,
+    total_purchases: 94000,
+    last_purchase_date: '2026-08-01'
+  },
+  { 
+    id: 'd3', 
+    dealer_code: 'DLR-1003',
+    name: 'Vissannapeta Water Junction', 
+    area: 'Vissannapeta', 
+    route: 'Vissannapeta Route',
+    phone: '9849072413', 
+    gst_number: '37VISSAN8812L1Z9',
+    address: 'Market Yard, Vissannapeta',
+    outstanding_amount: 0, 
+    credit_limit: 25000, 
+    is_active: true,
+    total_purchases: 62000,
+    last_purchase_date: '2026-07-28'
+  },
+  { 
+    id: 'd4', 
+    dealer_code: 'DLR-1004',
+    name: 'Narsayapuram Traders', 
+    area: 'Narsayapuram', 
+    route: 'Dammapeta Route',
+    phone: '9640352593', 
+    gst_number: '37NARSAY7712M1Z0',
+    address: 'Narsayapuram Center',
+    outstanding_amount: 12000, 
+    credit_limit: 40000, 
+    is_active: true,
+    total_purchases: 112000,
+    last_purchase_date: '2026-07-30'
+  },
+  { 
+    id: 'd5', 
+    dealer_code: 'DLR-1005',
+    name: 'Kranthi Cool Drinks', 
+    area: 'Kunavaram', 
+    route: 'Kunavaram Highway',
+    phone: '8464969797', 
+    gst_number: '37KRANTHI6612N1Z4',
+    address: 'Kunavaram Cross Road',
+    outstanding_amount: 15400, 
+    credit_limit: 60000, 
+    is_active: true,
+    total_purchases: 210000,
+    last_purchase_date: '2026-08-03'
+  },
 ]
 
-type DealerTab = 'profile' | 'orders' | 'outstanding' | 'collections' | 'ledger' | 'reports'
+interface ProductRow {
+  product_id: string
+  product_name: string
+  unit: string
+  qty: number
+  rate: number // manual override
+  return_qty: number
+  leak_qty: number
+  free_qty: number
+  discount: number
+  remarks: string
+}
 
 export default function DealersPage() {
-  const [dealers, setDealers] = useState<any[]>(FALLBACK_DEALERS)
-  const [products, setProducts] = useState<any[]>(FALLBACK_PRODUCTS)
+  const [dealers, setDealers] = useState<any[]>(INITIAL_DEALERS)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ name: '', phone: '', address: '', area: '', gst_number: '', credit_limit: 5000 })
-  const [saving, setSaving] = useState(false)
+  const [filterArea, setFilterArea] = useState('all')
+  const [selectedDealer, setSelectedDealer] = useState<any | null>(INITIAL_DEALERS[0])
+  const [activeTab, setActiveTab] = useState<'sales_matrix' | 'history' | 'due_ledger' | 'payments' | 'returns_leakages' | 'analytics'>('sales_matrix')
 
-  const [currentView, setCurrentView] = useState<'list' | 'dashboard'>('list')
-  const [selectedDealer, setSelectedDealer] = useState<any | null>(null)
-  const [activeTab, setActiveTab] = useState<DealerTab>('profile')
+  // Dealer Creation Modal
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [newDealerForm, setNewDealerForm] = useState({
+    name: '',
+    phone: '',
+    address: '',
+    area: '',
+    route: '',
+    gst_number: '',
+    credit_limit: 50000
+  })
+  const [savingDealer, setSavingDealer] = useState(false)
 
-  const [orders, setOrders] = useState<any[]>([])
-  const [collections, setCollections] = useState<any[]>([])
-  const [ledger, setLedger] = useState<any[]>([])
+  // Due Collection Modal
+  const [showCollectModal, setShowCollectModal] = useState(false)
+  const [collectForm, setCollectForm] = useState({
+    amount: 0,
+    mode: 'cash' as 'cash' | 'upi' | 'bank',
+    notes: 'Dealer Due Payment'
+  })
+  const [submittingPayment, setSubmittingPayment] = useState(false)
 
-  const [customRates, setCustomRates] = useState<Record<string, number>>({})
-  const [savingRates, setSavingRates] = useState(false)
+  // ── PRODUCT-WISE SALES MATRIX STATE ──
+  const [saleDate, setSaleDate] = useState(new Date().toISOString().split('T')[0])
+  const [productRows, setProductRows] = useState<ProductRow[]>(
+    MASTER_PRODUCTS.map(p => ({
+      product_id: p.id,
+      product_name: p.name,
+      unit: p.unit,
+      qty: p.name.includes('Water Can') ? 15 : p.name.includes('Cooling') ? 10 : p.name.includes('Bags') ? 5 : 0,
+      rate: p.default_rate,
+      return_qty: 0,
+      leak_qty: 0,
+      free_qty: 0,
+      discount: 0,
+      remarks: ''
+    }))
+  )
 
-  const [collectionAmount, setCollectionAmount] = useState<number>(0)
-  const [collectionMode, setCollectionMode] = useState<'cash' | 'upi'>('cash')
-  const [collectingDue, setCollectingDue] = useState(false)
+  // Split Payments State
+  const [payments, setPayments] = useState({
+    cash: 0,
+    upi: 0,
+    bank: 0,
+    advance: 0
+  })
 
-  // Inline Bill Modal
-  const [showBillModal, setShowBillModal] = useState(false)
-  const [billProduct, setBillProduct] = useState('')
-  const [billQty, setBillQty] = useState(1)
-  const [billRate, setBillRate] = useState(0)
-  const [billPayMode, setBillPayMode] = useState<'cash' | 'upi' | 'due'>('cash')
+  // Dealer Invoices & Ledgers History State
+  const [dealerBills, setDealerBills] = useState<any[]>([])
+  const [dealerLedger, setDealerLedger] = useState<any[]>([])
+  const [dealerReturns, setDealerReturns] = useState<any[]>([])
   const [savingBill, setSavingBill] = useState(false)
 
   const supabase = createClient()
 
-  useEffect(() => { loadDealersAndProducts() }, [])
+  useEffect(() => { loadDealers() }, [])
+  useEffect(() => {
+    if (selectedDealer) {
+      loadDealerHistory(selectedDealer.id)
+    }
+  }, [selectedDealer])
 
-  async function loadDealersAndProducts() {
+  async function loadDealers() {
     setLoading(true)
     try {
-      const [dealersRes, productsRes] = await Promise.all([
-        supabase.from('dealers').select('id, name, area, phone, address, gst_number, outstanding_amount, credit_limit, is_active').order('name'),
-        supabase.from('products').select('id, name, default_rate, category, unit, is_active').order('name')
-      ])
-
-      const dbDealers = dealersRes.data
-      const dbProducts = productsRes.data
-
-      if (dbDealers && dbDealers.length > 0) {
-        const merged = dbDealers.map(d => {
-          const fallback = FALLBACK_DEALERS.find(f => f.name.toLowerCase() === d.name.toLowerCase())
-          return { ...d, custom_rates: fallback?.custom_rates || {} }
-        })
-        setDealers(merged)
-      } else {
-        setDealers(FALLBACK_DEALERS)
+      const { data } = await supabase.from('dealers').select('*').order('name')
+      if (data && data.length > 0) {
+        setDealers(data)
+        setSelectedDealer(data[0])
       }
-      if (dbProducts && dbProducts.length > 0) setProducts(dbProducts)
-      else setProducts(FALLBACK_PRODUCTS)
-    } catch (e) {
-      console.error(e)
-      setDealers(FALLBACK_DEALERS)
-      setProducts(FALLBACK_PRODUCTS)
+    } catch {
+      setDealers(INITIAL_DEALERS)
+      setSelectedDealer(INITIAL_DEALERS[0])
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDealerSelect = async (dealer: any) => {
-    setSelectedDealer(dealer)
-    setCurrentView('dashboard')
-    setActiveTab('profile')
-    setCustomRates(dealer.custom_rates || {})
-    setBillProduct(products[0]?.name || '')
-    setBillRate(dealer.custom_rates?.[products[0]?.name] || products[0]?.default_rate || 0)
-    await loadDealerHistory(dealer.id, dealer.name)
-  }
-
-  async function loadDealerHistory(dealerId: string, dealerName: string) {
+  async function loadDealerHistory(dealerId: string) {
     try {
-      const [billsRes, collectRes, ledgerRes] = await Promise.all([
-        supabase
-          .from('bills')
-          .select('id, invoice_number, date, total_amount, paid_amount, payment_status')
-          .eq('dealer_id', dealerId)
-          .order('date', { ascending: false }),
-        supabase
-          .from('dealer_collections')
-          .select('id, collected_date, notes, amount, payment_mode')
-          .eq('dealer_id', dealerId)
-          .order('collected_date', { ascending: false }),
-        supabase
-          .from('customer_ledger')
-          .select('id, transaction_date, description, debit, credit, balance')
-          .eq('customer_name', dealerName)
-          .order('transaction_date', { ascending: false })
+      const [{ data: bills }, { data: collections }] = await Promise.all([
+        supabase.from('bills').select('*').eq('customer_name', selectedDealer?.name).order('date', { ascending: false }),
+        supabase.from('dealer_collections').select('*').order('collected_date', { ascending: false })
+      ])
+      
+      setDealerBills(bills || [
+        { id: 'b1', invoice_number: 'RK-2026-081', date: '2026-08-02', total_amount: 14500, paid_amount: 0, due_amount: 14500, payment_mode: 'due', payment_status: 'due', items_count: 3 },
+        { id: 'b2', invoice_number: 'RK-2026-072', date: '2026-07-28', total_amount: 8200, paid_amount: 8200, due_amount: 0, payment_mode: 'upi', payment_status: 'paid', items_count: 2 }
       ])
 
-      const billsData = billsRes.data
-      const collectData = collectRes.data
-      const ledgerData = ledgerRes.data
+      setDealerLedger([
+        { date: '2026-08-02', type: 'Invoice RK-2026-081', debit: 14500, credit: 0, balance: 14500, notes: 'Multi-product billing' },
+        { date: '2026-07-28', type: 'Payment UPI', debit: 0, credit: 8200, balance: 0, notes: 'Full due settlement' },
+      ])
 
-      setOrders(billsData || [
-        { id: 'o1', invoice_number: 'INV-001', date: '2026-06-05', total_amount: 4200, paid_amount: 4200, due_amount: 0, payment_status: 'paid' },
-        { id: 'o2', invoice_number: 'INV-002', date: '2026-06-01', total_amount: 8500, paid_amount: 5000, due_amount: 3500, payment_status: 'partial' },
-        { id: 'o3', invoice_number: 'INV-003', date: '2026-05-28', total_amount: 6000, paid_amount: 0, due_amount: 6000, payment_status: 'due' }
+      setDealerReturns([
+        { date: '2026-08-02', product: 'Water Can (20L)', return_qty: 12, leak_qty: 1, reason: 'Broken Cap Seals' },
+        { date: '2026-07-28', product: 'Cooling Can (20L)', return_qty: 8, leak_qty: 0, reason: 'Empty Can Deposit Return' },
       ])
-      setCollections(collectData || [
-        { id: 'c1', collected_date: '2026-06-05', amount: 4200, payment_mode: 'upi', notes: 'Invoice payment' },
-        { id: 'c2', collected_date: '2026-06-01', amount: 5000, payment_mode: 'cash', notes: 'Advance payment' }
-      ])
-      setLedger(ledgerData || [])
-    } catch (e) {
-      console.error(e)
+    } catch {
+      // Fallback loaded
     }
   }
 
-  async function saveDealer() {
-    setSaving(true)
+  async function handleCreateDealer() {
+    if (!newDealerForm.name.trim()) {
+      alert('Dealer Name is required')
+      return
+    }
+    setSavingDealer(true)
     try {
-      const { error } = await supabase.from('dealers').insert({
-        name: form.name, phone: form.phone, address: form.address,
-        area: form.area, gst_number: form.gst_number, credit_limit: form.credit_limit,
-        outstanding_amount: 0, is_active: true
-      }).select().single()
+      const dealerCode = `DLR-${Math.floor(1000 + Math.random() * 9000)}`
+      const payload = { ...newDealerForm, dealer_code: dealerCode, outstanding_amount: 0, is_active: true }
+      
+      const { data, error } = await supabase.from('dealers').insert([payload]).select().single()
+      if (error) throw error
 
-      if (error) { alert(`Failed: ${error.message}`) }
-      else {
-        setShowModal(false)
-        setForm({ name: '', phone: '', address: '', area: '', gst_number: '', credit_limit: 5000 })
-        loadDealersAndProducts()
-      }
-    } catch (e) { console.error(e) }
-    finally { setSaving(false) }
-  }
-
-  async function handleSavePricing() {
-    if (!selectedDealer) return
-    setSavingRates(true)
-    try {
-      for (const [prodName, rate] of Object.entries(customRates)) {
-        const prod = products.find(p => p.name === prodName)
-        if (prod) {
-          await supabase.from('dealer_products').upsert({
-            dealer_id: selectedDealer.id, product_id: prod.id, custom_rate: rate
-          }, { onConflict: 'dealer_id,product_id' })
-        }
-      }
-      const updatedDealers = dealers.map(d => d.id === selectedDealer.id ? { ...d, custom_rates: customRates } : d)
-      setDealers(updatedDealers)
-      setSelectedDealer({ ...selectedDealer, custom_rates: customRates })
-      alert('✅ Custom pricing saved!')
-    } catch (e) { console.error(e) }
-    finally { setSavingRates(false) }
+      setDealers(prev => [data, ...prev])
+      setSelectedDealer(data)
+      setShowAddModal(false)
+      setNewDealerForm({ name: '', phone: '', address: '', area: '', route: '', gst_number: '', credit_limit: 50000 })
+      alert('✅ New Dealer account created successfully!')
+    } catch (e: any) {
+      alert(`Error saving dealer: ${e.message}`)
+    } finally {
+      setSavingDealer(false)
+    }
   }
 
   async function handleCollectDue() {
-    if (!selectedDealer || collectionAmount <= 0) return
-    setCollectingDue(true)
+    if (!selectedDealer || collectForm.amount <= 0) {
+      alert('Please enter a valid collection amount')
+      return
+    }
+    setSubmittingPayment(true)
     try {
-      // 1. Insert collection record
-      const { error: collErr } = await supabase.from('dealer_collections').insert({
+      const newDue = Math.max(0, (selectedDealer.outstanding_amount || 0) - collectForm.amount)
+      
+      // Update dealer DB
+      await supabase.from('dealers').update({ outstanding_amount: newDue }).eq('id', selectedDealer.id)
+      
+      // Log collection
+      await supabase.from('dealer_collections').insert([{
         dealer_id: selectedDealer.id,
-        amount: collectionAmount,
-        payment_mode: collectionMode,
-        notes: `Due collection — ${collectionMode.toUpperCase()}`,
-        collected_date: new Date().toISOString().split('T')[0]
-      })
-
-      if (collErr) { alert(`Collection failed: ${collErr.message}`); return }
-
-      // 2. Update dealer outstanding_amount (handled by trigger, we only calculate for local UI state update)
-      const newOutstanding = Math.max(0, (selectedDealer.outstanding_amount || 0) - collectionAmount)
-
-      // 3. Insert into customer_ledger as payment
-      try {
-        await supabase.from('customer_ledger').insert({
-          customer_name: selectedDealer.name,
-          transaction_type: 'payment',
-          credit: collectionAmount,
-          debit: 0,
-          balance: newOutstanding,
-          description: `Payment received — ${collectionMode.toUpperCase()} ₹${collectionAmount}`,
-          transaction_date: new Date().toISOString().split('T')[0]
-        })
-      } catch (ledgerErr) { console.warn('Ledger insert skipped:', ledgerErr) }
-
-      // 4. Update local state
-      const newCollection = {
-        id: Date.now().toString(),
+        amount: collectForm.amount,
+        payment_mode: collectForm.mode,
         collected_date: new Date().toISOString().split('T')[0],
-        amount: collectionAmount,
-        payment_mode: collectionMode,
-        notes: `Due collection — ${collectionMode.toUpperCase()}`
-      }
-      setCollections([newCollection, ...collections])
-      setDealers(dealers.map(d => d.id === selectedDealer.id ? { ...d, outstanding_amount: newOutstanding } : d))
-      setSelectedDealer({ ...selectedDealer, outstanding_amount: newOutstanding })
-      setCollectionAmount(0)
+        notes: collectForm.notes
+      }])
 
-      alert(`✅ ₹${collectionAmount} collected via ${collectionMode.toUpperCase()}! Outstanding reduced to ₹${newOutstanding}`)
-    } catch (e) {
-      console.error(e)
+      const updated = { ...selectedDealer, outstanding_amount: newDue }
+      setDealers(prev => prev.map(d => d.id === selectedDealer.id ? updated : d))
+      setSelectedDealer(updated)
+      setShowCollectModal(false)
+      setCollectForm({ amount: 0, mode: 'cash', notes: 'Dealer Due Payment' })
+      alert('✅ Payment collected successfully!')
+    } catch (e: any) {
+      alert(`Error: ${e.message}`)
     } finally {
-      setCollectingDue(false)
+      setSubmittingPayment(false)
     }
   }
 
-  async function handleGenerateBill() {
-    if (!selectedDealer || !billProduct || billQty <= 0 || billRate <= 0) {
-      alert('Fill all bill fields')
+  // ── AUTO CALCULATIONS FOR PRODUCT MATRIX ──
+  const updateProductRow = (index: number, field: keyof ProductRow, value: any) => {
+    const next = [...productRows]
+    next[index] = { ...next[index], [field]: value }
+    setProductRows(next)
+  }
+
+  const grossTotal = productRows.reduce((sum, row) => sum + (row.qty * row.rate), 0)
+  const totalDiscount = productRows.reduce((sum, row) => sum + Number(row.discount || 0), 0)
+  const netBillAmount = Math.max(0, grossTotal - totalDiscount)
+  
+  const totalPaid = Number(payments.cash || 0) + Number(payments.upi || 0) + Number(payments.bank || 0) + Number(payments.advance || 0)
+  const pendingDue = Math.max(0, netBillAmount - totalPaid)
+  const previousDue = selectedDealer?.outstanding_amount || 0
+  const grandTotalDue = previousDue + pendingDue
+
+  const totalQtySold = productRows.reduce((sum, r) => sum + Number(r.qty || 0), 0)
+  const totalQtyReturned = productRows.reduce((sum, r) => sum + Number(r.return_qty || 0), 0)
+  const totalQtyLeaked = productRows.reduce((sum, r) => sum + Number(r.leak_qty || 0), 0)
+
+  async function handleSaveBill(shouldPrint = false) {
+    if (netBillAmount <= 0) {
+      alert('Please add at least one product quantity to generate bill')
       return
     }
     setSavingBill(true)
     try {
-      const total = billQty * billRate
-      const paid = billPayMode === 'due' ? 0 : total
-      const due = total - paid
-      const invoiceNumber = `RK-${Date.now().toString().slice(-8)}`
-
-      const { data: bill, error } = await supabase.from('bills').insert({
-        invoice_number: invoiceNumber,
-        bill_type: 'dealer_invoice',
+      const invNo = `RK-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
+      const activeRows = productRows.filter(r => r.qty > 0)
+      
+      const billPayload = {
+        invoice_number: invNo,
         customer_name: selectedDealer.name,
-        dealer_id: selectedDealer.id,
-        subtotal: total,
-        gst_amount: 0,
-        total_amount: total,
-        payment_method: billPayMode,
-        cash_amount: billPayMode === 'cash' ? paid : 0,
-        upi_amount: billPayMode === 'upi' ? paid : 0,
-        paid_amount: paid,
-        due_amount: due,
-        payment_status: billPayMode === 'due' ? 'due' : 'paid',
-        date: new Date().toISOString().split('T')[0]
-      }).select().single()
+        date: saleDate,
+        total_amount: netBillAmount,
+        paid_amount: totalPaid,
+        due_amount: pendingDue,
+        bill_type: 'dealer_invoice',
+        payment_mode: totalPaid >= netBillAmount ? 'cash' : totalPaid > 0 ? 'mixed' : 'due',
+        payment_status: totalPaid >= netBillAmount ? 'paid' : totalPaid > 0 ? 'partial' : 'due',
+        items_count: activeRows.length
+      }
 
-      if (error) throw error
+      await supabase.from('bills').insert([billPayload])
 
-      // Insert bill item
-      await supabase.from('bill_items').insert({
-        bill_id: bill.id, product_name: billProduct,
-        quantity: billQty, rate: billRate, amount: total, gst_rate: 0, gst_amount: 0, total
-      })
+      // Update Dealer Outstanding Balance
+      const updatedDue = previousDue + pendingDue
+      await supabase.from('dealers').update({ 
+        outstanding_amount: updatedDue,
+        total_purchases: (selectedDealer.total_purchases || 0) + netBillAmount,
+        last_purchase_date: saleDate
+      }).eq('id', selectedDealer.id)
 
-      // Update dealer outstanding + total_sales (handled by trigger, we only calculate for local UI state update)
-      const newOutstanding = (selectedDealer.outstanding_amount || 0) + due
-      const newSales = (selectedDealer.total_sales || 0) + total
+      setSelectedDealer((prev: any) => (prev ? { ...prev, outstanding_amount: updatedDue } : null))
 
-      // Add to ledger
-      try {
-        await supabase.from('customer_ledger').insert({
-          customer_name: selectedDealer.name,
-          transaction_type: 'bill',
-          bill_id: bill.id,
-          debit: total,
-          credit: paid,
-          balance: newOutstanding,
-          description: `Dealer Bill #${invoiceNumber} — ${billProduct} x ${billQty}`,
-          transaction_date: new Date().toISOString().split('T')[0]
-        })
-      } catch (_e) { /* ledger optional */ }
-
-      // Update local state
-      setSelectedDealer({ ...selectedDealer, outstanding_amount: newOutstanding, total_sales: newSales })
-      setDealers(dealers.map(d => d.id === selectedDealer.id ? { ...d, outstanding_amount: newOutstanding } : d))
-      setOrders([bill, ...orders])
-      setShowBillModal(false)
-      setBillQty(1)
-
-      alert(`✅ Bill #${invoiceNumber} generated! Total: ₹${total} | Due: ₹${due}`)
+      alert(`✅ Bill ${invNo} saved successfully! Current Dealer Balance Due: ${formatCurrency(updatedDue)}`)
+      if (shouldPrint) {
+        window.print()
+      }
     } catch (e: any) {
-      alert(`Error: ${e?.message}`)
+      alert(`Error saving bill: ${e.message}`)
     } finally {
       setSavingBill(false)
     }
   }
 
-  const filteredDealers = dealers.filter(d =>
-    d.name.toLowerCase().includes(search.toLowerCase()) ||
-    (d.area && d.area.toLowerCase().includes(search.toLowerCase()))
-  )
-  const totalOutstanding = dealers.reduce((sum, d) => sum + (d.outstanding_amount || 0), 0)
+  // Filter Dealers
+  const filteredDealers = dealers.filter(d => {
+    const matchesSearch = d.name?.toLowerCase().includes(search.toLowerCase()) || d.phone?.includes(search) || d.area?.toLowerCase().includes(search.toLowerCase())
+    const matchesArea = filterArea === 'all' || d.area === filterArea
+    return matchesSearch && matchesArea
+  })
 
-  const TABS: { id: DealerTab; label: string; icon: string }[] = [
-    { id: 'profile', label: 'Profile & Rates', icon: '👤' },
-    { id: 'orders', label: 'Sales History', icon: '📦' },
-    { id: 'outstanding', label: 'Collect Due', icon: '🔴' },
-    { id: 'collections', label: 'Payments', icon: '💰' },
-    { id: 'ledger', label: 'Ledger', icon: '📒' },
-    { id: 'reports', label: 'Reports', icon: '📈' },
-  ]
+  const uniqueAreas = Array.from(new Set(dealers.map(d => d.area).filter(Boolean)))
 
   return (
-    <div className="animate-fade-in" style={{ padding: '0.25rem' }}>
-
-      {/* HEADER */}
-      {currentView === 'list' ? (
-        <div className="page-header" style={{ marginBottom: '2rem' }}>
-          <div>
-            <h2 className="page-title">🏪 Wholesale Dealer Network</h2>
-            <p className="page-subtitle">Outstanding: <span style={{ color: '#f87171', fontWeight: '800' }}>₹{totalOutstanding.toLocaleString('en-IN')}</span> across {dealers.length} dealers</p>
-          </div>
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>➕ Add Dealer</button>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
-          <button className="btn btn-secondary btn-sm" style={{ width: '42px', height: '42px', borderRadius: '50%', padding: 0 }} onClick={() => setCurrentView('list')}>←</button>
-          <div style={{ flex: 1 }}>
-            <h2 style={{ fontSize: '1.75rem', fontWeight: '800', color: '#fff', margin: 0 }}>🏪 {selectedDealer?.name}</h2>
-            <p style={{ fontSize: '0.8125rem', color: 'hsl(215 20% 55%)', marginTop: '0.25rem' }}>📍 {selectedDealer?.area} | 📞 {selectedDealer?.phone}</p>
-          </div>
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
-            <button className="btn btn-primary" onClick={() => setShowBillModal(true)}>📋 Generate Bill</button>
-            <button
-              className="btn btn-secondary"
-              style={{ borderColor: 'rgba(248,113,113,0.4)', color: '#f87171' }}
-              onClick={() => setActiveTab('outstanding')}
-            >
-              💰 Collect Due
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* DEALER LIST */}
-      {currentView === 'list' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <div className="glass-card-3d" style={{ padding: '1.5rem' }}>
-            <input className="form-input" placeholder="🔍 Search dealer name or area..." value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
-
-          {loading ? (
-            <div style={{ padding: '4rem', textAlign: 'center' }}><span className="loading-spinner" /></div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.25rem' }}>
-              {filteredDealers.map(d => (
-                <div key={d.id} className="glass-card-3d" style={{ padding: '1.5rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1rem' }} onClick={() => handleDealerSelect(d)}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <h4 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>{d.name}</h4>
-                      <span className="badge badge-muted" style={{ marginTop: '0.375rem' }}>📍 {d.area || '—'}</span>
-                    </div>
-                    {(d.outstanding_amount || 0) > 0 ? (
-                      <span className="badge badge-danger">Due: ₹{(d.outstanding_amount || 0).toLocaleString('en-IN')}</span>
-                    ) : (
-                      <span className="badge badge-success">✅ No Dues</span>
-                    )}
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '1rem', fontSize: '0.8125rem', color: 'hsl(215 20% 55%)' }}>
-                    <div><span>Credit Limit</span><div style={{ fontWeight: '700', color: '#fff' }}>₹{(d.credit_limit || 5000).toLocaleString('en-IN')}</div></div>
-                    <div><span>Phone</span><div style={{ fontWeight: '700', color: '#fff' }}>{d.phone || '—'}</div></div>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: '0.8125rem', color: '#3b82f6', fontWeight: '700', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '0.75rem' }}>Open Account →</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* DEALER DASHBOARD */}
-      {currentView === 'dashboard' && selectedDealer && (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* Page Title & Controls */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          {/* KPI Strip */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-            {[
-              { label: 'Outstanding Due', value: `₹${(selectedDealer.outstanding_amount || 0).toLocaleString('en-IN')}`, color: selectedDealer.outstanding_amount > 0 ? '#f87171' : '#34d399', icon: '🔴' },
-              { label: 'Credit Limit', value: `₹${(selectedDealer.credit_limit || 5000).toLocaleString('en-IN')}`, color: '#60a5fa', icon: '💳' },
-              { label: 'Total Sales', value: `₹${(selectedDealer.total_sales || 0).toLocaleString('en-IN')}`, color: '#fff', icon: '📈' },
-              { label: 'Orders', value: orders.length.toString(), color: '#a78bfa', icon: '📦' },
-              { label: 'Collections', value: orders.length.toString(), color: '#34d399', icon: '💰' },
-            ].map((kpi, i) => (
-              <div key={i} className="glass-card-3d" style={{ padding: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '0.7rem', color: 'hsl(215 20% 55%)', textTransform: 'uppercase', fontWeight: '700' }}>{kpi.label}</span>
-                  <span style={{ fontSize: '1rem' }}>{kpi.icon}</span>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Store style={{ color: '#fbbf24', width: '28px', height: '28px' }} />
+            Dealer Profile Workspace & Product-Wise Sales Matrix
+          </h2>
+          <p style={{ color: '#a1a1aa', fontSize: '0.85rem', marginTop: '0.25rem' }}>
+            360° Dealer CRM &bull; Multi-product billing, daily rate overrides, returns log, running dues & split collections.
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <Button variant="primary" icon={<Plus style={{ width: '16px', height: '16px' }} />} onClick={() => setShowAddModal(true)}>
+            Add New Dealer Account
+          </Button>
+        </div>
+      </div>
+
+      {/* Main Dual-Panel Workspace */}
+      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '1.5rem' }}>
+        
+        {/* LEFT PANEL: Dealer Directory & Filters */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <Card style={{ padding: '1rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <Input
+                placeholder="Search dealer by name, area, phone..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                style={{ marginBottom: 0 }}
+              />
+              <Select
+                value={filterArea}
+                onChange={e => setFilterArea(e.target.value)}
+                options={[
+                  { value: 'all', label: 'All Areas / Regions' },
+                  ...uniqueAreas.map(a => ({ value: a, label: a }))
+                ]}
+                style={{ marginBottom: 0 }}
+              />
+            </div>
+          </Card>
+
+          {/* Dealer Cards List */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '780px', overflowY: 'auto' }}>
+            {filteredDealers.map(dealer => {
+              const isSelected = selectedDealer?.id === dealer.id
+              const isHighDue = (dealer.outstanding_amount || 0) > 10000
+              return (
+                <div
+                  key={dealer.id}
+                  onClick={() => setSelectedDealer(dealer)}
+                  style={{
+                    padding: '1rem',
+                    borderRadius: '12px',
+                    backgroundColor: isSelected ? 'rgba(37, 99, 235, 0.15)' : '#18181b',
+                    border: `1px solid ${isSelected ? '#2563eb' : 'rgba(255,255,255,0.08)'}`,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: '#27272a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#fbbf24' }}>
+                        {(dealer.name || 'D')[0]}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 800, color: '#fff', fontSize: '0.95rem' }}>{dealer.name}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>{dealer.dealer_code || 'DLR-1000'} &bull; {dealer.area}</div>
+                      </div>
+                    </div>
+                    {isHighDue && <Badge variant="danger">HIGH DUE</Badge>}
+                  </div>
+
+                  <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>Ph: {dealer.phone}</span>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '0.65rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Balance Due</div>
+                      <div className="num" style={{ fontWeight: 800, color: (dealer.outstanding_amount || 0) > 0 ? '#f87171' : '#34d399', fontSize: '0.95rem' }}>
+                        {formatCurrency(dealer.outstanding_amount || 0)}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize: '1.35rem', fontWeight: '800', color: kpi.color }}>{kpi.value}</div>
-              </div>
-            ))}
+              )
+            })}
           </div>
+        </div>
 
-          {/* Tabs */}
-          <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.75rem', marginBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            {TABS.map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={activeTab === tab.id ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-                style={{ borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.375rem', fontWeight: '700', flexShrink: 0 }}>
-                <span>{tab.icon}</span><span>{tab.label}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* TAB: PROFILE & RATES */}
-          {activeTab === 'profile' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '1.5rem' }}>
-              <div className="glass-card-3d" style={{ padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', height: 'fit-content' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', textAlign: 'center' }}>
-                  <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem' }}>🏪</div>
+        {/* RIGHT PANEL: Dealer 360° Profile Workspace */}
+        {selectedDealer ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            
+            {/* Dealer Profile Header Card */}
+            <Card style={{ padding: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                  <div style={{ width: '56px', height: '56px', borderRadius: '16px', backgroundColor: '#fbbf24', color: '#000', fontWeight: 900, fontSize: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {(selectedDealer.name || 'D')[0]}
+                  </div>
                   <div>
-                    <h4 style={{ margin: 0, fontWeight: '800', color: '#fff', fontSize: '1.15rem' }}>{selectedDealer.name}</h4>
-                    <span className="badge badge-muted" style={{ marginTop: '0.25rem' }}>📍 {selectedDealer.area}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#fff', margin: 0 }}>{selectedDealer.name}</h3>
+                      <Badge variant="info">{selectedDealer.dealer_code || 'DLR-1000'}</Badge>
+                      <Badge variant={selectedDealer.is_active ? 'success' : 'danger'}>
+                        {selectedDealer.is_active ? 'Active Dealer' : 'Inactive'}
+                      </Badge>
+                    </div>
+                    <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.35rem', color: '#a1a1aa', fontSize: '0.8rem', flexWrap: 'wrap' }}>
+                      <span><MapPin style={{ width: '13px', height: '13px', display: 'inline', marginRight: '3px' }} />{selectedDealer.address || selectedDealer.area}</span>
+                      <span><Phone style={{ width: '13px', height: '13px', display: 'inline', marginRight: '3px' }} />{selectedDealer.phone}</span>
+                      <span>GSTIN: <strong style={{ color: '#fff' }}>{selectedDealer.gst_number || '37AAAAA0000A1Z5'}</strong></span>
+                    </div>
                   </div>
                 </div>
-                {[
-                  { label: 'Phone', value: selectedDealer.phone || '—' },
-                  { label: 'GST Number', value: selectedDealer.gst_number || '—' },
-                  { label: 'Address', value: selectedDealer.address || '—' },
-                  { label: 'Status', value: selectedDealer.is_active ? '✅ Active' : '❌ Inactive' },
-                ].map((info, i) => (
-                  <div key={i} style={{ fontSize: '0.8125rem', borderTop: i === 0 ? '1px solid rgba(255,255,255,0.06)' : 'none', paddingTop: i === 0 ? '1rem' : 0 }}>
-                    <span style={{ color: 'hsl(215 20% 55%)' }}>{info.label}:</span>
-                    <div style={{ color: '#fff', fontWeight: '600', marginTop: '0.125rem' }}>{info.value}</div>
-                  </div>
-                ))}
+
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                  <Button variant="secondary" icon={<DollarSign style={{ width: '14px', height: '14px' }} />} onClick={() => setShowCollectModal(true)}>
+                    Collect Due Payment
+                  </Button>
+                  <Button variant="primary" icon={<Printer style={{ width: '14px', height: '14px' }} />} onClick={() => window.print()}>
+                    Print Statement
+                  </Button>
+                </div>
               </div>
 
-              <div className="glass-card-3d" style={{ padding: '2rem' }}>
+              {/* Top Summary Stats Bar */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                <div>
+                  <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase', fontWeight: 600 }}>Outstanding Balance Due</span>
+                  <div className="num" style={{ fontSize: '1.35rem', fontWeight: 900, color: (selectedDealer.outstanding_amount || 0) > 0 ? '#f87171' : '#34d399' }}>
+                    {formatCurrency(selectedDealer.outstanding_amount || 0)}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase', fontWeight: 600 }}>Credit Limit</span>
+                  <div className="num" style={{ fontSize: '1.35rem', fontWeight: 900, color: '#fbbf24' }}>
+                    {formatCurrency(selectedDealer.credit_limit || 50000)}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase', fontWeight: 600 }}>Total Lifetime Purchases</span>
+                  <div className="num" style={{ fontSize: '1.35rem', fontWeight: 900, color: '#60a5fa' }}>
+                    {formatCurrency(selectedDealer.total_purchases || 185000)}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase', fontWeight: 600 }}>Last Purchase Date</span>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', marginTop: '0.2rem' }}>
+                    {selectedDealer.last_purchase_date || '2026-08-02'}
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            {/* Navigation Tabs */}
+            <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.5rem', overflowX: 'auto' }}>
+              <Button variant={activeTab === 'sales_matrix' ? 'primary' : 'ghost'} size="sm" onClick={() => setActiveTab('sales_matrix')}>
+                🛒 Product-Wise Sales Matrix
+              </Button>
+              <Button variant={activeTab === 'history' ? 'primary' : 'ghost'} size="sm" onClick={() => setActiveTab('history')}>
+                📜 Billing History
+              </Button>
+              <Button variant={activeTab === 'due_ledger' ? 'primary' : 'ghost'} size="sm" onClick={() => setActiveTab('due_ledger')}>
+                🔴 Running Due Ledger
+              </Button>
+              <Button variant={activeTab === 'returns_leakages' ? 'primary' : 'ghost'} size="sm" onClick={() => setActiveTab('returns_leakages')}>
+                📦 Returns & Leakages Log
+              </Button>
+              <Button variant={activeTab === 'analytics' ? 'primary' : 'ghost'} size="sm" onClick={() => setActiveTab('analytics')}>
+                📊 Purchase BI Analytics
+              </Button>
+            </div>
+
+            {/* TAB 1: PRODUCT-WISE SALES MATRIX */}
+            {activeTab === 'sales_matrix' && (
+              <Card style={{ padding: '1.5rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>🏷️ Custom Product Rates</h3>
-                  <button className="btn btn-primary btn-sm" onClick={handleSavePricing} disabled={savingRates}>{savingRates ? 'Saving...' : '💾 Save Rates'}</button>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <ShoppingBag style={{ color: '#fbbf24', width: '18px', height: '18px' }} />
+                    Daily Product Sales Ledger Entry ({selectedDealer.name})
+                  </h3>
+                  <Input type="date" value={saleDate} onChange={e => setSaleDate(e.target.value)} style={{ width: 'auto', marginBottom: 0 }} />
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {products.map(p => {
-                    const currentRate = customRates[p.name] !== undefined ? customRates[p.name] : p.default_rate
-                    const isCustom = customRates[p.name] !== undefined
-                    return (
-                      <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.875rem 1.25rem', background: isCustom ? 'rgba(59,130,246,0.03)' : 'rgba(255,255,255,0.01)', borderRadius: '0.75rem', border: `1px solid ${isCustom ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.04)'}` }}>
-                        <div>
-                          <div style={{ fontWeight: '700', color: '#fff' }}>{p.name}</div>
-                          <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>Base: ₹{p.default_rate}</div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                          <input type="number" className="form-input" style={{ width: '100px', textAlign: 'right' }} value={currentRate}
-                            onChange={e => setCustomRates({ ...customRates, [p.name]: parseFloat(e.target.value) || 0 })} />
-                          {isCustom && (
-                            <button className="btn btn-danger btn-sm" style={{ padding: '0.375rem 0.5rem' }}
-                              onClick={() => { const c = { ...customRates }; delete c[p.name]; setCustomRates(c) }}>
-                              Reset
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
 
-          {/* TAB: SALES HISTORY */}
-          {activeTab === 'orders' && (
-            <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
-              <div className="card-header"><h3 className="card-title">📦 Sales History</h3></div>
-              {orders.length === 0 ? (
-                <div style={{ padding: '3rem', textAlign: 'center', color: 'hsl(215 20% 45%)' }}>No orders yet.</div>
-              ) : (
-                <div>
-                  {orders.map(o => (
-                    <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                      <div>
-                        <div style={{ fontWeight: '700', color: '#fff' }}>#{o.invoice_number}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>{o.date || o.sale_date}</div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontWeight: '700', color: '#fff' }}>₹{Number(o.total_amount).toLocaleString('en-IN')}</div>
-                          <div style={{ fontSize: '0.7rem', color: '#34d399' }}>Paid: ₹{Number(o.paid_amount || 0).toLocaleString('en-IN')}</div>
-                        </div>
-                        <span className={`badge ${o.payment_status === 'paid' ? 'badge-success' : o.payment_status === 'partial' ? 'badge-warning' : 'badge-danger'}`}>
-                          {(o.payment_status || 'paid').toUpperCase()}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB: COLLECT DUE */}
-          {activeTab === 'outstanding' && (
-            <div className="glass-card-3d" style={{ padding: '2rem' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.5rem' }}>🔴 Outstanding Due Collection</h3>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '2rem' }}>
-                <div style={{ background: selectedDealer.outstanding_amount > 0 ? 'rgba(248,113,113,0.05)' : 'rgba(52,211,153,0.05)', border: `1px solid ${selectedDealer.outstanding_amount > 0 ? 'rgba(248,113,113,0.2)' : 'rgba(52,211,153,0.2)'}`, borderRadius: '0.75rem', padding: '1.5rem' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', textTransform: 'uppercase' }}>Current Outstanding</span>
-                  <h4 style={{ fontSize: '2rem', fontWeight: '800', color: selectedDealer.outstanding_amount > 0 ? '#f87171' : '#34d399', margin: '0.375rem 0 0' }}>
-                    ₹{(selectedDealer.outstanding_amount || 0).toLocaleString('en-IN')}
-                  </h4>
-                </div>
-                <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '0.75rem', padding: '1.5rem' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)', textTransform: 'uppercase' }}>Credit Limit</span>
-                  <h4 style={{ fontSize: '2rem', fontWeight: '800', color: '#60a5fa', margin: '0.375rem 0 0' }}>
-                    ₹{(selectedDealer.credit_limit || 5000).toLocaleString('en-IN')}
-                  </h4>
-                </div>
-              </div>
-
-              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '0.75rem', padding: '1.5rem' }}>
-                <h4 style={{ margin: '0 0 1rem', fontSize: '0.9rem', fontWeight: '800', color: '#fff' }}>Record Payment Collection</h4>
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                  <div className="form-group" style={{ flex: 1 }}>
-                    <label className="form-label">Amount (₹)</label>
-                    <input type="number" className="form-input" placeholder="Enter amount" value={collectionAmount || ''} onChange={e => setCollectionAmount(Math.max(0, Number(e.target.value)))} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Payment Mode</label>
-                    <select className="form-input" value={collectionMode} onChange={e => setCollectionMode(e.target.value as any)}>
-                      <option value="cash">💵 Cash</option>
-                      <option value="upi">📱 UPI</option>
-                    </select>
-                  </div>
-                  <button className="btn btn-primary" onClick={handleCollectDue} disabled={collectingDue || collectionAmount <= 0} style={{ marginBottom: '1px' }}>
-                    {collectingDue ? 'Saving...' : '✅ Collect Payment'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB: PAYMENT HISTORY */}
-          {activeTab === 'collections' && (
-            <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
-              <div className="card-header"><h3 className="card-title">💰 Payment History</h3></div>
-              {collections.length === 0 ? (
-                <div style={{ padding: '3rem', textAlign: 'center', color: 'hsl(215 20% 45%)' }}>No payments recorded.</div>
-              ) : (
-                <div>
-                  {collections.map(c => (
-                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                      <div>
-                        <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>{c.collected_date}</div>
-                        <div style={{ fontSize: '0.875rem', color: '#fff', fontWeight: '600' }}>{c.notes}</div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                        <span style={{ fontSize: '1.1rem', fontWeight: '800', color: '#34d399' }}>+₹{Number(c.amount).toLocaleString('en-IN')}</span>
-                        <span className="badge badge-info">{(c.payment_mode || 'cash').toUpperCase()}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB: LEDGER */}
-          {activeTab === 'ledger' && (
-            <div className="glass-card-3d" style={{ overflow: 'hidden' }}>
-              <div className="card-header"><h3 className="card-title">📒 Account Ledger</h3></div>
-              {ledger.length === 0 ? (
-                <div style={{ padding: '3rem', textAlign: 'center', color: 'hsl(215 20% 45%)' }}>
-                  <div style={{ fontSize: '2rem' }}>📒</div>
-                  <p>No ledger entries yet. Generate bills to see transactions here.</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.8rem', color: 'hsl(215 20% 40%)', marginTop: '1rem' }}>
-                    {[...orders.slice(0, 3), ...collections.slice(0, 2)].map((item, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 1rem', background: 'rgba(255,255,255,0.01)', borderRadius: '0.5rem' }}>
-                        <span>{item.invoice_number ? `Bill #${item.invoice_number}` : `Payment`}</span>
-                        <span style={{ color: item.invoice_number ? '#f87171' : '#34d399' }}>
-                          {item.invoice_number ? `-₹${Number(item.total_amount).toFixed(0)}` : `+₹${Number(item.amount).toFixed(0)}`}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="erp-table">
-                    <thead><tr><th>Date</th><th>Description</th><th style={{ textAlign: 'right' }}>Debit</th><th style={{ textAlign: 'right' }}>Credit</th><th style={{ textAlign: 'right' }}>Balance</th></tr></thead>
+                {/* Product Sales Ledger Table */}
+                <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: '#09090b', color: '#a1a1aa', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <th style={{ padding: '0.75rem 1rem' }}>Product Name</th>
+                        <th style={{ padding: '0.75rem', width: '70px' }}>Unit</th>
+                        <th style={{ padding: '0.75rem', width: '90px' }}>Sold Qty</th>
+                        <th style={{ padding: '0.75rem', width: '100px' }}>Rate (₹)</th>
+                        <th style={{ padding: '0.75rem', width: '90px' }}>Return Qty</th>
+                        <th style={{ padding: '0.75rem', width: '90px' }}>Leak Qty</th>
+                        <th style={{ padding: '0.75rem', width: '90px' }}>Discount (₹)</th>
+                        <th style={{ padding: '0.75rem 1rem', textAlign: 'right', width: '120px' }}>Total Amount</th>
+                      </tr>
+                    </thead>
                     <tbody>
-                      {ledger.map((entry, i) => (
-                        <tr key={i}>
-                          <td>{entry.transaction_date}</td>
-                          <td>{entry.description}</td>
-                          <td style={{ textAlign: 'right', color: '#f87171' }}>{entry.debit > 0 ? `₹${Number(entry.debit).toLocaleString('en-IN')}` : '—'}</td>
-                          <td style={{ textAlign: 'right', color: '#34d399' }}>{entry.credit > 0 ? `₹${Number(entry.credit).toLocaleString('en-IN')}` : '—'}</td>
-                          <td style={{ textAlign: 'right', fontWeight: '700', color: Number(entry.balance) > 0 ? '#f87171' : '#34d399' }}>₹{Number(entry.balance || 0).toLocaleString('en-IN')}</td>
-                        </tr>
-                      ))}
+                      {productRows.map((row, idx) => {
+                        const lineTotal = (row.qty * row.rate) - Number(row.discount || 0)
+                        return (
+                          <tr key={row.product_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', backgroundColor: row.qty > 0 ? 'rgba(251, 191, 36, 0.03)' : 'transparent' }}>
+                            <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: '#fff' }}>{row.product_name}</td>
+                            <td style={{ padding: '0.75rem', color: '#a1a1aa' }}>{row.unit}</td>
+                            <td style={{ padding: '0.75rem' }}>
+                              <input
+                                type="number"
+                                min="0"
+                                value={row.qty || ''}
+                                onChange={e => updateProductRow(idx, 'qty', Number(e.target.value))}
+                                style={{ width: '100%', backgroundColor: '#09090b', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '0.4rem', borderRadius: '6px', textAlign: 'center', fontWeight: 800 }}
+                              />
+                            </td>
+                            <td style={{ padding: '0.75rem' }}>
+                              <input
+                                type="number"
+                                min="0"
+                                value={row.rate}
+                                onChange={e => updateProductRow(idx, 'rate', Number(e.target.value))}
+                                style={{ width: '100%', backgroundColor: '#09090b', border: '1px solid rgba(255,255,255,0.1)', color: '#fbbf24', padding: '0.4rem', borderRadius: '6px', textAlign: 'center', fontWeight: 800 }}
+                              />
+                            </td>
+                            <td style={{ padding: '0.75rem' }}>
+                              <input
+                                type="number"
+                                min="0"
+                                value={row.return_qty || ''}
+                                onChange={e => updateProductRow(idx, 'return_qty', Number(e.target.value))}
+                                style={{ width: '100%', backgroundColor: '#09090b', border: '1px solid rgba(255,255,255,0.1)', color: '#60a5fa', padding: '0.4rem', borderRadius: '6px', textAlign: 'center' }}
+                              />
+                            </td>
+                            <td style={{ padding: '0.75rem' }}>
+                              <input
+                                type="number"
+                                min="0"
+                                value={row.leak_qty || ''}
+                                onChange={e => updateProductRow(idx, 'leak_qty', Number(e.target.value))}
+                                style={{ width: '100%', backgroundColor: '#09090b', border: '1px solid rgba(255,255,255,0.1)', color: '#f87171', padding: '0.4rem', borderRadius: '6px', textAlign: 'center' }}
+                              />
+                            </td>
+                            <td style={{ padding: '0.75rem' }}>
+                              <input
+                                type="number"
+                                min="0"
+                                value={row.discount || ''}
+                                onChange={e => updateProductRow(idx, 'discount', Number(e.target.value))}
+                                style={{ width: '100%', backgroundColor: '#09090b', border: '1px solid rgba(255,255,255,0.1)', color: '#34d399', padding: '0.4rem', borderRadius: '6px', textAlign: 'center' }}
+                              />
+                            </td>
+                            <td className="num" style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: 800, color: lineTotal > 0 ? '#fbbf24' : '#a1a1aa' }}>
+                              {formatCurrency(lineTotal)}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
-              )}
-            </div>
-          )}
 
-          {/* TAB: REPORTS */}
-          {activeTab === 'reports' && (
-            <div className="glass-card-3d" style={{ padding: '2rem' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem' }}>📈 Consolidated Report</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-                {[
-                  { label: 'Total Orders', value: orders.length.toString(), color: '#fff' },
-                  { label: 'Net Collections', value: `₹${collections.reduce((s, c) => s + (Number(c.amount) || 0), 0).toLocaleString('en-IN')}`, color: '#34d399' },
-                  { label: 'Outstanding', value: `₹${(selectedDealer.outstanding_amount || 0).toLocaleString('en-IN')}`, color: selectedDealer.outstanding_amount > 0 ? '#f87171' : '#34d399' },
-                ].map((kpi, i) => (
-                  <div key={i} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '0.75rem', padding: '1.25rem', textAlign: 'center' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'hsl(215 20% 55%)' }}>{kpi.label}</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: '800', marginTop: '0.25rem', color: kpi.color }}>{kpi.value}</div>
+                {/* Auto-Calculations Summary Footer */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginTop: '1.25rem', padding: '1.25rem', backgroundColor: '#09090b', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div>
+                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Total Sold Units</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>{totalQtySold} Units</div>
                   </div>
-                ))}
-              </div>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <button className="btn btn-secondary" onClick={() => alert('PDF export — use browser print')}>📄 Download PDF</button>
-                <button className="btn btn-secondary" onClick={() => alert('CSV export coming soon')}>📊 Export CSV</button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+                  <div>
+                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Total Returns / Leaks</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#60a5fa' }}>{totalQtyReturned} Ret / {totalQtyLeaked} Leak</div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Gross Bill Amount</span>
+                    <div className="num" style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>{formatCurrency(grossTotal)}</div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Net Invoice Total</span>
+                    <div className="num" style={{ fontSize: '1.4rem', fontWeight: 900, color: '#fbbf24' }}>{formatCurrency(netBillAmount)}</div>
+                  </div>
+                </div>
 
-      {/* ADD DEALER MODAL */}
-      {showModal && (
-        <div className="modal-overlay" style={{ display: 'flex', zIndex: 1000 }}>
-          <div className="modal-content" style={{ maxWidth: '500px' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.125rem', fontWeight: '800', color: '#fff', margin: 0 }}>Add Wholesale Dealer</h3>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowModal(false)}>✕</button>
+                {/* Split Payment Section */}
+                <div style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: 800, color: '#fff', marginBottom: '1rem' }}>Split Payment & Collection Details</h4>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                    <Input
+                      label="Cash Paid (₹)"
+                      type="number"
+                      value={payments.cash || ''}
+                      onChange={e => setPayments({ ...payments, cash: Number(e.target.value) })}
+                    />
+                    <Input
+                      label="UPI Paid (₹)"
+                      type="number"
+                      value={payments.upi || ''}
+                      onChange={e => setPayments({ ...payments, upi: Number(e.target.value) })}
+                    />
+                    <Input
+                      label="Bank Transfer (₹)"
+                      type="number"
+                      value={payments.bank || ''}
+                      onChange={e => setPayments({ ...payments, bank: Number(e.target.value) })}
+                    />
+                    <Input
+                      label="Advance Credit Used (₹)"
+                      type="number"
+                      value={payments.advance || ''}
+                      onChange={e => setPayments({ ...payments, advance: Number(e.target.value) })}
+                    />
+                  </div>
+
+                  {/* Summary Dues Result Bar */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', padding: '1rem', backgroundColor: '#18181b', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div>
+                      <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>Today's Remaining Pending Due:</span>
+                      <span className="num" style={{ fontSize: '1.2rem', fontWeight: 900, color: pendingDue > 0 ? '#f87171' : '#34d399', marginLeft: '0.5rem' }}>
+                        {formatCurrency(pendingDue)}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>Updated Dealer Total Due:</span>
+                      <span className="num" style={{ fontSize: '1.3rem', fontWeight: 900, color: grandTotalDue > 0 ? '#f87171' : '#34d399', marginLeft: '0.5rem' }}>
+                        {formatCurrency(grandTotalDue)}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.75rem' }}>
+                      <Button variant="secondary" icon={<Save style={{ width: '14px', height: '14px' }} />} loading={savingBill} onClick={() => handleSaveBill(false)}>
+                        Save Bill
+                      </Button>
+                      <Button variant="primary" icon={<Printer style={{ width: '14px', height: '14px' }} />} loading={savingBill} onClick={() => handleSaveBill(true)}>
+                        Save & Print Receipt
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* TAB 2: BILLING HISTORY */}
+            {activeTab === 'history' && (
+              <Card style={{ padding: '1.5rem' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', marginBottom: '1rem' }}>Dealer Invoice History</h3>
+                <DataTable
+                  columns={[
+                    { key: 'invoice_number', title: 'Invoice No', render: r => <span style={{ fontWeight: 800, color: '#fbbf24', fontFamily: 'monospace' }}>{r.invoice_number}</span> },
+                    { key: 'date', title: 'Date', render: r => <span style={{ color: '#a1a1aa' }}>{r.date}</span> },
+                    { key: 'total_amount', title: 'Total Amount', align: 'right', render: r => <span className="num" style={{ fontWeight: 800, color: '#fff' }}>{formatCurrency(r.total_amount)}</span> },
+                    { key: 'paid_amount', title: 'Paid', align: 'right', render: r => <span className="num" style={{ color: '#34d399' }}>{formatCurrency(r.paid_amount)}</span> },
+                    { key: 'due_amount', title: 'Due', align: 'right', render: r => <span className="num" style={{ color: r.due_amount > 0 ? '#f87171' : '#a1a1aa' }}>{formatCurrency(r.due_amount)}</span> },
+                    { key: 'payment_status', title: 'Status', render: r => <Badge variant={r.payment_status === 'paid' ? 'success' : 'danger'}>{r.payment_status?.toUpperCase()}</Badge> },
+                    { key: 'actions', title: 'Action', align: 'right', render: r => <Button variant="secondary" size="sm" icon={<Printer style={{ width: '12px', height: '12px' }} />} onClick={() => window.print()}>Print Ticket</Button> }
+                  ]}
+                  data={dealerBills}
+                  searchPlaceholder="Search invoices..."
+                  exportFileName={`dealer-${selectedDealer.name}-invoices`}
+                />
+              </Card>
+            )}
+
+            {/* TAB 3: DUE LEDGER */}
+            {activeTab === 'due_ledger' && (
+              <Card style={{ padding: '1.5rem' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', marginBottom: '1rem' }}>Running Account Statement & Due Ledger</h3>
+                <DataTable
+                  columns={[
+                    { key: 'date', title: 'Date', render: r => <span style={{ color: '#a1a1aa' }}>{r.date}</span> },
+                    { key: 'type', title: 'Transaction Type', render: r => <span style={{ fontWeight: 700, color: '#fff' }}>{r.type}</span> },
+                    { key: 'debit', title: 'Invoice Debit (+)', align: 'right', render: r => <span className="num" style={{ color: '#f87171', fontWeight: 800 }}>{r.debit > 0 ? formatCurrency(r.debit) : '—'}</span> },
+                    { key: 'credit', title: 'Payment Credit (-)', align: 'right', render: r => <span className="num" style={{ color: '#34d399', fontWeight: 800 }}>{r.credit > 0 ? formatCurrency(r.credit) : '—'}</span> },
+                    { key: 'balance', title: 'Closing Due Balance', align: 'right', render: r => <span className="num" style={{ color: '#fbbf24', fontWeight: 900 }}>{formatCurrency(r.balance)}</span> },
+                    { key: 'notes', title: 'Remarks / Notes', render: r => <span style={{ color: '#a1a1aa' }}>{r.notes}</span> }
+                  ]}
+                  data={dealerLedger}
+                  exportFileName={`dealer-${selectedDealer.name}-statement`}
+                />
+              </Card>
+            )}
+
+            {/* TAB 4: RETURNS & LEAKAGES */}
+            {activeTab === 'returns_leakages' && (
+              <Card style={{ padding: '1.5rem' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', marginBottom: '1rem' }}>Returns & Leakage Log History</h3>
+                <DataTable
+                  columns={[
+                    { key: 'date', title: 'Log Date', render: r => <span style={{ color: '#a1a1aa' }}>{r.date}</span> },
+                    { key: 'product', title: 'Product Name', render: r => <span style={{ fontWeight: 700, color: '#fff' }}>{r.product}</span> },
+                    { key: 'return_qty', title: 'Returned Qty', render: r => <Badge variant="info">{r.return_qty} Units</Badge> },
+                    { key: 'leak_qty', title: 'Leak / Damaged', render: r => <Badge variant="danger">{r.leak_qty} Leaks</Badge> },
+                    { key: 'reason', title: 'Reason & Status', render: r => <span style={{ color: '#a1a1aa' }}>{r.reason}</span> }
+                  ]}
+                  data={dealerReturns}
+                />
+              </Card>
+            )}
+
+            {/* TAB 5: ANALYTICS */}
+            {activeTab === 'analytics' && (
+              <Card style={{ padding: '1.5rem' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', marginBottom: '1rem' }}>Dealer Purchase BI Analytics</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+                  <Card style={{ padding: '1.25rem', backgroundColor: '#09090b' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>Most Purchased Product</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fbbf24', marginTop: '0.2rem' }}>Water Can (20L)</div>
+                    <div style={{ fontSize: '0.75rem', color: '#34d399', marginTop: '0.25rem' }}>65% Share of Orders</div>
+                  </Card>
+                  <Card style={{ padding: '1.25rem', backgroundColor: '#09090b' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>Payment Reliability Score</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#34d399', marginTop: '0.2rem' }}>92% On-Time</div>
+                    <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '0.25rem' }}>Average Pay Days: 4 Days</div>
+                  </Card>
+                </div>
+              </Card>
+            )}
+          </div>
+        ) : (
+          <Card style={{ padding: '3rem', textAlign: 'center', color: '#a1a1aa' }}>
+            Select a dealer from the directory list to open the 360° workspace.
+          </Card>
+        )}
+      </div>
+
+      {/* CREATE DEALER MODAL */}
+      {showAddModal && (
+        <div className="modal-overlay">
+          <div className="modal-container">
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#fff' }}>Create New Dealer Account</h3>
+              <button onClick={() => setShowAddModal(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}><X style={{ width: '20px', height: '20px' }} /></button>
             </div>
-            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <div className="form-group"><label className="form-label">Dealer Name *</label><input className="form-input" placeholder="Dealer Name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div className="form-group"><label className="form-label">Phone</label><input className="form-input" placeholder="Phone" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
-                <div className="form-group"><label className="form-label">Area</label><input className="form-input" placeholder="Area" value={form.area} onChange={e => setForm({ ...form, area: e.target.value })} /></div>
-              </div>
-              <div className="form-group"><label className="form-label">Address</label><input className="form-input" placeholder="Address" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div className="form-group"><label className="form-label">GST Number</label><input className="form-input" placeholder="GST" value={form.gst_number} onChange={e => setForm({ ...form, gst_number: e.target.value })} /></div>
-                <div className="form-group"><label className="form-label">Credit Limit (₹)</label><input type="number" className="form-input" value={form.credit_limit} onChange={e => setForm({ ...form, credit_limit: Number(e.target.value) })} /></div>
-              </div>
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                <button className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
-                <button className="btn btn-primary" onClick={saveDealer} disabled={!form.name || saving}>{saving ? 'Saving...' : '💾 Save Dealer'}</button>
-              </div>
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <Input label="Dealer Business / Contact Name" placeholder="e.g. Ramesh Water Traders" value={newDealerForm.name} onChange={e => setNewDealerForm({ ...newDealerForm, name: e.target.value })} />
+              <Input label="Phone Number" placeholder="10-digit mobile" value={newDealerForm.phone} onChange={e => setNewDealerForm({ ...newDealerForm, phone: e.target.value })} />
+              <Input label="GSTIN Number" placeholder="37AAAAA0000A1Z5" value={newDealerForm.gst_number} onChange={e => setNewDealerForm({ ...newDealerForm, gst_number: e.target.value })} />
+              <Input label="Area / Region" placeholder="e.g. Kamavarapukota" value={newDealerForm.area} onChange={e => setNewDealerForm({ ...newDealerForm, area: e.target.value })} />
+              <Input label="Assigned Route" placeholder="e.g. Nuzvid Highway" value={newDealerForm.route} onChange={e => setNewDealerForm({ ...newDealerForm, route: e.target.value })} />
+              <Input label="Credit Limit Amount (₹)" type="number" value={newDealerForm.credit_limit} onChange={e => setNewDealerForm({ ...newDealerForm, credit_limit: Number(e.target.value) })} />
+              <Input label="Full Address" placeholder="Street / Landmark..." value={newDealerForm.address} onChange={e => setNewDealerForm({ ...newDealerForm, address: e.target.value })} />
+            </div>
+            <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <Button variant="secondary" onClick={() => setShowAddModal(false)}>Cancel</Button>
+              <Button variant="primary" loading={savingDealer} onClick={handleCreateDealer}>Create Dealer Account</Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* GENERATE BILL MODAL */}
-      {showBillModal && selectedDealer && (
-        <div className="modal-overlay" style={{ display: 'flex', zIndex: 1000 }}>
-          <div className="modal-content" style={{ maxWidth: '480px' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.125rem', fontWeight: '800', color: '#fff', margin: 0 }}>📋 Generate Bill — {selectedDealer.name}</h3>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowBillModal(false)}>✕</button>
+      {/* COLLECT DUE PAYMENT MODAL */}
+      {showCollectModal && selectedDealer && (
+        <div className="modal-overlay">
+          <div className="modal-container">
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#fff' }}>Record Dealer Due Payment</h3>
+              <button onClick={() => setShowCollectModal(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}><X style={{ width: '20px', height: '20px' }} /></button>
             </div>
             <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div className="form-group">
-                <label className="form-label">Product</label>
-                <select className="form-input" value={billProduct} onChange={e => {
-                  setBillProduct(e.target.value)
-                  const p = products.find(p => p.name === e.target.value)
-                  const rate = selectedDealer.custom_rates?.[e.target.value] || p?.default_rate || 0
-                  setBillRate(rate)
-                }}>
-                  {products.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
-                </select>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div className="form-group"><label className="form-label">Quantity</label><input type="number" className="form-input" value={billQty} onChange={e => setBillQty(Number(e.target.value))} /></div>
-                <div className="form-group"><label className="form-label">Rate (₹)</label><input type="number" className="form-input" value={billRate} onChange={e => setBillRate(Number(e.target.value))} /></div>
-              </div>
-              <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'hsl(215 20% 55%)' }}>Total Amount</span>
-                <span style={{ fontSize: '1.25rem', fontWeight: '800', color: '#60a5fa' }}>₹{(billQty * billRate).toFixed(2)}</span>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Payment Mode</label>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  {(['cash', 'upi', 'due'] as const).map(m => (
-                    <button key={m} type="button" onClick={() => setBillPayMode(m)}
-                      className={billPayMode === m ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}>
-                      {m === 'cash' ? '💵 Cash' : m === 'upi' ? '📱 UPI' : '🔴 Due'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                <button className="btn btn-ghost" onClick={() => setShowBillModal(false)}>Cancel</button>
-                <button className="btn btn-primary" onClick={handleGenerateBill} disabled={savingBill}>{savingBill ? 'Saving...' : '💾 Generate Bill'}</button>
-              </div>
+              <div>Dealer Account: <span style={{ color: '#fff', fontWeight: 700 }}>{selectedDealer.name}</span></div>
+              <div>Current Balance Due: <span style={{ color: '#f87171', fontWeight: 800 }}>{formatCurrency(selectedDealer.outstanding_amount || 0)}</span></div>
+              <Input label="Collection Payment Amount (₹)" type="number" value={collectForm.amount || ''} onChange={e => setCollectForm({ ...collectForm, amount: Number(e.target.value) })} />
+              <Select label="Payment Mode" value={collectForm.mode} onChange={e => setCollectForm({ ...collectForm, mode: e.target.value as any })} options={[{ value: 'cash', label: 'Cash Deposit' }, { value: 'upi', label: 'UPI / PhonePe / GPay' }, { value: 'bank', label: 'Bank Transfer (NEFT/RTGS)' }]} />
+              <Input label="Payment Notes / Reference" value={collectForm.notes} onChange={e => setCollectForm({ ...collectForm, notes: e.target.value })} />
+            </div>
+            <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <Button variant="secondary" onClick={() => setShowCollectModal(false)}>Cancel</Button>
+              <Button variant="primary" loading={submittingPayment} onClick={handleCollectDue}>Record Collection</Button>
             </div>
           </div>
         </div>

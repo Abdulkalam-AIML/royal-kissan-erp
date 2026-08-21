@@ -8,7 +8,7 @@ export default function NotFound() {
       justifyContent: 'center',
       minHeight: '100vh',
       background: 'hsl(222 47% 5%)',
-      color: 'hsl(210 40% 98%)',
+      color: 'var(--text-1)',
       fontFamily: 'Inter, system-ui, sans-serif',
     }}>
       <div style={{ textAlign: 'center', maxWidth: '400px', padding: '2rem' }}>
@@ -19,7 +19,7 @@ export default function NotFound() {
         <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.5rem' }}>
           Page Not Found
         </h2>
-        <p style={{ color: 'hsl(215 20% 55%)', marginBottom: '1.5rem', fontSize: '0.875rem' }}>
+        <p style={{ color: 'var(--text-2)', marginBottom: '1.5rem', fontSize: '0.875rem' }}>
           The page you&apos;re looking for doesn&apos;t exist or has been moved.
         </p>
         <Link
