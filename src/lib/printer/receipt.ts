@@ -259,7 +259,7 @@ export function generateTestReceiptBuffer(
   builder.line('PRINTER STATUS: CONNECTED SUCCESS')
   builder.bold(false)
   builder.twoColumn('Printer Model:', config.printer_name)
-  builder.twoColumn('Network IP:', `${config.printer_ip}:${config.printer_port}`)
+  builder.twoColumn('Connection:', 'Bluetooth ESC/POS')
   builder.twoColumn('Paper Width:', config.paper_width)
   builder.twoColumn('Characters/Line:', String(config.character_width))
   builder.twoColumn('Auto Cut:', config.auto_cut ? 'ENABLED' : 'DISABLED')

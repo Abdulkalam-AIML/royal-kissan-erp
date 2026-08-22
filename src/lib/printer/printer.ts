@@ -2,66 +2,16 @@ import { PrinterSettings, DEFAULT_PRINTER_SETTINGS, PrintJobOptions, PrintResult
 import { generateReceiptBuffer, generateTestReceiptBuffer, BillData } from './receipt'
 
 /**
- * Fallback: Send ESC/POS payload to Local Print Agent running at http://localhost:3002/print
- */
-export async function sendToLocalPrintAgent(
-  agentUrl: string,
-  buffer: Uint8Array,
-  printerIp: string,
-  printerPort: number
-): Promise<PrintResult> {
-  const startTime = Date.now()
-  try {
-    let binary = ''
-    const bytes = new Uint8Array(buffer)
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i])
-    }
-    const base64Data = typeof btoa !== 'undefined' ? btoa(binary) : Buffer.from(buffer).toString('base64')
-
-    const res = await fetch(agentUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        printer_ip: printerIp,
-        printer_port: printerPort,
-        payload_base64: base64Data,
-      }),
-    })
-
-    if (!res.ok) {
-      const errText = await res.text()
-      return {
-        success: false,
-        message: `Local Print Agent error (${res.status}): ${errText}`,
-        error_code: 'NETWORK_ERROR',
-        duration_ms: Date.now() - startTime,
-      }
-    }
-
-    const data = await res.json()
-    return {
-      success: true,
-      message: data.message || 'Printed via Local Agent successfully',
-      duration_ms: Date.now() - startTime,
-      bytes_sent: buffer.length,
-    }
-  } catch (err: any) {
-    return {
-      success: false,
-      message: `Local Print Agent not reachable at ${agentUrl}. Ensure node scripts/print-agent.js is running.`,
-      error_code: 'OFFLINE',
-      duration_ms: Date.now() - startTime,
-    }
-  }
-}
-
-/**
  * Bluetooth Device Caching Helpers
  */
 export function getPairedBluetoothDeviceId(): string | null {
   if (typeof window === 'undefined') return null
   return localStorage.getItem('rk_paired_bluetooth_device_id')
+}
+
+export function getPairedBluetoothDeviceName(): string | null {
+  if (typeof window === 'undefined') return null
+  return localStorage.getItem('rk_paired_bluetooth_device_name') || 'TVS RP3230ABW'
 }
 
 export function savePairedBluetoothDevice(deviceId: string, deviceName?: string) {
@@ -70,16 +20,47 @@ export function savePairedBluetoothDevice(deviceId: string, deviceName?: string)
   if (deviceName) localStorage.setItem('rk_paired_bluetooth_device_name', deviceName)
 }
 
+export function clearPairedBluetoothDevice() {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem('rk_paired_bluetooth_device_id')
+  localStorage.removeItem('rk_paired_bluetooth_device_name')
+}
+
 /**
- * Web Bluetooth Direct ESC/POS Printer Execution
+ * Execute Bluetooth ESC/POS Printing
+ * Primary target: Moto Edge 60 Neo / Android Tablet / Chrome Web Bluetooth
  */
 export async function printViaBluetooth(buffer: Uint8Array): Promise<PrintResult> {
   const startTime = Date.now()
+
+  // 1. Android Native App Bridge Check (if embedded in Android WebView bridge)
+  if (typeof window !== 'undefined' && (window as any).AndroidPrinter) {
+    try {
+      let binary = ''
+      for (let i = 0; i < buffer.byteLength; i++) {
+        binary += String.fromCharCode(buffer[i])
+      }
+      const base64Data = typeof btoa !== 'undefined' ? btoa(binary) : ''
+      const res = (window as any).AndroidPrinter.printBase64(base64Data)
+      if (res) {
+        return {
+          success: true,
+          message: 'Printed via Android Bluetooth Bridge',
+          duration_ms: Date.now() - startTime,
+          bytes_sent: buffer.length,
+        }
+      }
+    } catch (err: any) {
+      console.warn('AndroidPrinter bridge failed, falling back to Web Bluetooth:', err)
+    }
+  }
+
+  // 2. Standard Web Bluetooth API
   try {
     if (typeof window === 'undefined' || !('bluetooth' in navigator)) {
       return {
         success: false,
-        message: 'Web Bluetooth API is not supported in this browser. Please use Chrome or Edge.',
+        message: 'Web Bluetooth API is not supported in this browser. Please use Chrome on Android/Desktop.',
         error_code: 'BLUETOOTH_ERROR',
       }
     }
@@ -87,14 +68,14 @@ export async function printViaBluetooth(buffer: Uint8Array): Promise<PrintResult
     const nav = navigator as any
     let device: any = null
 
-    // Try reconnecting to previously granted device if available
+    // Attempt to reconnect to saved Bluetooth device
     const savedId = getPairedBluetoothDeviceId()
     if (savedId && nav.bluetooth.getDevices) {
       try {
         const pairedDevices = await nav.bluetooth.getDevices()
         device = pairedDevices.find((d: any) => d.id === savedId)
       } catch {
-        // Fallback to requestDevice
+        // Fallback to requestDevice prompt
       }
     }
 
@@ -109,7 +90,15 @@ export async function printViaBluetooth(buffer: Uint8Array): Promise<PrintResult
         ]
       })
       if (device && device.id) {
-        savePairedBluetoothDevice(device.id, device.name)
+        savePairedBluetoothDevice(device.id, device.name || 'TVS RP3230ABW')
+      }
+    }
+
+    if (!device) {
+      return {
+        success: false,
+        message: 'No Bluetooth printer selected.',
+        error_code: 'BLUETOOTH_ERROR',
       }
     }
 
@@ -121,10 +110,10 @@ export async function printViaBluetooth(buffer: Uint8Array): Promise<PrintResult
     let services: any[] = []
     try {
       services = await server.getPrimaryServices()
-    } catch (serviceErr: any) {
+    } catch {
       return {
         success: false,
-        message: 'Bluetooth printing is unavailable for this device. TVS RP3230ABW uses RAW TCP (192.168.0.2:9100) as primary connection.',
+        message: `Bluetooth device (${device.name || 'Printer'}) GATT services unavailable. Please ensure printer is paired and powered on.`,
         error_code: 'BLUETOOTH_ERROR',
       }
     }
@@ -148,12 +137,12 @@ export async function printViaBluetooth(buffer: Uint8Array): Promise<PrintResult
     if (!writeChar) {
       return {
         success: false,
-        message: 'No compatible GATT serial print service found on Bluetooth device. Please use primary RAW TCP (192.168.0.2:9100) connection.',
+        message: 'No compatible GATT serial print service found on selected Bluetooth printer.',
         error_code: 'BLUETOOTH_ERROR',
       }
     }
 
-    // Write in chunks of 512 bytes
+    // Send ESC/POS data in chunks of 512 bytes
     const chunkSize = 512
     for (let i = 0; i < buffer.length; i += chunkSize) {
       const chunk = buffer.slice(i, i + chunkSize)
@@ -166,62 +155,21 @@ export async function printViaBluetooth(buffer: Uint8Array): Promise<PrintResult
 
     return {
       success: true,
-      message: `Printed ${buffer.length} bytes via Bluetooth (${device.name || 'Thermal Printer'})`,
+      message: `Printed ${buffer.length} bytes via Bluetooth (${device.name || 'TVS RP3230ABW'})`,
       duration_ms: Date.now() - startTime,
       bytes_sent: buffer.length,
     }
   } catch (err: any) {
     return {
       success: false,
-      message: `Bluetooth printing failed: ${err.message || err}`,
+      message: `Bluetooth printing error: ${err.message || err}`,
       error_code: 'BLUETOOTH_ERROR',
     }
   }
 }
 
 /**
- * WebUSB Direct ESC/POS Printer Execution
- */
-export async function printViaUSB(buffer: Uint8Array): Promise<PrintResult> {
-  const startTime = Date.now()
-  try {
-    if (typeof window === 'undefined' || !('usb' in navigator)) {
-      return {
-        success: false,
-        message: 'WebUSB API is not supported in this browser. Please use Chrome or Edge.',
-        error_code: 'USB_ERROR',
-      }
-    }
-
-    const nav = navigator as any
-    const device = await nav.usb.requestDevice({ filters: [] })
-    await device.open()
-    await device.selectConfiguration(1)
-    await device.claimInterface(0)
-
-    const endpoint = device.configuration.interfaces[0].alternate.endpoints.find((e: any) => e.direction === 'out')
-    const endpointNumber = endpoint ? endpoint.endpointNumber : 1
-
-    await device.transferOut(endpointNumber, buffer)
-    await device.close()
-
-    return {
-      success: true,
-      message: `Printed ${buffer.length} bytes via USB (TVS RP3230ABW)`,
-      duration_ms: Date.now() - startTime,
-      bytes_sent: buffer.length,
-    }
-  } catch (err: any) {
-    return {
-      success: false,
-      message: `USB printing failed: ${err.message || err}`,
-      error_code: 'USB_ERROR',
-    }
-  }
-}
-
-/**
- * Client Print Dispatcher: Routes print job via WiFi (API/Agent), Bluetooth, or USB
+ * Main Print Dispatcher (Bluetooth-Only)
  */
 export async function executePrintJob(
   bill: BillData,
@@ -229,91 +177,13 @@ export async function executePrintJob(
   config: PrinterSettings = DEFAULT_PRINTER_SETTINGS
 ): Promise<PrintResult> {
   const escposBuffer = generateReceiptBuffer(bill, options, config)
-
-  // 1. Bluetooth Mode
-  if (config.connection_type === 'bluetooth') {
-    return await printViaBluetooth(escposBuffer)
-  }
-
-  // 2. USB Mode
-  if (config.connection_type === 'usb') {
-    return await printViaUSB(escposBuffer)
-  }
-
-  // 3. WiFi Mode (API Route or Local Agent)
-  try {
-    const res = await fetch('/api/print', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        bill_data: bill,
-        options,
-        customConfig: config,
-      }),
-    })
-
-    const data = await res.json()
-    if (data.success) {
-      return {
-        success: true,
-        message: data.message || 'Bill Printed Successfully',
-        duration_ms: data.duration_ms,
-        bytes_sent: data.bytes_sent,
-      }
-    }
-
-    // Direct API route printer connection failed -> Fallback to Local Print Agent at localhost:3002
-    return await sendToLocalPrintAgent(
-      config.local_agent_url || 'http://localhost:3002/print',
-      escposBuffer,
-      config.printer_ip,
-      config.printer_port
-    )
-  } catch (err: any) {
-    return await sendToLocalPrintAgent(
-      config.local_agent_url || 'http://localhost:3002/print',
-      escposBuffer,
-      config.printer_ip,
-      config.printer_port
-    )
-  }
+  return await printViaBluetooth(escposBuffer)
 }
 
 /**
- * Execute Test Print Ticket
+ * Execute Test Print Ticket via Bluetooth
  */
 export async function executeTestPrint(config: PrinterSettings = DEFAULT_PRINTER_SETTINGS): Promise<PrintResult> {
   const escposBuffer = generateTestReceiptBuffer(config)
-
-  if (config.connection_type === 'bluetooth') {
-    return await printViaBluetooth(escposBuffer)
-  }
-
-  if (config.connection_type === 'usb') {
-    return await printViaUSB(escposBuffer)
-  }
-
-  try {
-    const res = await fetch('/api/print/test', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customConfig: config }),
-    })
-    const data = await res.json()
-    if (data.success) return data
-
-    return await sendToLocalPrintAgent(
-      config.local_agent_url || 'http://localhost:3002/print',
-      escposBuffer,
-      config.printer_ip,
-      config.printer_port
-    )
-  } catch {
-    return await sendToLocalPrintAgent(
-      config.local_agent_url || 'http://localhost:3002/print',
-      escposBuffer,
-      config.printer_ip,
-      config.printer_port
-    )
-  }
+  return await printViaBluetooth(escposBuffer)
 }

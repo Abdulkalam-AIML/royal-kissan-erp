@@ -10,7 +10,7 @@ import {
   Trash2, 
   Printer, 
   Clock, 
-  Wifi, 
+  Bluetooth, 
   Zap, 
   Package, 
   RotateCcw, 
@@ -131,7 +131,6 @@ export default function BillingPage() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [printerIp, setPrinterIp] = useState('192.168.0.2')
 
   const searchInputRef = useRef<HTMLInputElement>(null)
   const supabase = createClient()
@@ -158,7 +157,7 @@ export default function BillingPage() {
         supabase.from('dealers').select('id, name, phone, address, gstin, dealer_code').order('name'),
         supabase.from('drivers').select('id, name, phone').order('name'),
         supabase.from('bills').select('id, invoice_number, date, customer_name, total_amount, paid_amount, due_amount, payment_status, bill_type').order('created_at', { ascending: false }).limit(20),
-        supabase.from('printer_settings').select('printer_ip, paper_width').eq('is_default', true).maybeSingle()
+        supabase.from('printer_settings').select('paper_width').eq('is_default', true).maybeSingle()
       ])
 
       const timeoutPromise = new Promise<any>((resolve) =>
@@ -186,7 +185,6 @@ export default function BillingPage() {
       if (dealersRes?.data) setDealers(dealersRes.data)
       if (driversRes?.data) setDrivers(driversRes.data)
       if (billsRes?.data) setRecentBills(billsRes.data)
-      if (printerRes?.data?.printer_ip) setPrinterIp(printerRes.data.printer_ip)
       if (printerRes?.data?.paper_width) setInvoiceFormat(printerRes.data.paper_width as InvoiceFormat)
     } catch {
       // Fallback
@@ -611,8 +609,8 @@ export default function BillingPage() {
             </span>
 
             <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <Wifi style={{ width: '14px', height: '14px', color: '#34d399' }} />
-              Thermal: <strong style={{ color: '#34d399' }}>{printerIp}:9100 ({invoiceFormat})</strong>
+              <Bluetooth style={{ width: '14px', height: '14px', color: '#34d399' }} />
+              Printer: <strong style={{ color: '#34d399' }}>TVS RP3230ABW ({invoiceFormat})</strong>
             </span>
 
             <Button

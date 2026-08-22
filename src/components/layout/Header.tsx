@@ -7,6 +7,7 @@ import {
   Menu,
   Search,
   Printer,
+  Bluetooth,
   Database,
   User,
   Clock,
@@ -175,7 +176,7 @@ export default function Header({
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
         {/* Status Pills */}
         <div className="header-status-pills" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          {/* TVS Printer Status */}
+          {/* Bluetooth Thermal Printer Status */}
           <Link
             href="/settings/printer"
             style={{
@@ -191,10 +192,10 @@ export default function Header({
               border: `1px solid ${printerOnline ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`,
               textDecoration: 'none',
             }}
-            title="TVS Thermal Printer Network Connection"
+            title="TVS RP3230ABW Bluetooth Thermal Printer"
           >
-            <Printer style={{ width: '13px', height: '13px' }} />
-            <span>{printerOnline ? 'TVS ONLINE' : 'TVS OFFLINE'}</span>
+            <Bluetooth style={{ width: '13px', height: '13px' }} />
+            <span>{printerOnline ? 'BT READY' : 'BT OFFLINE'}</span>
           </Link>
 
           {/* Real Dynamic Database Health Status */}
