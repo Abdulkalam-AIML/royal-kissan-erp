@@ -7,9 +7,6 @@ export async function middleware(request: NextRequest) {
   // 1. Fast Path: Skip auth checks & Supabase network calls for static assets and public routes
   const isPublicRoute =
     pathname.startsWith('/login') ||
-    pathname.startsWith('/health') ||
-    pathname.startsWith('/debug') ||
-    pathname.startsWith('/diagnostics') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/_next') ||
     pathname === '/manifest.json' ||

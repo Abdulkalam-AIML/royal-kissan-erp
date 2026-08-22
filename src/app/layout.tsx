@@ -5,10 +5,15 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Royal Kissan ERP – Smart Business Management",
-  description: "Complete ERP & Billing Management System for Royal Kissan Packaged Drinking Water. Tally + Inventory + Analytics + Dealer Management in One Software.",
+  title: "Royal Kissan ERP – Enterprise Business System",
+  description: "Official ERP & Thermal POS Management System for Royal Kissan Packaged Drinking Water.",
   manifest: "/manifest.json",
-  keywords: ["ERP", "billing", "inventory", "packaged water", "GST invoice", "dealer management"],
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
+  keywords: ["Royal Kissan", "ERP", "billing", "inventory", "packaged water", "GST invoice", "dealer management"],
 };
 
 export const viewport: Viewport = {

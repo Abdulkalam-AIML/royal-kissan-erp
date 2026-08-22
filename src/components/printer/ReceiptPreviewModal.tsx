@@ -179,10 +179,13 @@ export default function ReceiptPreviewModal({
             >
               {/* Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #18181b', paddingBottom: '12px', marginBottom: '16px' }}>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#dc2626' }}>ROYAL KISSAN</h2>
-                  <div style={{ fontSize: '11px', color: '#52525b' }}>Packaged Drinking Water Solutions</div>
-                  <div style={{ fontSize: '10px', color: '#71717a' }}>GSTIN: 37BABS2021G1Z3 | Ph: +91 93476 62554</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <Image src="/branding/royal-kissan-logo.png" alt="Royal Kissan Logo" width={110} height={44} style={{ objectFit: 'contain' }} />
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#000', letterSpacing: '-0.02em' }}>ROYAL KISSAN</h2>
+                    <div style={{ fontSize: '11px', color: '#52525b', fontWeight: 600 }}>Packaged Drinking Water</div>
+                    <div style={{ fontSize: '10px', color: '#71717a' }}>GSTIN: 37BABS2021G1Z3 | Ph: +91 93476 62554</div>
+                  </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '16px', fontWeight: 800, color: '#18181b' }}>

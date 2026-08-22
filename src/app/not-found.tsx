@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import Link from 'next/link'
 
 export default function NotFound() {
@@ -12,8 +13,8 @@ export default function NotFound() {
       fontFamily: 'Inter, system-ui, sans-serif',
     }}>
       <div style={{ textAlign: 'center', maxWidth: '400px', padding: '2rem' }}>
-        <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🔍</div>
-        <h1 style={{ fontSize: '3rem', fontWeight: '800', marginBottom: '0.5rem', letterSpacing: '-0.03em' }}>
+        <Image src="/branding/royal-kissan-logo.png" alt="Royal Kissan Logo" width={150} height={60} style={{ objectFit: 'contain', marginBottom: '1.5rem' }} />
+        <h1 style={{ fontSize: '3rem', fontWeight: '800', marginBottom: '0.5rem', letterSpacing: '-0.03em', color: '#fbbf24' }}>
           404
         </h1>
         <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.5rem' }}>

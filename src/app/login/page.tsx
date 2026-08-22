@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -93,16 +94,15 @@ export default function LoginPage() {
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: '64px',
-              height: '64px',
-              borderRadius: '16px',
+              padding: '0.5rem',
+              borderRadius: '20px',
               backgroundColor: '#18181b',
-              border: '2px solid #fbbf24',
+              border: '2px solid rgba(251, 191, 36, 0.4)',
               boxShadow: '0 8px 32px rgba(251, 191, 36, 0.2)',
               marginBottom: '1rem',
             }}
           >
-            <Droplet style={{ width: '32px', height: '32px', color: '#fbbf24' }} />
+            <Image src="/branding/royal-kissan-logo.png" alt="Royal Kissan Logo" width={180} height={72} style={{ objectFit: 'contain' }} priority />
           </div>
           <h1
             style={{

@@ -1,3 +1,5 @@
+import Image from 'next/image'
+
 export default function Loading() {
   return (
     <div
@@ -13,19 +15,18 @@ export default function Loading() {
     >
       <div
         style={{
-          width: '48px',
-          height: '48px',
-          borderRadius: '12px',
+          padding: '0.75rem 1.25rem',
+          borderRadius: '16px',
           backgroundColor: '#18181b',
-          border: '2px solid #fbbf24',
+          border: '2px solid rgba(251, 191, 36, 0.4)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '0 0 20px rgba(251, 191, 36, 0.2)',
+          boxShadow: '0 0 24px rgba(251, 191, 36, 0.2)',
           animation: 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         }}
       >
-        <span className="loading-spinner" style={{ width: '20px', height: '20px' }} />
+        <Image src="/branding/royal-kissan-logo.png" alt="Royal Kissan Logo" width={140} height={56} style={{ objectFit: 'contain' }} priority />
       </div>
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#f4f4f5', letterSpacing: '-0.01em' }}>

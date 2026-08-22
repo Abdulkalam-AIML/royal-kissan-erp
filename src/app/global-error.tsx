@@ -1,5 +1,7 @@
 'use client'
 
+import Image from 'next/image'
+
 export default function GlobalError({
   error,
   reset,
@@ -19,9 +21,9 @@ export default function GlobalError({
         fontFamily: 'Inter, system-ui, sans-serif',
       }}>
         <div style={{ textAlign: 'center', maxWidth: '400px', padding: '2rem' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</div>
+          <Image src="/branding/royal-kissan-logo.png" alt="Royal Kissan Logo" width={140} height={56} style={{ objectFit: 'contain', marginBottom: '1.25rem' }} />
           <h2 style={{ fontSize: '1.5rem', fontWeight: '700', marginBottom: '0.5rem' }}>
-            Something went wrong
+            System Error
           </h2>
           <p style={{ color: 'var(--text-2)', marginBottom: '1.5rem', fontSize: '0.875rem' }}>
             {error.message || 'An unexpected error occurred'}

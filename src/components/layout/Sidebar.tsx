@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import Image from 'next/image'
 import {
   LayoutDashboard,
   Receipt,
@@ -146,18 +147,20 @@ export default function Sidebar({
         <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', textDecoration: 'none' }}>
           <div
             style={{
-              width: '36px',
-              height: '36px',
+              width: '38px',
+              height: '38px',
               borderRadius: '10px',
               backgroundColor: '#18181b',
-              border: '1px solid #fbbf24',
+              border: '1px solid rgba(251, 191, 36, 0.4)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               flexShrink: 0,
+              overflow: 'hidden',
+              padding: '2px',
             }}
           >
-            <Droplet style={{ width: '20px', height: '20px', color: '#fbbf24' }} />
+            <Image src="/branding/royal-kissan-logo.png" alt="Royal Kissan" width={38} height={38} style={{ objectFit: 'contain' }} />
           </div>
           {!collapsed && (
             <div>

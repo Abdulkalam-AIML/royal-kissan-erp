@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { useEffect } from 'react'
 
 export default function Error({
@@ -22,9 +23,9 @@ export default function Error({
       padding: '2rem',
     }}>
       <div style={{ textAlign: 'center', maxWidth: '640px', width: '100%' }}>
-        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>❌</div>
+        <Image src="/branding/royal-kissan-logo.png" alt="Royal Kissan Logo" width={140} height={56} style={{ objectFit: 'contain', marginBottom: '1.25rem' }} />
         <h2 style={{ fontSize: '1.25rem', fontWeight: '700', color: 'var(--text-1)', marginBottom: '0.5rem' }}>
-          Application Render Crash (HTTP 500)
+          Application Error (Recoverable)
         </h2>
         <p style={{ color: 'hsl(0 85% 70%)', marginBottom: '1.5rem', fontSize: '0.9rem', fontWeight: 'bold' }}>
           {error.message || 'Something went wrong loading this page'}
