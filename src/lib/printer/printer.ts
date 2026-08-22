@@ -118,24 +118,37 @@ export async function printViaBluetooth(buffer: Uint8Array): Promise<PrintResult
     }
 
     const server = device.gatt
-    const services = await server.getPrimaryServices()
-    let writeChar: any = null
-
-    for (const service of services) {
-      const chars = await service.getCharacteristics()
-      for (const char of chars) {
-        if (char.properties.write || char.properties.writeWithoutResponse) {
-          writeChar = char
-          break
-        }
+    let services: any[] = []
+    try {
+      services = await server.getPrimaryServices()
+    } catch (serviceErr: any) {
+      return {
+        success: false,
+        message: 'Bluetooth printing is unavailable for this device. TVS RP3230ABW uses RAW TCP (192.168.0.2:9100) as primary connection.',
+        error_code: 'BLUETOOTH_ERROR',
       }
-      if (writeChar) break
+    }
+
+    let writeChar: any = null
+    for (const service of services) {
+      try {
+        const chars = await service.getCharacteristics()
+        for (const char of chars) {
+          if (char.properties.write || char.properties.writeWithoutResponse) {
+            writeChar = char
+            break
+          }
+        }
+        if (writeChar) break
+      } catch {
+        continue
+      }
     }
 
     if (!writeChar) {
       return {
         success: false,
-        message: 'Bluetooth ESC/POS writable characteristic not found on target printer.',
+        message: 'No compatible GATT serial print service found on Bluetooth device. Please use primary RAW TCP (192.168.0.2:9100) connection.',
         error_code: 'BLUETOOTH_ERROR',
       }
     }
