@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { emitDataChange, useDataSyncListener } from '@/lib/events/data-sync'
 import { MapPin, Plus, Truck, User, Calendar, Save, CheckCircle, RefreshCw, Layers } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { DataTable, Column } from '@/components/ui/DataTable'
@@ -23,6 +24,8 @@ export default function RoutesPage() {
   const [newRoute, setNewRoute] = useState({ name: '', area: '', driver_id: '' })
 
   const supabase = createClient()
+
+  useDataSyncListener(['routes', 'drivers', 'all'], () => { loadInitialData() })
 
   useEffect(() => { loadInitialData() }, [])
 
@@ -54,6 +57,7 @@ export default function RoutesPage() {
       if (error) throw error
       setRoutes(prev => [...prev, data])
       setSelectedRoute(data)
+      emitDataChange('routes')
       setShowAddModal(false)
       setNewRoute({ name: '', area: '', driver_id: '' })
     } catch (e: any) {

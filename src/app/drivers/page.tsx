@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { emitDataChange, useDataSyncListener } from '@/lib/events/data-sync'
 
 // Fallback preseeded data for drivers
 const FALLBACK_DRIVERS = [
@@ -500,6 +501,9 @@ export default function DriversPage() {
         }
 
         alert('🎉 Route Run Reconciled & Completed Successfully!')
+        emitDataChange('drivers')
+        emitDataChange('routes')
+        emitDataChange('bills')
         loadProfileHistory(selectedDriver.id)
       } else {
         alert('Failed to save route run: ' + runErr.message)

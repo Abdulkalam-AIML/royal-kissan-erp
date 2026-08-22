@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { emitDataChange, useDataSyncListener } from '@/lib/events/data-sync'
 import { Package, Plus, Edit, Check, X, Shield, RefreshCw } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { DataTable, Column } from '@/components/ui/DataTable'
@@ -30,6 +31,8 @@ export default function ProductsPage() {
   const [addForm, setAddForm] = useState({ name: '', category: 'Can', unit: 'piece', default_rate: 0, gst_rate: 18, hsn_code: '2201', is_active: true })
   const supabase = createClient()
 
+  useDataSyncListener(['products', 'all'], () => { loadProducts() })
+
   useEffect(() => { loadProducts() }, [])
 
   async function loadProducts() {
@@ -53,16 +56,22 @@ export default function ProductsPage() {
     setSaving(true)
     try {
       if (editForm.id) {
-        await supabase.from('products').update({
+        const { data } = await supabase.from('products').update({
           name: editForm.name,
           default_rate: editForm.default_rate,
           gst_rate: editForm.gst_rate,
           hsn_code: editForm.hsn_code,
           is_active: editForm.is_active,
           category: editForm.category,
-        }).eq('id', editForm.id)
+        }).eq('id', editForm.id).select().single()
+
+        if (data) {
+          setProducts(prev => prev.map(p => p.id === editingId ? data : p))
+        } else {
+          setProducts(prev => prev.map(p => p.id === editingId ? { ...p, ...editForm } : p))
+        }
+        emitDataChange('products')
       }
-      setProducts(prev => prev.map(p => p.id === editingId ? { ...p, ...editForm } : p))
     } catch { /* ignore */ }
     setEditingId(null)
     setSaving(false)
@@ -76,8 +85,12 @@ export default function ProductsPage() {
     setSaving(true)
     try {
       const { data } = await supabase.from('products').insert([addForm]).select().single()
-      if (data) setProducts(prev => [...prev, data])
-      else setProducts(prev => [...prev, { ...addForm, id: Date.now().toString() }])
+      if (data) {
+        setProducts(prev => [...prev, data])
+      } else {
+        setProducts(prev => [...prev, { ...addForm, id: Date.now().toString() }])
+      }
+      emitDataChange('products')
     } catch {
       setProducts(prev => [...prev, { ...addForm, id: Date.now().toString() }])
     }

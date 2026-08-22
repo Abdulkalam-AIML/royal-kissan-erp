@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { emitDataChange, useDataSyncListener } from '@/lib/events/data-sync'
 import { 
   Store, 
   Plus, 
@@ -208,6 +209,8 @@ export default function DealersPage() {
 
   const supabase = createClient()
 
+  useDataSyncListener(['dealers', 'all'], () => { loadDealers() })
+
   useEffect(() => { loadDealers() }, [])
   useEffect(() => {
     if (selectedDealer) {
@@ -269,11 +272,11 @@ export default function DealersPage() {
       
       const { data, error } = await supabase.from('dealers').insert([payload]).select().single()
       if (error) throw error
-
       setDealers(prev => [data, ...prev])
       setSelectedDealer(data)
       setShowAddModal(false)
       setNewDealerForm({ name: '', phone: '', address: '', area: '', route: '', gst_number: '', credit_limit: 50000 })
+      emitDataChange('dealers')
       alert('✅ New Dealer account created successfully!')
     } catch (e: any) {
       alert(`Error saving dealer: ${e.message}`)
@@ -308,6 +311,8 @@ export default function DealersPage() {
       setSelectedDealer(updated)
       setShowCollectModal(false)
       setCollectForm({ amount: 0, mode: 'cash', notes: 'Dealer Due Payment' })
+      emitDataChange('dealers')
+      emitDataChange('collections')
       alert('✅ Payment collected successfully!')
     } catch (e: any) {
       alert(`Error: ${e.message}`)
@@ -370,6 +375,8 @@ export default function DealersPage() {
       }).eq('id', selectedDealer.id)
 
       setSelectedDealer((prev: any) => (prev ? { ...prev, outstanding_amount: updatedDue } : null))
+      emitDataChange('dealers')
+      emitDataChange('bills')
 
       alert(`✅ Bill ${invNo} saved successfully! Current Dealer Balance Due: ${formatCurrency(updatedDue)}`)
       if (shouldPrint) {

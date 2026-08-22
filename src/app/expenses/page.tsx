@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { emitDataChange, useDataSyncListener } from '@/lib/events/data-sync'
 import { DollarSign, Plus, Trash2, Calendar, FileText, X } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { DataTable, Column } from '@/components/ui/DataTable'
@@ -38,6 +39,8 @@ export default function ExpensesPage() {
   const [saving, setSaving] = useState(false)
   const supabase = createClient()
 
+  useDataSyncListener(['expenses', 'all'], () => { loadExpenses() })
+
   useEffect(() => {
     loadExpenses()
   }, [])
@@ -65,10 +68,16 @@ export default function ExpensesPage() {
     }
     setSaving(true)
     try {
-      await supabase.from('expenses').insert({
+      const { data } = await supabase.from('expenses').insert({
         ...form,
         amount: Number(form.amount),
-      })
+      }).select().single()
+
+      if (data) {
+        setExpenses(prev => [data, ...prev])
+      }
+      emitDataChange('expenses')
+
       setShowModal(false)
       setForm({
         category_name: CATEGORIES[0],
@@ -89,6 +98,8 @@ export default function ExpensesPage() {
     if (!confirm('Are you sure you want to delete this expense entry?')) return
     try {
       await supabase.from('expenses').delete().eq('id', id)
+      setExpenses(prev => prev.filter(item => item.id !== id))
+      emitDataChange('expenses')
       loadExpenses()
     } catch (e: any) {
       alert(`Error: ${e.message}`)

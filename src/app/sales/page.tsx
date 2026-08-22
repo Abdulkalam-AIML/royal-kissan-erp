@@ -13,12 +13,15 @@ import { executePrintJob } from '@/lib/printer/printer'
 import ReceiptPreviewModal from '@/components/printer/ReceiptPreviewModal'
 import { BillData } from '@/lib/printer/receipt'
 import { CopyType } from '@/lib/printer/printer-config'
+import { useDataSyncListener } from '@/lib/events/data-sync'
 
 export default function SalesPage() {
   const [sales, setSales] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [previewBill, setPreviewBill] = useState<any | null>(null)
   const supabase = createClient()
+
+  useDataSyncListener(['bills', 'all'], () => { loadSales() })
 
   useEffect(() => { loadSales() }, [])
 

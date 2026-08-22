@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { emitDataChange, useDataSyncListener } from '@/lib/events/data-sync'
 import { Boxes, Plus, AlertTriangle, ArrowUpRight, ArrowDownLeft, Package, Check, X, Shield } from 'lucide-react'
 import { DataTable, Column } from '@/components/ui/DataTable'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
@@ -34,6 +35,8 @@ export default function StockPage() {
   const [form, setForm] = useState({ item: STOCK_ITEMS[0].name, quantity: 0, notes: '' })
   const [saving, setSaving] = useState(false)
   const supabase = createClient()
+
+  useDataSyncListener(['stock', 'all'], () => { loadStockData() })
 
   useEffect(() => { loadStockData() }, [])
 
@@ -78,13 +81,19 @@ export default function StockPage() {
     }
     setSaving(true)
     try {
-      await supabase.from('stock_transactions').insert([{
+      const { data } = await supabase.from('stock_transactions').insert([{
         transaction_type: txType,
         quantity: form.quantity,
         item_name: form.item,
         notes: form.notes ? `${form.notes} [${form.item}]` : `[${form.item}]`,
         reference_type: txType === 'opening' ? 'opening_balance' : 'adjustment',
-      }])
+      }]).select().single()
+
+      if (data) {
+        setTransactions(prev => [data, ...prev])
+      }
+      emitDataChange('stock')
+
       setShowModal(false)
       setForm({ item: STOCK_ITEMS[0].name, quantity: 0, notes: '' })
       loadStockData()

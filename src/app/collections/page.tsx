@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useDataSyncListener } from '@/lib/events/data-sync'
 import { CreditCard, DollarSign, Smartphone, RefreshCw } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { DataTable, Column } from '@/components/ui/DataTable'
@@ -14,6 +15,8 @@ export default function CollectionsPage() {
   const [collections, setCollections] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
+
+  useDataSyncListener(['collections', 'bills', 'all'], () => { loadCollections() })
 
   useEffect(() => { loadCollections() }, [])
 

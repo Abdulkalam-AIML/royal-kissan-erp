@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useDataSyncListener } from '@/lib/events/data-sync'
 import { BarChart3, DollarSign, ArrowUpRight, ArrowDownLeft, TrendingUp, RefreshCw } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
@@ -14,6 +15,8 @@ export default function ProfitLossPage() {
   const [period, setPeriod] = useState<'today' | 'week' | 'month' | 'quarter' | 'year'>('month')
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
+
+  useDataSyncListener(['bills', 'expenses', 'all'], () => { loadData() })
 
   useEffect(() => {
     loadData()

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { emitDataChange, useDataSyncListener } from '@/lib/events/data-sync'
 import { Users, Plus, Phone, MapPin, FileText, CheckCircle, X, Receipt } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { DataTable, Column } from '@/components/ui/DataTable'
@@ -18,6 +19,8 @@ export default function CustomersPage() {
   const [form, setForm] = useState({ name: '', phone: '', address: '', area: '', gst_number: '' })
   const [saving, setSaving] = useState(false)
   const supabase = createClient()
+
+  useDataSyncListener(['customers', 'all'], () => { loadCustomers() })
 
   useEffect(() => {
     loadCustomers()
@@ -45,7 +48,12 @@ export default function CustomersPage() {
     }
     setSaving(true)
     try {
-      await supabase.from('customers').insert([form])
+      const { data } = await supabase.from('customers').insert([form]).select().single()
+      if (data) {
+        setCustomers(prev => [data, ...prev])
+      }
+      emitDataChange('customers')
+
       setShowModal(false)
       setForm({ name: '', phone: '', address: '', area: '', gst_number: '' })
       loadCustomers()

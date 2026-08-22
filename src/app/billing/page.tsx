@@ -36,6 +36,7 @@ import {
 import ReceiptPreviewModal from '@/components/printer/ReceiptPreviewModal'
 import { executePrintJob } from '@/lib/printer/printer'
 import { BillData } from '@/lib/printer/receipt'
+import { emitDataChange } from '@/lib/events/data-sync'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -512,6 +513,11 @@ export default function BillingPage() {
 
       setSavedSale(createdBill)
       setRecentBills(prev => [createdBill, ...prev.slice(0, 19)])
+
+      // Trigger instant global ERP data cache invalidation for all modules & dashboard
+      emitDataChange('bills')
+      emitDataChange('stock')
+      emitDataChange('collections')
 
       if (printMode === 'preview' || shouldPrint) {
         setIsPreviewOpen(true)

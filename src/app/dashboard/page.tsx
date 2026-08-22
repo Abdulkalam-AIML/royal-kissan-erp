@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useDataSyncListener } from '@/lib/events/data-sync'
 import dynamic from 'next/dynamic'
 import ErrorBoundary from '@/components/common/ErrorBoundary'
 import { formatCurrency } from '@/lib/utils/formatters'
@@ -101,6 +102,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
+  useDataSyncListener(['all', 'bills', 'expenses', 'products', 'dealers', 'collections', 'stock'], () => {
+    loadDashboardData()
+  })
+
   useEffect(() => {
     loadDashboardData()
   }, [])
@@ -111,25 +116,18 @@ export default function DashboardPage() {
       const todayStr = new Date().toISOString().split('T')[0]
       const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
 
-      const fetchPromise = Promise.all([
-        supabase.from('bills').select('total_amount, paid_amount, due_amount, cash_amount, upi_amount').gte('date', todayStr),
+      const [todayBillsRes, monthBillsRes, routeSalesRes, recentBillsRes, expensesRes] = await Promise.all([
+        supabase.from('bills').select('total_amount, paid_amount, due_amount, cash_amount, upi_amount, card_amount').gte('date', todayStr),
         supabase.from('bills').select('total_amount, paid_amount, due_amount').gte('date', firstDayOfMonth),
         supabase.from('route_sales').select('total_amount, cash_paid, upi_paid, due_amount').gte('sale_date', todayStr),
-        supabase.from('bills').select('id, date, invoice_number, customer_name, bill_type, total_amount, paid_amount, due_amount, payment_status, created_at').order('created_at', { ascending: false }).limit(6)
-      ])
-
-      const timeoutPromise = new Promise<any>((resolve) =>
-        setTimeout(() => resolve([{ data: [] }, { data: [] }, { data: [] }, { data: [] }]), 2500)
-      )
-
-      const [todayBillsRes, monthBillsRes, routeSalesRes, recentBillsRes] = await Promise.race([
-        fetchPromise,
-        timeoutPromise
+        supabase.from('bills').select('id, date, invoice_number, customer_name, bill_type, total_amount, paid_amount, due_amount, payment_status, created_at').order('created_at', { ascending: false }).limit(6),
+        supabase.from('expenses').select('amount').gte('date', firstDayOfMonth)
       ])
 
       const todayBills = todayBillsRes?.data || []
       const monthBills = monthBillsRes?.data || []
       const routeSales = routeSalesRes?.data || []
+      const monthExpenses = expensesRes?.data || []
 
       let tSales = 0
       let tPaid = 0
@@ -164,6 +162,11 @@ export default function DashboardPage() {
         mDue += Number(b.due_amount) || 0
       })
 
+      let totalExp = 0
+      monthExpenses.forEach((e: any) => {
+        totalExp += Number(e.amount) || 0
+      })
+
       setStats({
         todaySales: tSales,
         todayCollection: tPaid,
@@ -173,7 +176,7 @@ export default function DashboardPage() {
         monthlySales: mSales,
         monthlyCollection: mPaid,
         monthlyDue: mDue,
-        totalExpenses: 0,
+        totalExpenses: totalExp,
         driverSales: { nagaraju: 0, driver2: 0 },
         dealerSales: 0,
         companySales: tSales,

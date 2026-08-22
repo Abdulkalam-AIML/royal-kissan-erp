@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { emitDataChange, useDataSyncListener } from '@/lib/events/data-sync'
 import { AlertCircle, DollarSign, RefreshCw, X, Receipt } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { DataTable, Column } from '@/components/ui/DataTable'
@@ -18,6 +19,8 @@ export default function DuesPage() {
   const [paymentAmount, setPaymentAmount] = useState<number>(0)
   const [updating, setUpdating] = useState(false)
   const supabase = createClient()
+
+  useDataSyncListener(['dues', 'bills', 'collections', 'all'], () => { loadDues() })
 
   useEffect(() => { loadDues() }, [])
 
@@ -63,6 +66,18 @@ export default function DuesPage() {
     try {
       const newDue = Math.max(0, (showCollectModal.due_amount || 0) - paymentAmount)
       await supabase.from('customer_dues').update({ due_amount: newDue }).eq('id', showCollectModal.id)
+      
+      // Also log collection
+      await supabase.from('dealer_collections').insert([{
+        amount: paymentAmount,
+        collected_date: new Date().toISOString().split('T')[0],
+        payment_mode: 'cash',
+        notes: `Due Collection for ${showCollectModal.customer_name || 'Customer'}`
+      }])
+
+      emitDataChange('dues')
+      emitDataChange('collections')
+
       setShowCollectModal(null)
       setPaymentAmount(0)
       loadDues()
