@@ -11,6 +11,8 @@ import { Badge } from '@/components/ui/Badge'
 import { SkeletonTable } from '@/components/ui/Skeleton'
 import { executePrintJob } from '@/lib/printer/printer'
 import ReceiptPreviewModal from '@/components/printer/ReceiptPreviewModal'
+import { BillData } from '@/lib/printer/receipt'
+import { CopyType } from '@/lib/printer/printer-config'
 
 export default function SalesPage() {
   const [sales, setSales] = useState<any[]>([])
@@ -25,7 +27,7 @@ export default function SalesPage() {
     try {
       const { data } = await supabase
         .from('bills')
-        .select('id, invoice_number, date, customer_name, customer_phone, bill_type, total_amount, paid_amount, due_amount, payment_mode, created_at')
+        .select('id, invoice_number, date, customer_name, customer_phone, customer_address, customer_gstin, dealer_id, bill_type, total_amount, paid_amount, due_amount, payment_mode, created_at')
         .order('created_at', { ascending: false })
         .limit(100)
       setSales(data || [])
@@ -36,14 +38,21 @@ export default function SalesPage() {
     }
   }
 
-  async function handleReprint(bill: any) {
+  async function handleReprint(bill: any, copyType: CopyType = 'customer') {
     const total = Number(bill.total_amount) || 0
-    const billData = {
+    const billData: BillData = {
       invoice_number: bill.invoice_number || `INV-${bill.id}`,
       date: bill.date || new Date().toISOString().split('T')[0],
       customer_name: bill.customer_name || 'Walk-in Customer',
       customer_phone: bill.customer_phone || '',
-      items: [
+      customer_address: bill.customer_address || '',
+      customer_gstin: bill.customer_gstin || '',
+      dealer_id: bill.dealer_id || null,
+      dealer_name: bill.dealer_id ? bill.customer_name : null,
+      dealer_phone: bill.dealer_id ? bill.customer_phone : null,
+      dealer_address: bill.dealer_id ? bill.customer_address : null,
+      dealer_gstin: bill.dealer_id ? bill.customer_gstin : null,
+      items: bill.items && bill.items.length > 0 ? bill.items : [
         {
           product_name: bill.product_name || 'Water Can (20L)',
           quantity: Number(bill.quantity) || 1,
@@ -59,9 +68,9 @@ export default function SalesPage() {
       payment_method: bill.payment_mode || 'cash',
     }
 
-    const res = await executePrintJob(billData, { copyType: 'duplicate' })
+    const res = await executePrintJob(billData, { copyType })
     if (res.success) {
-      alert(`🎉 Receipt ${billData.invoice_number} sent to printer!`)
+      alert(`🎉 ${copyType.toUpperCase()} COPY ${billData.invoice_number} sent to printer!`)
     } else {
       alert(`Print Error: ${res.message}`)
     }

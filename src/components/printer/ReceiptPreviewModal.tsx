@@ -56,6 +56,7 @@ export default function ReceiptPreviewModal({
     ? new Date(bill.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
     : new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
 
+  const isDealerCopy = copyType === 'dealer' || Boolean(bill.dealer_name || bill.dealer_id)
   const isGstOn = bill.bill_type !== 'non_gst_invoice' && bill.gst_amount > 0
   const grandTotal = Number(bill.total_amount || 0)
   const subtotal = Number(bill.subtotal || 0)
@@ -66,6 +67,11 @@ export default function ReceiptPreviewModal({
   const taxableAmount = Math.max(0, subtotal - discount)
   const paidAmount = Number(bill.paid_amount || 0)
   const dueAmount = Number(bill.due_amount || 0)
+
+  const dealerDisplayName = bill.dealer_name || bill.customer_name || 'Dealer'
+  const dealerPhone = bill.dealer_phone || bill.customer_phone
+  const dealerAddress = bill.dealer_address || bill.customer_address
+  const dealerGstin = bill.dealer_gstin || bill.customer_gstin
 
   const handlePrintClick = async () => {
     if (formatMode === 'A4') {
@@ -131,7 +137,7 @@ export default function ReceiptPreviewModal({
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Printer style={{ width: '20px', height: '20px', color: '#fbbf24' }} />
             <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#f4f4f5', margin: 0 }}>
-              Print Template ({formatMode.toUpperCase()})
+              Print Template ({isDealerCopy ? 'DEALER COPY' : formatMode.toUpperCase()})
             </h3>
           </div>
 
@@ -193,6 +199,7 @@ export default function ReceiptPreviewModal({
               }}
             >
               <option value="customer">Customer Copy</option>
+              <option value="dealer">Dealer Copy</option>
               <option value="kitchen">Kitchen Copy</option>
               <option value="office">Office Copy</option>
               <option value="company">Company Copy</option>
@@ -242,20 +249,23 @@ export default function ReceiptPreviewModal({
                   <div style={{ fontSize: '18px', fontWeight: 900, color: '#000', letterSpacing: '-0.02em' }}>
                     {isGstOn ? 'TAX INVOICE' : 'RETAIL INVOICE'}
                   </div>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#27272a', marginTop: '4px' }}>
-                    *** {copyType.toUpperCase()} COPY ***
+                  <div style={{ fontSize: '12px', fontWeight: 900, color: isDealerCopy ? '#dc2626' : '#27272a', marginTop: '4px', textTransform: 'uppercase' }}>
+                    *** {isDealerCopy ? 'DEALER COPY' : `${copyType.toUpperCase()} COPY`} ***
                   </div>
                 </div>
               </div>
 
-              {/* Invoice Meta & Customer Details */}
+              {/* Invoice Meta & Customer / Dealer Details */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', backgroundColor: '#f4f4f5', padding: '12px 16px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #e4e4e7' }}>
                 <div>
-                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#52525b', textTransform: 'uppercase', marginBottom: '4px' }}>Billed To:</div>
-                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#000' }}>{bill.customer_name}</div>
-                  {bill.customer_phone && <div style={{ fontSize: '11px', color: '#27272a' }}>Phone: {bill.customer_phone}</div>}
-                  {bill.customer_address && <div style={{ fontSize: '11px', color: '#27272a' }}>Address: {bill.customer_address}</div>}
-                  {bill.customer_gstin && <div style={{ fontSize: '11px', fontWeight: 700, color: '#000' }}>GSTIN: {bill.customer_gstin}</div>}
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: isDealerCopy ? '#dc2626' : '#52525b', textTransform: 'uppercase', marginBottom: '4px' }}>
+                    {isDealerCopy ? 'DEALER INFORMATION:' : 'Billed To:'}
+                  </div>
+                  <div style={{ fontSize: '14px', fontWeight: 900, color: '#000' }}>{dealerDisplayName}</div>
+                  {dealerPhone && <div style={{ fontSize: '11px', color: '#27272a' }}>Phone: {dealerPhone}</div>}
+                  {dealerAddress && <div style={{ fontSize: '11px', color: '#27272a' }}>Address: {dealerAddress}</div>}
+                  {dealerGstin && <div style={{ fontSize: '11px', fontWeight: 700, color: '#000' }}>GSTIN: {dealerGstin}</div>}
+                  {bill.dealer_code && <div style={{ fontSize: '10px', color: '#52525b' }}>Dealer Code: {bill.dealer_code}</div>}
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '11px', fontWeight: 800, color: '#52525b', textTransform: 'uppercase', marginBottom: '4px' }}>Invoice Details:</div>
@@ -419,8 +429,8 @@ export default function ReceiptPreviewModal({
                 <div style={{ fontSize: '9px', margin: '2px 0' }}>15-2 Behind AnjaneyaSwami Temple, Sri Ram Nagar, Chintalapudi</div>
                 <div style={{ fontSize: '10px' }}>Ph: +91 93476 62554</div>
                 <div style={{ fontSize: '10px' }}>GSTIN: 37BABS2021G1Z3</div>
-                <div style={{ fontSize: '10px', fontWeight: 'bold', marginTop: '4px' }}>
-                  *** {copyType.toUpperCase()} COPY ***
+                <div style={{ fontSize: '11px', fontWeight: 'bold', marginTop: '6px', color: isDealerCopy ? '#dc2626' : '#000' }}>
+                  *** {isDealerCopy ? 'DEALER COPY' : `${copyType.toUpperCase()} COPY`} ***
                 </div>
               </div>
 
@@ -428,15 +438,30 @@ export default function ReceiptPreviewModal({
 
               {/* Meta */}
               <div style={{ fontSize: '11px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Inv #: {bill.invoice_number}</span>
-                  <span>{formattedDate}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Cust: {bill.customer_name}</span>
-                  <span>{timeStr}</span>
-                </div>
-                {bill.customer_phone && <div>Ph  : {bill.customer_phone}</div>}
+                {isDealerCopy ? (
+                  <>
+                    <div><strong>DEALER:</strong> {dealerDisplayName}</div>
+                    {dealerPhone && <div><strong>PHONE :</strong> {dealerPhone}</div>}
+                    {dealerAddress && <div><strong>ADDR  :</strong> {dealerAddress}</div>}
+                    {dealerGstin && <div><strong>GSTIN :</strong> {dealerGstin}</div>}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                      <span>INV: {bill.invoice_number}</span>
+                      <span>{formattedDate}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Inv #: {bill.invoice_number}</span>
+                      <span>{formattedDate}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Cust: {bill.customer_name}</span>
+                      <span>{timeStr}</span>
+                    </div>
+                    {bill.customer_phone && <div>Ph  : {bill.customer_phone}</div>}
+                  </>
+                )}
               </div>
 
               <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
@@ -518,7 +543,7 @@ export default function ReceiptPreviewModal({
               </div>
 
               <div style={{ textAlign: 'center', marginTop: '12px', fontSize: '10px' }}>
-                Thank You! Visit Again.
+                {isDealerCopy ? 'DEALER COPY — ROYAL KISSAN' : 'Thank You! Visit Again.'}
               </div>
             </div>
           )}
@@ -554,14 +579,28 @@ export default function ReceiptPreviewModal({
                 <div style={{ fontSize: '8px' }}>15-2 Sri Ram Nagar, Chintalapudi</div>
                 <div style={{ fontSize: '9px' }}>Ph: +91 93476 62554</div>
                 <div style={{ fontSize: '9px' }}>GST: 37BABS2021G1Z3</div>
+                <div style={{ fontSize: '10px', fontWeight: 'bold', marginTop: '4px', color: isDealerCopy ? '#dc2626' : '#000' }}>
+                  *** {isDealerCopy ? 'DEALER COPY' : `${copyType.toUpperCase()} COPY`} ***
+                </div>
               </div>
 
               <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }} />
 
               <div style={{ fontSize: '9px' }}>
-                <div>Inv #: {bill.invoice_number}</div>
-                <div>Date : {formattedDate} {timeStr}</div>
-                <div>Cust : {bill.customer_name}</div>
+                {isDealerCopy ? (
+                  <>
+                    <div><strong>DEALER:</strong> {dealerDisplayName}</div>
+                    {dealerPhone && <div><strong>PHONE :</strong> {dealerPhone}</div>}
+                    {dealerGstin && <div><strong>GSTIN :</strong> {dealerGstin}</div>}
+                    <div>INV: {bill.invoice_number} | {formattedDate}</div>
+                  </>
+                ) : (
+                  <>
+                    <div>Inv #: {bill.invoice_number}</div>
+                    <div>Date : {formattedDate} {timeStr}</div>
+                    <div>Cust : {bill.customer_name}</div>
+                  </>
+                )}
               </div>
 
               <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }} />

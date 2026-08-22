@@ -21,6 +21,12 @@ export interface BillData {
   customer_phone?: string | null
   customer_address?: string | null
   customer_gstin?: string | null
+  dealer_id?: string | null
+  dealer_name?: string | null
+  dealer_phone?: string | null
+  dealer_address?: string | null
+  dealer_gstin?: string | null
+  dealer_code?: string | null
   subtotal: number
   gst_amount: number
   discount_amount?: number
@@ -78,8 +84,9 @@ export function generateReceiptBuffer(
   builder.line('GSTIN: 37BABS2021G1Z3')
 
   // Copy Type Header Badge
+  const isDealerCopy = copyType === 'dealer' || Boolean(bill.dealer_name || bill.dealer_id)
   builder.bold(true)
-  const copyLabel = copyType.toUpperCase() + ' COPY'
+  const copyLabel = isDealerCopy ? 'DEALER COPY' : copyType.toUpperCase() + ' COPY'
   builder.line(`*** ${copyLabel} ***`)
   builder.bold(false)
 
@@ -94,10 +101,26 @@ export function generateReceiptBuffer(
 
   builder.twoColumn('Date:', bill.date)
   builder.twoColumn('Time:', timeStr)
-  builder.twoColumn('Customer:', bill.customer_name || 'Walk-in Customer')
-  if (bill.customer_phone) {
-    builder.twoColumn('Phone:', bill.customer_phone)
+
+  if (isDealerCopy) {
+    const dName = bill.dealer_name || bill.customer_name || 'Dealer'
+    builder.twoColumn('Dealer:', dName)
+    if (bill.dealer_phone || bill.customer_phone) {
+      builder.twoColumn('Phone:', bill.dealer_phone || bill.customer_phone || '')
+    }
+    if (bill.dealer_address || bill.customer_address) {
+      builder.twoColumn('Address:', bill.dealer_address || bill.customer_address || '')
+    }
+    if (bill.dealer_gstin || bill.customer_gstin) {
+      builder.twoColumn('GSTIN:', bill.dealer_gstin || bill.customer_gstin || '')
+    }
+  } else {
+    builder.twoColumn('Customer:', bill.customer_name || 'Walk-in Customer')
+    if (bill.customer_phone) {
+      builder.twoColumn('Phone:', bill.customer_phone)
+    }
   }
+
   if (bill.bill_type) {
     const formattedType = bill.bill_type.replace('_', ' ').toUpperCase()
     builder.twoColumn('Bill Type:', formattedType)

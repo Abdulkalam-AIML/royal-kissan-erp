@@ -1,6 +1,6 @@
 export type PaperWidth = '80mm' | '58mm'
 export type ConnectionType = 'wifi' | 'bluetooth' | 'usb'
-export type CopyType = 'customer' | 'kitchen' | 'office' | 'company' | 'duplicate'
+export type CopyType = 'customer' | 'dealer' | 'kitchen' | 'office' | 'company' | 'duplicate'
 
 export interface PrinterSettings {
   id?: string

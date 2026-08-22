@@ -41,7 +41,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Input, Select } from '@/components/ui/Input'
 
-type BillType = 'driver_sale' | 'company_sale' | 'dealer_invoice' | 'gst_invoice' | 'non_gst_invoice'
+type BillType = 'driver_sale' | 'company_sale' | 'dealer_invoice' | 'gst_invoice' | 'non_gst_invoice' | 'dealer_sale'
 type PaymentMode = 'cash' | 'upi' | 'card' | 'due' | 'mixed'
 type InvoiceFormat = '80mm' | '58mm' | 'A4'
 type PrintMode = 'auto' | 'preview' | 'save_only'
@@ -155,7 +155,7 @@ export default function BillingPage() {
       const fetchPromise = Promise.all([
         supabase.from('products').select('id, name, default_rate, gst_rate, category').eq('is_active', true),
         supabase.from('customers').select('id, name, phone, address, gstin').limit(100),
-        supabase.from('dealers').select('id, name, phone').order('name'),
+        supabase.from('dealers').select('id, name, phone, address, gstin, dealer_code').order('name'),
         supabase.from('drivers').select('id, name, phone').order('name'),
         supabase.from('bills').select('id, invoice_number, date, customer_name, total_amount, paid_amount, due_amount, payment_status, bill_type').order('created_at', { ascending: false }).limit(20),
         supabase.from('printer_settings').select('printer_ip, paper_width').eq('is_default', true).maybeSingle()
@@ -364,6 +364,7 @@ export default function BillingPage() {
   }
 
   function getCurrentBillDataObject(): BillData {
+    const selectedDealer = dealers.find(d => d.id === selectedDealerId)
     return {
       id: savedSale?.id,
       invoice_number: savedSale?.invoice_number || invoiceNumber,
@@ -372,6 +373,12 @@ export default function BillingPage() {
       customer_phone: customerPhone || null,
       customer_address: customerAddress || null,
       customer_gstin: customerGstin || null,
+      dealer_id: selectedDealerId || null,
+      dealer_name: selectedDealer ? selectedDealer.name : (selectedDealerId ? customerName : null),
+      dealer_phone: selectedDealer ? selectedDealer.phone : (selectedDealerId ? customerPhone : null),
+      dealer_address: selectedDealer ? selectedDealer.address : (selectedDealerId ? customerAddress : null),
+      dealer_gstin: selectedDealer ? selectedDealer.gstin : (selectedDealerId ? customerGstin : null),
+      dealer_code: selectedDealer ? selectedDealer.dealer_code : null,
       subtotal: rawSubtotal,
       gst_amount: totalGst,
       total_amount: grandTotal,
@@ -881,29 +888,76 @@ export default function BillingPage() {
               <Badge variant="neutral">{items.length} items</Badge>
             </div>
 
-            {/* Customer Inputs (Hidden if askCustomerName is false) */}
+            {/* Customer & Dealer Selection Inputs */}
             {askCustomerName && (
-              <div style={{ display: 'grid', gridTemplateColumns: isGstOn ? '1fr 1fr 1fr' : '1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
-                <Input
-                  label="Customer Name"
-                  value={customerName}
-                  placeholder="Walk-in Customer"
-                  onChange={(e) => setCustomerName(e.target.value)}
-                />
-                <Input
-                  label="Phone Number"
-                  value={customerPhone}
-                  placeholder="9876543210"
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                />
-                {isGstOn && (
-                  <Input
-                    label="Customer GSTIN"
-                    value={customerGstin}
-                    placeholder="37ABC..."
-                    onChange={(e) => setCustomerGstin(e.target.value)}
-                  />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
+                {/* Dealer Select Dropdown */}
+                {dealers.length > 0 && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#fbbf24', textTransform: 'uppercase', marginBottom: '0.25rem' }}>
+                      Select Dealer (Optional for Dealer Copy)
+                    </label>
+                    <select
+                      value={selectedDealerId}
+                      onChange={(e) => {
+                        const dId = e.target.value
+                        setSelectedDealerId(dId)
+                        if (dId) {
+                          const d = dealers.find(item => item.id === dId)
+                          if (d) {
+                            setCustomerName(d.name || '')
+                            setCustomerPhone(d.phone || '')
+                            setCustomerGstin(d.gstin || '')
+                            setCustomerAddress(d.address || '')
+                            setBillType('dealer_sale')
+                          }
+                        } else {
+                          setBillType('company_sale')
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        backgroundColor: '#09090b',
+                        color: '#fff',
+                        border: '1px solid #3f3f46',
+                        borderRadius: '6px',
+                        padding: '6px 10px',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                      }}
+                    >
+                      <option value="">-- Direct Retail Customer --</option>
+                      {dealers.map(d => (
+                        <option key={d.id} value={d.id}>
+                          🏢 {d.name} {d.phone ? `(${d.phone})` : ''} {d.dealer_code ? `[${d.dealer_code}]` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: isGstOn ? '1fr 1fr 1fr' : '1fr 1fr', gap: '0.5rem' }}>
+                  <Input
+                    label={selectedDealerId ? "Dealer / Business Name" : "Customer Name"}
+                    value={customerName}
+                    placeholder={selectedDealerId ? "Dealer Name" : "Walk-in Customer"}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                  />
+                  <Input
+                    label="Phone Number"
+                    value={customerPhone}
+                    placeholder="9876543210"
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                  />
+                  {isGstOn && (
+                    <Input
+                      label="GSTIN"
+                      value={customerGstin}
+                      placeholder="37ABC..."
+                      onChange={(e) => setCustomerGstin(e.target.value)}
+                    />
+                  )}
+                </div>
               </div>
             )}
 
