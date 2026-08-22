@@ -132,6 +132,25 @@ export default function BillingPage() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [printFailedBill, setPrintFailedBill] = useState<BillData | null>(null)
+
+  async function handleRetryPrint() {
+    if (!printFailedBill) return
+    setPrintingThermal(true)
+    try {
+      const res = await executePrintJob(printFailedBill, { copyType: 'customer' })
+      if (res.success) {
+        alert(`🎉 Invoice ${printFailedBill.invoice_number} printed successfully!`)
+        setPrintFailedBill(null)
+      } else {
+        alert(`❌ Bluetooth Print Retry Failed: ${res.message}`)
+      }
+    } catch (err: any) {
+      alert(`❌ Print Retry Exception: ${err?.message || err}`)
+    } finally {
+      setPrintingThermal(false)
+    }
+  }
 
   const searchInputRef = useRef<HTMLInputElement>(null)
   const supabase = createClient()
@@ -523,23 +542,37 @@ export default function BillingPage() {
         setIsPreviewOpen(true)
       }
 
-      // Non-blocking separate thermal printing step
-      if (shouldPrint && printMode === 'auto') {
+      // Bluetooth Thermal Printing Step
+      let printSuccess = true
+      let printErrorMessage = ''
+
+      if (shouldPrint) {
+        const billDataObj = getCurrentBillDataObject()
         try {
           setPrintingThermal(true)
-          const billDataObj = getCurrentBillDataObject()
-          await executePrintJob(billDataObj, { copyType: 'customer' })
-        } catch (printErr) {
-          console.warn('Printer offline, bill remains saved:', printErr)
+          const printRes = await executePrintJob(billDataObj, { copyType: 'customer' })
+          if (!printRes.success) {
+            printSuccess = false
+            printErrorMessage = printRes.message
+            setPrintFailedBill(billDataObj)
+          } else {
+            setPrintFailedBill(null)
+          }
+        } catch (printErr: any) {
+          printSuccess = false
+          printErrorMessage = printErr?.message || 'Printer connection failed'
+          setPrintFailedBill(billDataObj)
         } finally {
           setPrintingThermal(false)
         }
       }
 
-      if (isOfflineSaved) {
+      if (shouldPrint && !printSuccess) {
+        alert(`⚠️ Bill ${invoiceNumber} saved successfully, but printer connection failed. You can click [ Retry Print ] to print.`)
+      } else if (isOfflineSaved) {
         alert(`⚡ Bill ${invoiceNumber} saved in POS Local Mode! (Queued to auto-sync to cloud when online)`)
       } else {
-        alert(`✅ Bill ${invoiceNumber} saved successfully!`)
+        alert(`✅ Bill ${invoiceNumber} saved & printed successfully!`)
       }
     } catch (e: any) {
       console.error('POS Bill Save Error:', e)
@@ -722,6 +755,36 @@ export default function BillingPage() {
               </div>
             </div>
 
+          </div>
+        </Card>
+      )}
+
+      {/* Bluetooth Printer Retry Alert Banner */}
+      {printFailedBill && (
+        <Card style={{ padding: '0.85rem 1.25rem', backgroundColor: 'rgba(245, 158, 11, 0.15)', border: '1px solid #f59e0b' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <span style={{ color: '#fbbf24', fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <AlertTriangle style={{ width: '18px', height: '18px' }} />
+              Bill <strong style={{ color: '#fff' }}>{printFailedBill.invoice_number}</strong> saved successfully, but printer connection failed.
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={printingThermal}
+                onClick={handleRetryPrint}
+                style={{ backgroundColor: '#f59e0b', color: '#000', fontWeight: 800 }}
+              >
+                Retry Print
+              </Button>
+              <button
+                type="button"
+                onClick={() => setPrintFailedBill(null)}
+                style={{ background: 'none', border: 'none', color: '#fbbf24', cursor: 'pointer', fontSize: '0.8rem' }}
+              >
+                Dismiss
+              </button>
+            </div>
           </div>
         </Card>
       )}
