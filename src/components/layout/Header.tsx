@@ -51,7 +51,7 @@ export default function Header({
 
   const [timeStr, setTimeStr] = useState('')
   const [printerOnline, setPrinterOnline] = useState(true)
-  const [dbOnline, setDbOnline] = useState(true)
+  const [dbState, setDbState] = useState<'checking' | 'connected' | 'offline' | 'error'>('checking')
 
   useEffect(() => {
     const updateTime = () => {
@@ -66,11 +66,11 @@ export default function Header({
     updateTime()
     const timer = setInterval(updateTime, 5000)
 
-    // Check Printer status ping with 800ms timeout guard
+    // Check Printer & DB Health
     const checkHealth = async () => {
       try {
         const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 800)
+        const timeoutId = setTimeout(() => controller.abort(), 1200)
         const res = await fetch('/api/print/health', { signal: controller.signal })
         clearTimeout(timeoutId)
         const data = await res.json()
@@ -78,10 +78,31 @@ export default function Header({
       } catch (e) {
         setPrinterOnline(false)
       }
+
+      try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 1800)
+        const res = await fetch('/api/health', { signal: controller.signal })
+        clearTimeout(timeoutId)
+        const data = await res.json()
+        if (data.db === 'connected') {
+          setDbState('connected')
+        } else if (data.db === 'offline') {
+          setDbState('offline')
+        } else {
+          setDbState('error')
+        }
+      } catch (e) {
+        setDbState('offline')
+      }
     }
     checkHealth()
+    const healthInterval = setInterval(checkHealth, 15000)
 
-    return () => clearInterval(timer)
+    return () => {
+      clearInterval(timer)
+      clearInterval(healthInterval)
+    }
   }, [])
 
   return (
@@ -176,7 +197,7 @@ export default function Header({
             <span>{printerOnline ? 'TVS ONLINE' : 'TVS OFFLINE'}</span>
           </Link>
 
-          {/* Database Status */}
+          {/* Real Dynamic Database Health Status */}
           <div
             style={{
               display: 'inline-flex',
@@ -186,14 +207,29 @@ export default function Header({
               borderRadius: '9999px',
               fontSize: '0.75rem',
               fontWeight: 600,
-              backgroundColor: 'rgba(59, 130, 246, 0.12)',
-              color: '#60a5fa',
-              border: '1px solid rgba(59, 130, 246, 0.25)',
+              backgroundColor:
+                dbState === 'connected' ? 'rgba(16, 185, 129, 0.12)' :
+                dbState === 'checking' ? 'rgba(245, 158, 11, 0.12)' :
+                'rgba(239, 68, 68, 0.12)',
+              color:
+                dbState === 'connected' ? '#34d399' :
+                dbState === 'checking' ? '#fbbf24' :
+                '#f87171',
+              border: `1px solid ${
+                dbState === 'connected' ? 'rgba(16, 185, 129, 0.25)' :
+                dbState === 'checking' ? 'rgba(245, 158, 11, 0.25)' :
+                'rgba(239, 68, 68, 0.25)'
+              }`,
             }}
-            title="Supabase Database Status"
+            title="Real-time Supabase Database Health Check"
           >
             <Database style={{ width: '13px', height: '13px' }} />
-            <span>DB CONNECTED</span>
+            <span>
+              {dbState === 'connected' && 'DB CONNECTED'}
+              {dbState === 'checking' && 'DB CHECKING'}
+              {dbState === 'offline' && 'DB OFFLINE'}
+              {dbState === 'error' && 'DB ERROR'}
+            </span>
           </div>
         </div>
 

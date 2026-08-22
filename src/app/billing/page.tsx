@@ -455,15 +455,20 @@ export default function BillingPage() {
       let createdBill: any = null
 
       // 1. Try atomic PostgreSQL RPC process_pos_bill
-      const rpcResult = await supabase.rpc('process_pos_bill', {
-        p_bill: salePayload,
-        p_items: itemsPayload,
-      })
+      try {
+        const rpcResult = await supabase.rpc('process_pos_bill', {
+          p_bill: salePayload,
+          p_items: itemsPayload,
+        })
+        if (!rpcResult.error && rpcResult.data) {
+          createdBill = rpcResult.data
+        }
+      } catch (rpcErr) {
+        console.warn('RPC process_pos_bill fallback to direct insert:', rpcErr)
+      }
 
-      if (!rpcResult.error && rpcResult.data) {
-        createdBill = rpcResult.data
-      } else {
-        // 2. Direct clean insert into bills table
+      // 2. Direct insert fallback if RPC was not invoked or unavailable
+      if (!createdBill) {
         const { data, error } = await supabase.from('bills').insert([salePayload]).select().single()
         if (error) throw error
         createdBill = data
@@ -481,16 +486,37 @@ export default function BillingPage() {
         setIsPreviewOpen(true)
       }
 
+      // Non-blocking separate printing step
       if (shouldPrint && printMode === 'auto') {
-        setPrintingThermal(true)
-        const billDataObj = getCurrentBillDataObject()
-        await executePrintJob(billDataObj, { copyType: 'customer' })
-        setPrintingThermal(false)
+        try {
+          setPrintingThermal(true)
+          const billDataObj = getCurrentBillDataObject()
+          await executePrintJob(billDataObj, { copyType: 'customer' })
+        } catch (printErr) {
+          console.warn('Printer offline, bill remains saved in DB:', printErr)
+        } finally {
+          setPrintingThermal(false)
+        }
       }
 
       alert(`✅ Bill ${invoiceNumber} saved successfully!`)
     } catch (e: any) {
-      setErrorMessage(`Unable to save bill. Reason: ${e.message || 'Database error'}. Retry?`)
+      console.error('POS Bill Save Error:', e)
+      const rawMsg = e?.message || e?.toString() || ''
+      let userFriendlyMsg = 'Unable to save bill. Database is currently unavailable. Please try again.'
+
+      if (rawMsg.includes('Failed to fetch') || rawMsg.includes('FetchError') || rawMsg.includes('NetworkError') || rawMsg.includes('ENOTFOUND')) {
+        userFriendlyMsg = 'Unable to reach the database server. Check your internet connection or database status and try again.'
+      } else if (rawMsg.includes('JWT') || rawMsg.includes('auth') || rawMsg.includes('session')) {
+        userFriendlyMsg = 'Your authentication session expired. Please refresh the page or sign in again.'
+      } else if (rawMsg.includes('duplicate key') || rawMsg.includes('unique constraint')) {
+        userFriendlyMsg = `Invoice ${invoiceNumber} already exists. A new invoice number has been generated. Please try saving again.`
+        const d = new Date()
+        setInvoiceNumber(`RK-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${Date.now().toString().slice(-4)}`)
+      } else if (rawMsg) {
+        userFriendlyMsg = `Bill save error: ${rawMsg}`
+      }
+      setErrorMessage(userFriendlyMsg)
     } finally {
       setSaving(false)
     }
