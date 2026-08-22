@@ -137,17 +137,32 @@ export default function SalesPage() {
     },
     {
       key: 'actions',
-      title: 'Thermal Print',
-      align: 'right',
+      title: 'Actions',
+      align: 'center',
       render: (b) => (
-        <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
           <Button
             variant="secondary"
             size="sm"
-            icon={<Printer style={{ width: '12px', height: '12px', color: '#fbbf24' }} />}
+            icon={<Eye style={{ width: '13px', height: '13px' }} />}
+            onClick={async () => {
+              // Fetch bill items if not present
+              const { data: itemRows } = await supabase.from('bill_items').select('*').eq('bill_id', b.id)
+              const items = itemRows && itemRows.length > 0 ? itemRows : [
+                { product_name: 'Water Can 20L', quantity: 1, rate: Number(b.total_amount) || 0, amount: Number(b.total_amount) || 0 }
+              ]
+              setPreviewBill({ ...b, items })
+            }}
+          >
+            Preview
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Printer style={{ width: '13px', height: '13px' }} />}
             onClick={() => handleReprint(b)}
           >
-            Reprint
+            Print
           </Button>
         </div>
       ),
@@ -187,6 +202,18 @@ export default function SalesPage() {
           exportFileName="royal-kissan-sales-history"
         />
       )}
+
+      {/* Bill Preview & Reprint Modal (A4, 80mm, 58mm formats) */}
+      <ReceiptPreviewModal
+        isOpen={!!previewBill}
+        bill={previewBill}
+        onClose={() => setPreviewBill(null)}
+        onPrint={async (copyType) => {
+          if (previewBill) {
+            await handleReprint(previewBill)
+          }
+        }}
+      />
     </div>
   )
 }

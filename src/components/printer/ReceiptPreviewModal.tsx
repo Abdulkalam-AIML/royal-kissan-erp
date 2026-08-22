@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Image from 'next/image'
-import { X, Printer, CheckCircle, AlertTriangle, FileText } from 'lucide-react'
+import { X, Printer, CheckCircle, AlertTriangle } from 'lucide-react'
 import { BillData } from '@/lib/printer/receipt'
 import { CopyType } from '@/lib/printer/printer-config'
 
@@ -12,6 +12,29 @@ interface ReceiptPreviewModalProps {
   bill: BillData | null
   onPrint?: (copyType: CopyType) => Promise<void>
   initialFormat?: '80mm' | '58mm' | 'A4'
+}
+
+function numberToIndianRupeesWords(num: number): string {
+  if (!num || num === 0) return 'Zero Rupees Only'
+  const units = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+  
+  function convert(n: number): string {
+    if (n < 20) return units[n]
+    if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + units[n % 10] : '')
+    if (n < 1000) return units[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + convert(n % 100) : '')
+    if (n < 100000) return convert(Math.floor(n / 1000)) + ' Thousand' + (n % 1000 ? ' ' + convert(n % 1000) : '')
+    if (n < 10000000) return convert(Math.floor(n / 100000)) + ' Lakh' + (n % 100000 ? ' ' + convert(n % 100000) : '')
+    return convert(Math.floor(n / 10000000)) + ' Crore' + (n % 10000000 ? ' ' + convert(n % 10000000) : '')
+  }
+
+  const intPart = Math.floor(num)
+  const decPart = Math.round((num - intPart) * 100)
+  let result = convert(intPart) + ' Rupees'
+  if (decPart > 0) {
+    result += ' and ' + convert(decPart) + ' Paise'
+  }
+  return result + ' Only'
 }
 
 export default function ReceiptPreviewModal({
@@ -33,8 +56,26 @@ export default function ReceiptPreviewModal({
     ? new Date(bill.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
     : new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
 
+  const isGstOn = bill.bill_type !== 'non_gst_invoice' && bill.gst_amount > 0
+  const grandTotal = Number(bill.total_amount || 0)
+  const subtotal = Number(bill.subtotal || 0)
+  const discount = Number(bill.discount_amount || 0)
+  const gstAmount = Number(bill.gst_amount || 0)
+  const cgstAmount = isGstOn ? gstAmount / 2 : 0
+  const sgstAmount = isGstOn ? gstAmount / 2 : 0
+  const taxableAmount = Math.max(0, subtotal - discount)
+  const paidAmount = Number(bill.paid_amount || 0)
+  const dueAmount = Number(bill.due_amount || 0)
+
   const handlePrintClick = async () => {
-    if (!onPrint) return
+    if (formatMode === 'A4') {
+      window.print()
+      return
+    }
+    if (!onPrint) {
+      window.print()
+      return
+    }
     setPrinting(true)
     setPrintStatus(null)
     try {
@@ -52,8 +93,8 @@ export default function ReceiptPreviewModal({
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        backdropFilter: 'blur(4px)',
+        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+        backdropFilter: 'blur(6px)',
         zIndex: 9999,
         display: 'flex',
         alignItems: 'center',
@@ -64,19 +105,19 @@ export default function ReceiptPreviewModal({
       <div
         style={{
           backgroundColor: '#18181b',
-          borderRadius: '12px',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          maxWidth: formatMode === 'A4' ? '700px' : '480px',
+          borderRadius: '16px',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          maxWidth: formatMode === 'A4' ? '820px' : '480px',
           width: '100%',
-          maxHeight: '92vh',
+          maxHeight: '94vh',
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
           overflow: 'hidden',
           transition: 'all 0.2s ease',
         }}
       >
-        {/* Modal Header */}
+        {/* Modal Header Bar */}
         <div
           style={{
             padding: '1rem 1.25rem',
@@ -89,8 +130,8 @@ export default function ReceiptPreviewModal({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Printer style={{ width: '20px', height: '20px', color: '#fbbf24' }} />
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#f4f4f5', margin: 0 }}>
-              Invoice Preview ({formatMode.toUpperCase()})
+            <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#f4f4f5', margin: 0 }}>
+              Print Template ({formatMode.toUpperCase()})
             </h3>
           </div>
 
@@ -102,14 +143,15 @@ export default function ReceiptPreviewModal({
                 type="button"
                 onClick={() => setFormatMode(fmt)}
                 style={{
-                  padding: '4px 10px',
+                  padding: '4px 12px',
                   borderRadius: '6px',
                   fontSize: '0.75rem',
-                  fontWeight: 700,
+                  fontWeight: 800,
                   backgroundColor: formatMode === fmt ? '#fbbf24' : 'transparent',
                   color: formatMode === fmt ? '#000' : '#a1a1aa',
                   border: 'none',
                   cursor: 'pointer',
+                  transition: 'all 0.15s ease',
                 }}
               >
                 {fmt}
@@ -131,12 +173,12 @@ export default function ReceiptPreviewModal({
           </button>
         </div>
 
-        {/* Modal Content */}
+        {/* Modal Content Scroll Area */}
         <div style={{ padding: '1.25rem', overflowY: 'auto', flex: 1, backgroundColor: '#27272a' }}>
           
           {/* Copy Selector */}
           <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <label style={{ fontSize: '0.8rem', color: '#e4e4e7', whiteSpace: 'nowrap' }}>Copy Type:</label>
+            <label style={{ fontSize: '0.8rem', color: '#e4e4e7', whiteSpace: 'nowrap', fontWeight: 600 }}>Copy Type:</label>
             <select
               value={copyType}
               onChange={(e) => setCopyType(e.target.value as CopyType)}
@@ -145,7 +187,7 @@ export default function ReceiptPreviewModal({
                 color: '#fff',
                 border: '1px solid #3f3f46',
                 borderRadius: '6px',
-                padding: '4px 8px',
+                padding: '4px 10px',
                 fontSize: '0.85rem',
                 flex: 1,
               }}
@@ -158,122 +200,224 @@ export default function ReceiptPreviewModal({
             </select>
           </div>
 
-          {/* Format Mode Previews */}
-          {formatMode === 'A4' ? (
-            /* A4 Full Sheet Preview */
+          {/* ───────────────────────────────────────────────────────────────── */}
+          {/* TEMPLATE A: A4 FULL GST TAX / RETAIL INVOICE                     */}
+          {/* ───────────────────────────────────────────────────────────────── */}
+          {formatMode === 'A4' && (
             <div
+              className="printable-area"
               style={{
                 backgroundColor: '#fff',
                 color: '#000',
-                fontFamily: "'Helvetica Neue', Arial, sans-serif",
+                fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
                 fontSize: '12px',
                 lineHeight: '1.4',
                 width: '100%',
-                maxWidth: '600px',
+                maxWidth: '740px',
                 margin: '0 auto',
-                padding: '24px',
+                padding: '28px',
                 borderRadius: '4px',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-                border: '1px solid #d4d4d8',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+                border: '1px solid #e4e4e7',
               }}
             >
-              {/* Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #18181b', paddingBottom: '12px', marginBottom: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <Image src="/branding/royal-kissan-logo.png" alt="Royal Kissan Logo" width={110} height={44} style={{ objectFit: 'contain' }} />
+              {/* Header: Logo & Company Info */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #000', paddingBottom: '14px', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
+                  <Image src="/branding/royal-kissan-logo.png" alt="Royal Kissan Logo" width={130} height={52} style={{ objectFit: 'contain' }} priority />
                   <div>
-                    <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#000', letterSpacing: '-0.02em' }}>ROYAL KISSAN</h2>
-                    <div style={{ fontSize: '11px', color: '#52525b', fontWeight: 600 }}>Packaged Drinking Water</div>
-                    <div style={{ fontSize: '10px', color: '#71717a' }}>GSTIN: 37BABS2021G1Z3 | Ph: +91 93476 62554</div>
+                    <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#000', letterSpacing: '-0.02em' }}>ROYAL KISSAN</h2>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#18181b', textTransform: 'uppercase' }}>Packaged Drinking Water</div>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#27272a' }}>BASHU ABBAS BEVERAGES</div>
+                    <div style={{ fontSize: '10px', color: '#52525b', marginTop: '2px' }}>
+                      15-2 Behind AnjaneyaSwami Temple, Sri Ram Nagar, Chintalapudi, Elure-534460
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#52525b', fontWeight: 600 }}>
+                      Ph: +91 93476 62554 | GSTIN: 37BABS2021G1Z3
+                    </div>
                   </div>
                 </div>
+
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '16px', fontWeight: 800, color: '#18181b' }}>
-                    {bill.bill_type === 'non_gst_invoice' ? 'RETAIL INVOICE' : 'TAX INVOICE'}
+                  <div style={{ fontSize: '18px', fontWeight: 900, color: '#000', letterSpacing: '-0.02em' }}>
+                    {isGstOn ? 'TAX INVOICE' : 'RETAIL INVOICE'}
                   </div>
-                  <div style={{ fontSize: '11px', fontWeight: 700 }}>Inv #: {bill.invoice_number}</div>
-                  <div style={{ fontSize: '10px', color: '#71717a' }}>Date: {formattedDate}</div>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#27272a', marginTop: '4px' }}>
+                    *** {copyType.toUpperCase()} COPY ***
+                  </div>
                 </div>
               </div>
 
-              {/* Customer Info */}
-              <div style={{ backgroundColor: '#f4f4f5', padding: '10px 14px', borderRadius: '6px', marginBottom: '16px' }}>
-                <div style={{ fontWeight: 700, marginBottom: '2px' }}>Billed To:</div>
-                <div>Customer: {bill.customer_name}</div>
-                {bill.customer_phone && <div>Phone: {bill.customer_phone}</div>}
-                {bill.customer_address && <div>Address: {bill.customer_address}</div>}
+              {/* Invoice Meta & Customer Details */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', backgroundColor: '#f4f4f5', padding: '12px 16px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #e4e4e7' }}>
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#52525b', textTransform: 'uppercase', marginBottom: '4px' }}>Billed To:</div>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#000' }}>{bill.customer_name}</div>
+                  {bill.customer_phone && <div style={{ fontSize: '11px', color: '#27272a' }}>Phone: {bill.customer_phone}</div>}
+                  {bill.customer_address && <div style={{ fontSize: '11px', color: '#27272a' }}>Address: {bill.customer_address}</div>}
+                  {bill.customer_gstin && <div style={{ fontSize: '11px', fontWeight: 700, color: '#000' }}>GSTIN: {bill.customer_gstin}</div>}
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#52525b', textTransform: 'uppercase', marginBottom: '4px' }}>Invoice Details:</div>
+                  <div style={{ fontSize: '12px', fontWeight: 800 }}>Invoice #: <span style={{ color: '#000' }}>{bill.invoice_number}</span></div>
+                  <div style={{ fontSize: '11px' }}>Date: {formattedDate}</div>
+                  <div style={{ fontSize: '11px' }}>Time: {timeStr}</div>
+                </div>
               </div>
 
               {/* Items Table */}
               <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '16px' }}>
                 <thead>
-                  <tr style={{ backgroundColor: '#18181b', color: '#fff', fontSize: '11px', textAlign: 'left' }}>
-                    <th style={{ padding: '6px 8px' }}>#</th>
-                    <th style={{ padding: '6px 8px' }}>Item Description</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Qty</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Rate</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Amount</th>
+                  <tr style={{ backgroundColor: '#18181b', color: '#fff', fontSize: '10px', textTransform: 'uppercase', textAlign: 'left' }}>
+                    <th style={{ padding: '8px', width: '30px' }}>#</th>
+                    <th style={{ padding: '8px' }}>Item Description</th>
+                    <th style={{ padding: '8px', textAlign: 'center', width: '60px' }}>HSN</th>
+                    <th style={{ padding: '8px', textAlign: 'right', width: '50px' }}>Qty</th>
+                    <th style={{ padding: '8px', textAlign: 'right', width: '60px' }}>Rate</th>
+                    <th style={{ padding: '8px', textAlign: 'right', width: '60px' }}>Disc</th>
+                    <th style={{ padding: '8px', textAlign: 'right', width: '70px' }}>Taxable</th>
+                    {isGstOn && <th style={{ padding: '8px', textAlign: 'right', width: '60px' }}>GST %</th>}
+                    <th style={{ padding: '8px', textAlign: 'right', width: '80px' }}>Amount</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {bill.items?.map((it, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid #e4e4e7', fontSize: '11px' }}>
-                      <td style={{ padding: '6px 8px' }}>{idx + 1}</td>
-                      <td style={{ padding: '6px 8px', fontWeight: 600 }}>{it.product_name}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'right' }}>{it.quantity}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'right' }}>₹{it.rate}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'right' }}>₹{it.amount || it.quantity * it.rate}</td>
-                    </tr>
-                  ))}
+                  {bill.items?.map((it, idx) => {
+                    const qty = it.quantity || 1
+                    const rate = it.rate || 0
+                    const disc = it.item_discount || 0
+                    const itemSubtotal = qty * rate
+                    const itemTaxable = Math.max(0, itemSubtotal - disc)
+                    const itemAmt = it.amount || itemTaxable
+                    return (
+                      <tr key={idx} style={{ borderBottom: '1px solid #e4e4e7', fontSize: '11px' }}>
+                        <td style={{ padding: '8px' }}>{idx + 1}</td>
+                        <td style={{ padding: '8px', fontWeight: 700 }}>{it.product_name}</td>
+                        <td style={{ padding: '8px', textAlign: 'center', color: '#52525b' }}>2201</td>
+                        <td style={{ padding: '8px', textAlign: 'right' }}>{qty}</td>
+                        <td style={{ padding: '8px', textAlign: 'right' }}>₹{rate.toFixed(2)}</td>
+                        <td style={{ padding: '8px', textAlign: 'right' }}>{disc > 0 ? `₹${disc.toFixed(2)}` : '-'}</td>
+                        <td style={{ padding: '8px', textAlign: 'right' }}>₹{itemTaxable.toFixed(2)}</td>
+                        {isGstOn && <td style={{ padding: '8px', textAlign: 'right' }}>{it.gst_rate || 18}%</td>}
+                        <td style={{ padding: '8px', textAlign: 'right', fontWeight: 700 }}>₹{itemAmt.toFixed(2)}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
 
-              {/* Totals Summary */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-                <div style={{ width: '220px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {/* Financial Totals & Payment Summary */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: '20px', marginBottom: '20px' }}>
+                <div>
+                  <div style={{ backgroundColor: '#f4f4f5', padding: '10px 14px', borderRadius: '6px', marginBottom: '8px', border: '1px solid #e4e4e7' }}>
+                    <div style={{ fontWeight: 800, fontSize: '11px', color: '#52525b', textTransform: 'uppercase', marginBottom: '4px' }}>Payment Summary:</div>
+                    <div style={{ fontSize: '11px', display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                      <span>Payment Mode:</span>
+                      <strong style={{ textTransform: 'uppercase' }}>{bill.payment_method || 'CASH'}</strong>
+                    </div>
+                    {bill.cash_amount && bill.cash_amount > 0 ? (
+                      <div style={{ fontSize: '10px', color: '#52525b', display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Cash Paid:</span>
+                        <span>₹{Number(bill.cash_amount).toFixed(2)}</span>
+                      </div>
+                    ) : null}
+                    {bill.upi_amount && bill.upi_amount > 0 ? (
+                      <div style={{ fontSize: '10px', color: '#52525b', display: 'flex', justifyContent: 'space-between' }}>
+                        <span>UPI Paid:</span>
+                        <span>₹{Number(bill.upi_amount).toFixed(2)}</span>
+                      </div>
+                    ) : null}
+                    <div style={{ fontSize: '11px', display: 'flex', justifyContent: 'space-between', marginTop: '4px', borderTop: '1px solid #d4d4d8', paddingTop: '4px' }}>
+                      <span>Amount Paid:</span>
+                      <strong>₹{paidAmount.toFixed(2)}</strong>
+                    </div>
+                    <div style={{ fontSize: '11px', display: 'flex', justifyContent: 'space-between', color: dueAmount > 0 ? '#dc2626' : '#16a34a', fontWeight: 800 }}>
+                      <span>Balance Due:</span>
+                      <span>₹{dueAmount.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: '10px', color: '#52525b', fontStyle: 'italic' }}>
+                    <strong>Amount in Words:</strong> {numberToIndianRupeesWords(grandTotal)}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span>Subtotal:</span>
-                    <span>₹{Number(bill.subtotal).toFixed(2)}</span>
+                    <span>₹{subtotal.toFixed(2)}</span>
                   </div>
-                  {bill.gst_amount > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>GST:</span>
-                      <span>₹{Number(bill.gst_amount).toFixed(2)}</span>
+                  {discount > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#dc2626' }}>
+                      <span>Total Discount:</span>
+                      <span>-₹{discount.toFixed(2)}</span>
                     </div>
                   )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: 800, borderTop: '2px solid #000', paddingTop: '4px', color: '#dc2626' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                    <span>Taxable Amount:</span>
+                    <span>₹{taxableAmount.toFixed(2)}</span>
+                  </div>
+                  {isGstOn && (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#52525b' }}>
+                        <span>CGST (9%):</span>
+                        <span>₹{cgstAmount.toFixed(2)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#52525b' }}>
+                        <span>SGST (9%):</span>
+                        <span>₹{sgstAmount.toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: 900, borderTop: '2px solid #000', paddingTop: '6px', marginTop: '4px', color: '#000' }}>
                     <span>Grand Total:</span>
-                    <span>₹{Number(bill.total_amount).toFixed(2)}</span>
+                    <span>₹{grandTotal.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
 
+              {/* Footer */}
+              <div style={{ borderTop: '1px solid #e4e4e7', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: '10px', color: '#71717a' }}>
+                  Thank you for your business! | Visit Again.
+                </div>
+                <div style={{ fontSize: '10px', fontWeight: 700, color: '#000' }}>
+                  Authorised Signatory
+                </div>
+              </div>
             </div>
-          ) : (
-            /* Thermal Paper Roll (80mm / 58mm) */
+          )}
+
+          {/* ───────────────────────────────────────────────────────────────── */}
+          {/* TEMPLATE B: 80MM THERMAL RECEIPT (DYNAMIC HEIGHT)               */}
+          {/* ───────────────────────────────────────────────────────────────── */}
+          {formatMode === '80mm' && (
             <div
+              className="printable-area"
               style={{
                 backgroundColor: '#fff',
                 color: '#000',
                 fontFamily: "'Courier New', Courier, monospace",
-                fontSize: formatMode === '58mm' ? '11px' : '12px',
+                fontSize: '12px',
                 lineHeight: '1.25',
-                width: '100%',
-                maxWidth: formatMode === '58mm' ? '280px' : '384px',
+                width: '80mm',
+                minHeight: '50mm',
+                height: 'auto',
                 margin: '0 auto',
-                padding: formatMode === '58mm' ? '12px 8px' : '16px 12px',
+                padding: '14px 10px',
                 borderRadius: '2px',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
                 borderTop: '4px dashed #a1a1aa',
                 borderBottom: '4px dashed #a1a1aa',
-                transition: 'all 0.2s ease',
               }}
             >
-              {/* Logo & Header */}
+              {/* Header */}
               <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-                <div style={{ fontSize: formatMode === '58mm' ? '15px' : '18px', fontWeight: 'bold', letterSpacing: '0.5px' }}>ROYAL KISSAN</div>
+                <Image src="/branding/royal-kissan-logo.png" alt="Royal Kissan Logo" width={90} height={36} style={{ objectFit: 'contain', margin: '0 auto 4px auto', display: 'block' }} priority />
+                <div style={{ fontSize: '16px', fontWeight: 'bold' }}>ROYAL KISSAN</div>
                 <div style={{ fontSize: '10px' }}>Packaged Drinking Water</div>
-                <div style={{ fontSize: '10px' }}>Phone: +91 93476 62554</div>
+                <div style={{ fontSize: '10px', fontWeight: 'bold' }}>BASHU ABBAS BEVERAGES</div>
+                <div style={{ fontSize: '9px', margin: '2px 0' }}>15-2 Behind AnjaneyaSwami Temple, Sri Ram Nagar, Chintalapudi</div>
+                <div style={{ fontSize: '10px' }}>Ph: +91 93476 62554</div>
                 <div style={{ fontSize: '10px' }}>GSTIN: 37BABS2021G1Z3</div>
                 <div style={{ fontSize: '10px', fontWeight: 'bold', marginTop: '4px' }}>
                   *** {copyType.toUpperCase()} COPY ***
@@ -283,57 +427,207 @@ export default function ReceiptPreviewModal({
               <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
 
               {/* Meta */}
-              <div>
-                <div>Inv #: {bill.invoice_number}</div>
-                <div>Date : {formattedDate} {timeStr}</div>
-                <div>Cust : {bill.customer_name}</div>
-                {bill.customer_phone && <div>Ph   : {bill.customer_phone}</div>}
+              <div style={{ fontSize: '11px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Inv #: {bill.invoice_number}</span>
+                  <span>{formattedDate}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Cust: {bill.customer_name}</span>
+                  <span>{timeStr}</span>
+                </div>
+                {bill.customer_phone && <div>Ph  : {bill.customer_phone}</div>}
               </div>
 
               <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
 
-              {/* Items Table */}
-              <div style={{ display: 'grid', gridTemplateColumns: formatMode === '58mm' ? '100px 25px 35px 45px' : '140px 30px 40px 60px', fontWeight: 'bold' }}>
-                <span>Item</span>
-                <span style={{ textAlign: 'right' }}>Qty</span>
-                <span style={{ textAlign: 'right' }}>Rate</span>
-                <span style={{ textAlign: 'right' }}>Amt</span>
+              {/* Item Table */}
+              <div style={{ display: 'grid', gridTemplateColumns: '130px 30px 45px 55px', fontWeight: 'bold', fontSize: '11px' }}>
+                <span>ITEM</span>
+                <span style={{ textAlign: 'right' }}>QTY</span>
+                <span style={{ textAlign: 'right' }}>RATE</span>
+                <span style={{ textAlign: 'right' }}>AMT</span>
               </div>
               <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }} />
 
               {bill.items?.map((it, idx) => (
-                <div key={idx} style={{ display: 'grid', gridTemplateColumns: formatMode === '58mm' ? '100px 25px 35px 45px' : '140px 30px 40px 60px', margin: '2px 0' }}>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '130px 30px 45px 55px', fontSize: '11px', margin: '2px 0' }}>
+                  <span style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
                     {it.product_name}
                   </span>
                   <span style={{ textAlign: 'right' }}>{it.quantity}</span>
                   <span style={{ textAlign: 'right' }}>₹{it.rate}</span>
-                  <span style={{ textAlign: 'right' }}>₹{it.amount || it.quantity * it.rate}</span>
+                  <span style={{ textAlign: 'right', fontWeight: 'bold' }}>₹{it.amount || it.quantity * it.rate}</span>
                 </div>
               ))}
 
               <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
 
               {/* Totals */}
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Subtotal:</span>
-                <span>₹{Number(bill.subtotal).toFixed(2)}</span>
-              </div>
-              {bill.gst_amount > 0 && (
+              <div style={{ fontSize: '11px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>GST:</span>
-                  <span>₹{Number(bill.gst_amount).toFixed(2)}</span>
+                  <span>Subtotal:</span>
+                  <span>₹{subtotal.toFixed(2)}</span>
                 </div>
-              )}
+                {discount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Discount:</span>
+                    <span>-₹{discount.toFixed(2)}</span>
+                  </div>
+                )}
+                {isGstOn && (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>CGST (9%):</span>
+                      <span>₹{cgstAmount.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>SGST (9%):</span>
+                      <span>₹{sgstAmount.toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
+              </div>
 
               <div style={{ borderTop: '2px solid #000', margin: '6px 0' }} />
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: formatMode === '58mm' ? '13px' : '15px', fontWeight: 'bold' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: 'bold' }}>
                 <span>TOTAL:</span>
-                <span>₹{Number(bill.total_amount).toFixed(2)}</span>
+                <span>₹{grandTotal.toFixed(2)}</span>
+              </div>
+
+              <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
+
+              <div style={{ fontSize: '11px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>MODE:</span>
+                  <strong style={{ textTransform: 'uppercase' }}>{bill.payment_method || 'CASH'}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>PAID:</span>
+                  <span>₹{paidAmount.toFixed(2)}</span>
+                </div>
+                {dueAmount > 0 ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+                    <span>DUE:</span>
+                    <span>₹{dueAmount.toFixed(2)}</span>
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'right', fontWeight: 'bold' }}>*** PAID ***</div>
+                )}
               </div>
 
               <div style={{ textAlign: 'center', marginTop: '12px', fontSize: '10px' }}>
+                Thank You! Visit Again.
+              </div>
+            </div>
+          )}
+
+          {/* ───────────────────────────────────────────────────────────────── */}
+          {/* TEMPLATE C: 58MM COMPACT THERMAL RECEIPT (DYNAMIC HEIGHT)        */}
+          {/* ───────────────────────────────────────────────────────────────── */}
+          {formatMode === '58mm' && (
+            <div
+              className="printable-area"
+              style={{
+                backgroundColor: '#fff',
+                color: '#000',
+                fontFamily: "'Courier New', Courier, monospace",
+                fontSize: '10px',
+                lineHeight: '1.2',
+                width: '58mm',
+                minHeight: '50mm',
+                height: 'auto',
+                margin: '0 auto',
+                padding: '10px 6px',
+                borderRadius: '2px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                borderTop: '4px dashed #a1a1aa',
+                borderBottom: '4px dashed #a1a1aa',
+              }}
+            >
+              {/* Compact Header */}
+              <div style={{ textAlign: 'center', marginBottom: '6px' }}>
+                <Image src="/branding/royal-kissan-logo.png" alt="Royal Kissan Logo" width={70} height={28} style={{ objectFit: 'contain', margin: '0 auto 2px auto', display: 'block' }} priority />
+                <div style={{ fontSize: '13px', fontWeight: 'bold' }}>ROYAL KISSAN</div>
+                <div style={{ fontSize: '9px' }}>Packaged Water</div>
+                <div style={{ fontSize: '8px' }}>15-2 Sri Ram Nagar, Chintalapudi</div>
+                <div style={{ fontSize: '9px' }}>Ph: +91 93476 62554</div>
+                <div style={{ fontSize: '9px' }}>GST: 37BABS2021G1Z3</div>
+              </div>
+
+              <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }} />
+
+              <div style={{ fontSize: '9px' }}>
+                <div>Inv #: {bill.invoice_number}</div>
+                <div>Date : {formattedDate} {timeStr}</div>
+                <div>Cust : {bill.customer_name}</div>
+              </div>
+
+              <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }} />
+
+              {/* Items */}
+              <div style={{ display: 'grid', gridTemplateColumns: '80px 20px 30px 40px', fontWeight: 'bold', fontSize: '9px' }}>
+                <span>ITEM</span>
+                <span style={{ textAlign: 'right' }}>QTY</span>
+                <span style={{ textAlign: 'right' }}>RATE</span>
+                <span style={{ textAlign: 'right' }}>AMT</span>
+              </div>
+              <div style={{ borderTop: '1px dashed #000', margin: '2px 0' }} />
+
+              {bill.items?.map((it, idx) => (
+                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '80px 20px 30px 40px', fontSize: '9px', margin: '2px 0' }}>
+                  <span style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
+                    {it.product_name}
+                  </span>
+                  <span style={{ textAlign: 'right' }}>{it.quantity}</span>
+                  <span style={{ textAlign: 'right' }}>₹{it.rate}</span>
+                  <span style={{ textAlign: 'right', fontWeight: 'bold' }}>₹{it.amount || it.quantity * it.rate}</span>
+                </div>
+              ))}
+
+              <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }} />
+
+              <div style={{ fontSize: '9px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Subtotal:</span>
+                  <span>₹{subtotal.toFixed(2)}</span>
+                </div>
+                {discount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Disc:</span>
+                    <span>-₹{discount.toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ borderTop: '1.5px solid #000', margin: '4px 0' }} />
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 'bold' }}>
+                <span>TOTAL:</span>
+                <span>₹{grandTotal.toFixed(2)}</span>
+              </div>
+
+              <div style={{ fontSize: '9px', marginTop: '4px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>MODE:</span>
+                  <span>{bill.payment_method?.toUpperCase() || 'CASH'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>PAID:</span>
+                  <span>₹{paidAmount.toFixed(2)}</span>
+                </div>
+                {dueAmount > 0 ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+                    <span>DUE:</span>
+                    <span>₹{dueAmount.toFixed(2)}</span>
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', fontWeight: 'bold', marginTop: '2px' }}>*** PAID ***</div>
+                )}
+              </div>
+
+              <div style={{ textAlign: 'center', marginTop: '8px', fontSize: '8px' }}>
                 Thank You! Visit Again.
               </div>
             </div>
@@ -360,7 +654,7 @@ export default function ReceiptPreviewModal({
           )}
         </div>
 
-        {/* Modal Footer Controls */}
+        {/* Modal Footer Bar */}
         <div
           style={{
             padding: '1rem 1.25rem',

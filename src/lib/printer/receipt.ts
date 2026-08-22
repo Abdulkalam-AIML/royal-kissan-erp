@@ -7,6 +7,7 @@ export interface BillItemData {
   quantity: number
   rate: number
   amount: number
+  item_discount?: number
   gst_rate?: number
   gst_amount?: number
   total?: number
@@ -70,7 +71,10 @@ export function generateReceiptBuffer(
   builder.size('normal')
   builder.bold(false)
   builder.line('Packaged Drinking Water')
-  builder.line('Phone: +91 81849 18757')
+  builder.line('BASHU ABBAS BEVERAGES')
+  builder.line('15-2 Behind AnjaneyaSwami Temple, Sri Ram Nagar')
+  builder.line('Chintalapudi, Elure-534460')
+  builder.line('Phone: +91 93476 62554')
   builder.line('GSTIN: 37BABS2021G1Z3')
 
   // Copy Type Header Badge
