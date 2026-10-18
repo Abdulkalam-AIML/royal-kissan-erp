@@ -98,6 +98,7 @@ export default function ReceiptPreviewModal({
 
   return (
     <div
+      className="receipt-modal-overlay"
       style={{
         position: 'fixed',
         inset: 0,
@@ -110,7 +111,18 @@ export default function ReceiptPreviewModal({
         padding: '1rem',
       }}
     >
+      {/* Dynamic @page sizing injected based on active format */}
+      <style>{`
+        @media print {
+          @page {
+            size: ${formatMode === 'A4' ? 'A4 portrait' : formatMode === '58mm' ? '58mm auto' : '80mm auto'};
+            margin: ${formatMode === 'A4' ? '8mm' : '0'};
+          }
+        }
+      `}</style>
+
       <div
+        className="receipt-modal-container"
         style={{
           backgroundColor: '#18181b',
           borderRadius: '16px',
@@ -127,6 +139,7 @@ export default function ReceiptPreviewModal({
       >
         {/* Modal Header Bar */}
         <div
+          className="no-print"
           style={{
             padding: '1rem 1.25rem',
             borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
@@ -185,7 +198,7 @@ export default function ReceiptPreviewModal({
         <div style={{ padding: '1.25rem', overflowY: 'auto', flex: 1, backgroundColor: '#27272a' }}>
           
           {/* Copy Selector */}
-          <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <div className="no-print" style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <label style={{ fontSize: '0.8rem', color: '#e4e4e7', whiteSpace: 'nowrap', fontWeight: 600 }}>Copy Type:</label>
             <select
               value={copyType}
@@ -469,7 +482,7 @@ export default function ReceiptPreviewModal({
               <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
 
               {/* Item Table */}
-              <div style={{ display: 'grid', gridTemplateColumns: '130px 30px 45px 55px', fontWeight: 'bold', fontSize: '11px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 34px 50px 60px', fontWeight: 'bold', fontSize: '11px' }}>
                 <span>ITEM</span>
                 <span style={{ textAlign: 'right' }}>QTY</span>
                 <span style={{ textAlign: 'right' }}>RATE</span>
@@ -478,7 +491,7 @@ export default function ReceiptPreviewModal({
               <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }} />
 
               {bill.items?.map((it, idx) => (
-                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '130px 30px 45px 55px', fontSize: '11px', margin: '2px 0' }}>
+                <div key={idx} className="receipt-item-row" style={{ display: 'grid', gridTemplateColumns: '1fr 34px 50px 60px', fontSize: '11px', margin: '2px 0' }}>
                   <span style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
                     {it.product_name}
                   </span>
@@ -608,7 +621,7 @@ export default function ReceiptPreviewModal({
               <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }} />
 
               {/* Items */}
-              <div style={{ display: 'grid', gridTemplateColumns: '80px 20px 30px 40px', fontWeight: 'bold', fontSize: '9px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 26px 36px 48px', fontWeight: 'bold', fontSize: '9px' }}>
                 <span>ITEM</span>
                 <span style={{ textAlign: 'right' }}>QTY</span>
                 <span style={{ textAlign: 'right' }}>RATE</span>
@@ -617,7 +630,7 @@ export default function ReceiptPreviewModal({
               <div style={{ borderTop: '1px dashed #000', margin: '2px 0' }} />
 
               {bill.items?.map((it, idx) => (
-                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '80px 20px 30px 40px', fontSize: '9px', margin: '2px 0' }}>
+                <div key={idx} className="receipt-item-row" style={{ display: 'grid', gridTemplateColumns: '1fr 26px 36px 48px', fontSize: '9px', margin: '2px 0' }}>
                   <span style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
                     {it.product_name}
                   </span>
@@ -676,6 +689,7 @@ export default function ReceiptPreviewModal({
 
           {printStatus && (
             <div
+              className="no-print"
               style={{
                 marginTop: '1rem',
                 padding: '0.75rem',
@@ -697,6 +711,7 @@ export default function ReceiptPreviewModal({
 
         {/* Modal Footer Bar */}
         <div
+          className="no-print"
           style={{
             padding: '1rem 1.25rem',
             borderTop: '1px solid rgba(255, 255, 255, 0.1)',

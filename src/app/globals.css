@@ -463,17 +463,19 @@ button {
 }
 
 /* ================================================================
-   ROYAL KISSAN ERP — PRINT SYSTEM (A4, 80mm TVS-E, 58mm DYNAMIC HEIGHT)
+   ROYAL KISSAN ERP — UNIVERSAL CROSS-PLATFORM PRINT SYSTEM
+   Engineered for: TVS-E RP3230ABW (80mm), 58mm Thermal, and A4 Invoices
+   Supported on: macOS, Windows, Linux, Android Chrome & Tablets
    ================================================================ */
 @media print {
-  /* Hide all app chrome and interactive elements */
+  /* 1. Hide all application shell, navigation, and interactive controls */
   nav, aside, header, .sidebar, .header, .no-print, button, select, input,
-  .header-search, .header-status-pills, .modal-backdrop {
+  .header-search, .header-status-pills, .modal-backdrop, .modal-header-close {
     display: none !important;
     visibility: hidden !important;
   }
 
-  /* Document root reset for clean printing */
+  /* 2. Global Document Reset */
   html, body {
     background: #ffffff !important;
     color: #000000 !important;
@@ -482,40 +484,88 @@ button {
     width: 100% !important;
     height: auto !important;
     min-height: auto !important;
+    max-height: none !important;
     overflow: visible !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  /* Hide everything outside the active printable area */
+  /* 3. Hide non-printable elements while keeping printable bill in normal flow */
   body * {
     visibility: hidden;
   }
 
-  /* Ensure printable area and its children are clearly visible */
+  /* 4. Modal unconstrain: Allow in-flow expansion for multi-page or continuous rolls */
+  .receipt-modal-overlay {
+    position: static !important;
+    inset: auto !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+    overflow: visible !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    box-shadow: none !important;
+  }
+
+  .receipt-modal-container {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    max-width: none !important;
+    width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* 5. Printable Area: Pure in-flow layout to avoid page-break truncation */
   .printable-area, .printable-area * {
     visibility: visible !important;
   }
 
   .printable-area {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+    position: relative !important;
+    margin: 0 auto !important;
     background: #ffffff !important;
     color: #000000 !important;
     height: auto !important;
     min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
     box-shadow: none !important;
     border: none !important;
-    overflow: visible !important;
     page-break-after: avoid;
     break-after: avoid;
   }
 
-  /* 80mm Thermal Receipt (TVS-E RP3230ABW 80mm Roll) */
+  /* Line-item break protection */
+  tr, .receipt-item-row {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* High-contrast thermal logo rendering */
+  .printable-area img {
+    max-width: 100% !important;
+    height: auto !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* 6. Format-Specific Layout Rules */
+
+  /* ── 80mm Thermal Receipt (TVS-E RP3230ABW Continuous Roll) ── */
   .print-format-80mm {
     width: 76mm !important;
     max-width: 80mm !important;
+    min-width: 72mm !important;
     margin: 0 auto !important;
     padding: 2mm 3mm !important;
     font-size: 11px !important;
@@ -524,12 +574,20 @@ button {
     border-top: none !important;
     border-bottom: none !important;
     box-shadow: none !important;
+    color: #000000 !important;
+    background: #ffffff !important;
   }
 
-  /* 58mm Thermal Receipt (Compact Roll) */
+  .print-format-80mm * {
+    color: #000000 !important;
+    text-shadow: none !important;
+  }
+
+  /* ── 58mm Compact Thermal Receipt ── */
   .print-format-58mm {
     width: 48mm !important;
     max-width: 58mm !important;
+    min-width: 46mm !important;
     margin: 0 auto !important;
     padding: 1mm 2mm !important;
     font-size: 9.5px !important;
@@ -538,19 +596,29 @@ button {
     border-top: none !important;
     border-bottom: none !important;
     box-shadow: none !important;
+    color: #000000 !important;
+    background: #ffffff !important;
   }
 
-  /* A4 Full Tax & Retail Invoice */
+  .print-format-58mm * {
+    color: #000000 !important;
+    text-shadow: none !important;
+  }
+
+  /* ── A4 Full Tax & Retail Invoice ── */
   .print-format-a4 {
     width: 100% !important;
     max-width: 210mm !important;
     margin: 0 auto !important;
-    padding: 8mm 12mm !important;
+    padding: 6mm 10mm !important;
     font-size: 12px !important;
     box-shadow: none !important;
     border: none !important;
+    color: #000000 !important;
+    background: #ffffff !important;
   }
 
+  /* Default page margin reset */
   @page {
     margin: 0;
     size: auto;

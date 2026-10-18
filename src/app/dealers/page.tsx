@@ -42,6 +42,8 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Input, Select } from '@/components/ui/Input'
 import { SkeletonTable, SkeletonCard } from '@/components/ui/Skeleton'
+import ReceiptPreviewModal from '@/components/printer/ReceiptPreviewModal'
+import { BillData } from '@/lib/printer/receipt'
 
 // Master Products List for Dealer Product-Wise Sales Matrix
 const MASTER_PRODUCTS = [
@@ -154,6 +156,7 @@ export default function DealersPage() {
   const [filterArea, setFilterArea] = useState('all')
   const [selectedDealer, setSelectedDealer] = useState<any | null>(INITIAL_DEALERS[0])
   const [activeTab, setActiveTab] = useState<'sales_matrix' | 'history' | 'due_ledger' | 'payments' | 'returns_leakages' | 'analytics'>('sales_matrix')
+  const [previewBill, setPreviewBill] = useState<BillData | null>(null)
 
   // Dealer Creation Modal
   const [showAddModal, setShowAddModal] = useState(false)
@@ -569,14 +572,87 @@ export default function DealersPage() {
       setPayments({ cash: 0, upi: 0, bank: 0, advance: 0 })
       loadDealerHistory(selectedDealer.id)
 
-      alert(`✅ Bill ${invNo} saved successfully! Current Dealer Balance Due: ${formatCurrency(updatedDue)}`)
       if (shouldPrint) {
-        window.print()
+        const billDataObj: BillData = {
+          id: savedData.id,
+          invoice_number: invNo,
+          bill_type: 'dealer_invoice',
+          customer_name: selectedDealer.name,
+          dealer_name: selectedDealer.name,
+          dealer_id: selectedDealer.id,
+          dealer_phone: selectedDealer.phone || null,
+          dealer_address: selectedDealer.address || null,
+          dealer_gstin: selectedDealer.gst_number || null,
+          date: saleDate,
+          subtotal: grossTotal,
+          discount_amount: totalDiscount,
+          gst_amount: 0,
+          total_amount: netBillAmount,
+          paid_amount: totalPaid,
+          due_amount: pendingDue,
+          payment_method: billPayload.payment_mode,
+          cash_amount: Number(payments.cash || 0),
+          upi_amount: Number(payments.upi || 0),
+          items: activeRows.map(r => ({
+            product_name: r.product_name,
+            quantity: r.qty,
+            rate: r.rate,
+            amount: Math.max(0, (r.qty * r.rate) - Number(r.discount || 0)),
+            item_discount: Number(r.discount || 0),
+            total: Math.max(0, (r.qty * r.rate) - Number(r.discount || 0))
+          }))
+        }
+        setPreviewBill(billDataObj)
+      } else {
+        alert(`✅ Bill ${invNo} saved successfully! Current Dealer Balance Due: ${formatCurrency(updatedDue)}`)
       }
     } catch (e: any) {
       alert(`Error saving bill: ${e.message}`)
     } finally {
       setSavingBill(false)
+    }
+  }
+
+  async function handlePrintDealerBill(b: any) {
+    try {
+      const { data: items } = await supabase
+        .from('bill_items')
+        .select('*')
+        .eq('bill_id', b.id)
+
+      const billDataObj: BillData = {
+        id: b.id,
+        invoice_number: b.invoice_number,
+        bill_type: 'dealer_invoice',
+        customer_name: selectedDealer?.name || 'Dealer',
+        dealer_name: selectedDealer?.name || 'Dealer',
+        dealer_phone: selectedDealer?.phone || null,
+        dealer_address: selectedDealer?.address || null,
+        dealer_gstin: selectedDealer?.gst_number || null,
+        date: b.date,
+        subtotal: Number(b.total_amount) || 0,
+        discount_amount: Number(b.discount_amount) || 0,
+        gst_amount: Number(b.gst_amount) || 0,
+        total_amount: Number(b.total_amount) || 0,
+        paid_amount: Number(b.paid_amount) || 0,
+        due_amount: Number(b.due_amount) || 0,
+        payment_method: b.payment_mode || 'cash',
+        items: (items && items.length > 0 ? items : [{
+          product_name: 'Water Can (20L)',
+          quantity: b.items_count || 1,
+          rate: Number(b.total_amount) || 0,
+          amount: Number(b.total_amount) || 0
+        }]).map((i: any) => ({
+          product_name: i.product_name,
+          quantity: i.quantity,
+          rate: Number(i.rate) || 0,
+          amount: Number(i.amount) || Number(i.total) || 0,
+          total: Number(i.total) || Number(i.amount) || 0
+        }))
+      }
+      setPreviewBill(billDataObj)
+    } catch (err: any) {
+      alert(`Error loading bill for print: ${err?.message || err}`)
     }
   }
 
@@ -951,7 +1027,7 @@ export default function DealersPage() {
                     { key: 'paid_amount', title: 'Paid', align: 'right', render: r => <span className="num" style={{ color: '#34d399' }}>{formatCurrency(r.paid_amount)}</span> },
                     { key: 'due_amount', title: 'Due', align: 'right', render: r => <span className="num" style={{ color: r.due_amount > 0 ? '#f87171' : '#a1a1aa' }}>{formatCurrency(r.due_amount)}</span> },
                     { key: 'payment_status', title: 'Status', render: r => <Badge variant={r.payment_status === 'paid' ? 'success' : 'danger'}>{r.payment_status?.toUpperCase()}</Badge> },
-                    { key: 'actions', title: 'Action', align: 'right', render: r => <Button variant="secondary" size="sm" icon={<Printer style={{ width: '12px', height: '12px' }} />} onClick={() => window.print()}>Print Ticket</Button> }
+                    { key: 'actions', title: 'Action', align: 'right', render: r => <Button variant="secondary" size="sm" icon={<Printer style={{ width: '12px', height: '12px', color: '#fbbf24' }} />} onClick={() => handlePrintDealerBill(r)}>Print Bill</Button> }
                   ]}
                   data={dealerBills}
                   searchPlaceholder="Search invoices..."
@@ -1068,6 +1144,15 @@ export default function DealersPage() {
             </div>
           </div>
         </div>
+      )}
+      {/* RECEIPT PREVIEW & PRINT MODAL */}
+      {previewBill && (
+        <ReceiptPreviewModal
+          isOpen={!!previewBill}
+          onClose={() => setPreviewBill(null)}
+          bill={previewBill}
+          initialFormat="80mm"
+        />
       )}
     </div>
   )
