@@ -20,7 +20,7 @@ export default function CustomersPage() {
   const [saving, setSaving] = useState(false)
   const supabase = createClient()
 
-  useDataSyncListener(['customers', 'all'], () => { loadCustomers() })
+  useDataSyncListener(['customers', 'bills', 'dues', 'collections', 'all'], () => { loadCustomers() })
 
   useEffect(() => {
     loadCustomers()
@@ -48,7 +48,8 @@ export default function CustomersPage() {
     }
     setSaving(true)
     try {
-      const { data } = await supabase.from('customers').insert([form]).select().single()
+      const { data, error } = await supabase.from('customers').insert([form]).select().single()
+      if (error) throw error
       if (data) {
         setCustomers(prev => [data, ...prev])
       }
@@ -57,6 +58,7 @@ export default function CustomersPage() {
       setShowModal(false)
       setForm({ name: '', phone: '', address: '', area: '', gst_number: '' })
       loadCustomers()
+      alert('✅ Customer saved successfully in database!')
     } catch (e: any) {
       alert(`Error saving customer: ${e.message}`)
     } finally {
@@ -131,7 +133,7 @@ export default function CustomersPage() {
       title: 'Quick Bill',
       align: 'right',
       render: (c) => (
-        <a href={`/billing?customer=${encodeURIComponent(c.name)}`}>
+        <a href={`/billing?type=customer&customerId=${c.id}`}>
           <Button variant="secondary" size="sm" icon={<Receipt style={{ width: '13px', height: '13px', color: '#fbbf24' }} />}>
             Create Bill
           </Button>

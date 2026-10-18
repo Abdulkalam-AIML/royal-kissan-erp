@@ -40,9 +40,11 @@ export default function ReportsPage() {
         setReportData(data || [])
       } else if (activeTab === 'collections') {
         const { data } = await supabase
-          .from('dealer_collections')
+          .from('collections')
           .select('*')
-          .order('collected_date', { ascending: false })
+          .gte('date', dateRange.startDate)
+          .lte('date', dateRange.endDate)
+          .order('date', { ascending: false })
         setReportData(data || [])
       } else {
         const { data } = await supabase
@@ -72,8 +74,21 @@ export default function ReportsPage() {
     },
     {
       key: 'customer_name',
-      title: 'Customer Name',
+      title: 'Customer / Dealer',
       render: (r) => <span style={{ fontWeight: 600, color: '#f4f4f5' }}>{r.customer_name}</span>,
+    },
+    {
+      key: 'bill_type',
+      title: 'Bill Type',
+      render: (r) => (
+        <Badge variant={
+          (r.bill_type || '').includes('route') ? 'info' :
+          (r.bill_type || '').includes('dealer') ? 'warning' :
+          (r.bill_type || '').includes('customer') ? 'info' : 'neutral'
+        }>
+          {(r.bill_type || 'counter').toUpperCase()}
+        </Badge>
+      ),
     },
     {
       key: 'total_amount',

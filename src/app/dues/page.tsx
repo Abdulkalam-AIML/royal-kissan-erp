@@ -64,26 +64,95 @@ export default function DuesPage() {
     if (!showCollectModal || paymentAmount <= 0) return
     setUpdating(true)
     try {
-      const newDue = Math.max(0, (showCollectModal.due_amount || 0) - paymentAmount)
-      await supabase.from('customer_dues').update({ due_amount: newDue }).eq('id', showCollectModal.id)
+      const newDue = Math.max(0, (Number(showCollectModal.due_amount) || 0) - paymentAmount)
+      const newPaid = (Number(showCollectModal.paid_amount) || 0) + paymentAmount
+      const todayDate = new Date().toISOString().split('T')[0]
+      const status = newDue === 0 ? 'paid' : 'partial'
+
+      // 1. Update customer_dues row if it exists
+      if (showCollectModal.id) {
+        const { error: dueErr } = await supabase
+          .from('customer_dues')
+          .update({ 
+            due_amount: newDue, 
+            paid_amount: newPaid,
+            status: status,
+            last_updated: new Date().toISOString()
+          })
+          .eq('id', showCollectModal.id)
+        if (dueErr) console.warn('Customer dues update notice:', dueErr.message)
+      }
+
+      // 2. Update canonical bills row if linked
+      const billId = showCollectModal.bill_id || (showCollectModal.invoice_number ? null : showCollectModal.id)
+      if (billId) {
+        const { data: billRow } = await supabase.from('bills').select('id, paid_amount, total_amount, due_amount').eq('id', billId).maybeSingle()
+        if (billRow) {
+          const updatedBillPaid = (Number(billRow.paid_amount) || 0) + paymentAmount
+          const updatedBillDue = Math.max(0, (Number(billRow.due_amount) || 0) - paymentAmount)
+          await supabase.from('bills').update({
+            paid_amount: updatedBillPaid,
+            due_amount: updatedBillDue,
+            payment_status: updatedBillDue === 0 ? 'paid' : (updatedBillPaid > 0 ? 'partial' : 'due')
+          }).eq('id', billId)
+        }
+      } else if (showCollectModal.invoice_number) {
+        const { data: billRow } = await supabase.from('bills').select('id, paid_amount, total_amount, due_amount').eq('invoice_number', showCollectModal.invoice_number).maybeSingle()
+        if (billRow) {
+          const updatedBillPaid = (Number(billRow.paid_amount) || 0) + paymentAmount
+          const updatedBillDue = Math.max(0, (Number(billRow.due_amount) || 0) - paymentAmount)
+          await supabase.from('bills').update({
+            paid_amount: updatedBillPaid,
+            due_amount: updatedBillDue,
+            payment_status: updatedBillDue === 0 ? 'paid' : (updatedBillPaid > 0 ? 'partial' : 'due')
+          }).eq('id', billRow.id)
+        }
+      }
+
+      // 3. Update customer outstanding balance if customer_id linked
+      if (showCollectModal.customer_id) {
+        const { data: custRow } = await supabase.from('customers').select('outstanding_amount').eq('id', showCollectModal.customer_id).maybeSingle()
+        if (custRow) {
+          await supabase.from('customers').update({
+            outstanding_amount: Math.max(0, (Number(custRow.outstanding_amount) || 0) - paymentAmount),
+            updated_at: new Date().toISOString()
+          }).eq('id', showCollectModal.customer_id)
+        }
+      }
       
-      // Also log collection
+      // 4. Record collection in general collections
+      const { error: colErr } = await supabase.from('collections').insert([{
+        bill_id: billId || null,
+        invoice_number: showCollectModal.invoice_number || null,
+        customer_name: showCollectModal.customer_name || 'Customer',
+        amount: paymentAmount,
+        payment_mode: 'cash',
+        date: todayDate,
+        notes: `Due Collection for ${showCollectModal.customer_name || 'Customer'} (Inv: ${showCollectModal.invoice_number || 'N/A'})`
+      }])
+      if (colErr) console.warn('Collections log warning:', colErr.message)
+
+      // Also record in dealer_collections
       await supabase.from('dealer_collections').insert([{
         amount: paymentAmount,
-        collected_date: new Date().toISOString().split('T')[0],
+        collected_date: todayDate,
+        date: todayDate,
         payment_mode: 'cash',
-        notes: `Due Collection for ${showCollectModal.customer_name || 'Customer'}`
+        notes: `Due Collection for ${showCollectModal.customer_name || 'Customer'} (Inv: ${showCollectModal.invoice_number || 'N/A'})`,
+        collected_by: 'Cashier'
       }])
 
       emitDataChange('dues')
+      emitDataChange('bills')
       emitDataChange('collections')
+      emitDataChange('customers')
 
       setShowCollectModal(null)
       setPaymentAmount(0)
       loadDues()
-      alert('✅ Due collection payment recorded!')
+      alert('✅ Due collection payment recorded successfully in database!')
     } catch (e: any) {
-      alert(`Error: ${e.message}`)
+      alert(`Error saving collection: ${e.message}`)
     } finally {
       setUpdating(false)
     }

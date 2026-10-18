@@ -3,20 +3,27 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useDataSyncListener } from '@/lib/events/data-sync'
-import { BarChart3, DollarSign, ArrowUpRight, ArrowDownLeft, TrendingUp, RefreshCw } from 'lucide-react'
+import { BarChart3, DollarSign, ArrowUpRight, ArrowDownLeft, TrendingUp, RefreshCw, PackageCheck, Layers } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
+import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { SkeletonCard } from '@/components/ui/Skeleton'
 
 export default function ProfitLossPage() {
-  const [data, setData] = useState({ sales: 0, expenses: 0, salaries: 0, profit: 0 })
+  const [data, setData] = useState({ 
+    sales: 0, 
+    cogs: 0, 
+    grossProfit: 0, 
+    expenses: 0, 
+    salaries: 0, 
+    profit: 0 
+  })
   const [period, setPeriod] = useState<'today' | 'week' | 'month' | 'quarter' | 'year'>('month')
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
-  useDataSyncListener(['bills', 'expenses', 'all'], () => { loadData() })
+  useDataSyncListener(['bills', 'expenses', 'salary', 'all'], () => { loadData() })
 
   useEffect(() => {
     loadData()
@@ -43,18 +50,22 @@ export default function ProfitLossPage() {
       }
 
       const [{ data: sales }, { data: expenses }, { data: salaries }] = await Promise.all([
-        supabase.from('bills').select('total_amount').gte('date', fromDate),
+        supabase.from('bills').select('total_amount, total_cogs, gross_profit').gte('date', fromDate),
         supabase.from('expenses').select('amount').gte('expense_date', fromDate),
         supabase.from('salary_payments').select('net_salary').gte('created_at', fromDate).eq('status', 'paid'),
       ])
 
       const totalSales = (sales || []).reduce((s, r) => s + (Number(r.total_amount) || 0), 0)
+      const totalCogs = (sales || []).reduce((s, r) => s + (Number(r.total_cogs) || 0), 0)
+      const grossProfit = totalSales - totalCogs
       const totalExpenses = (expenses || []).reduce((s, r) => s + (Number(r.amount) || 0), 0)
       const totalSalaries = (salaries || []).reduce((s, r) => s + (Number(r.net_salary) || 0), 0)
-      const netProfit = totalSales - totalExpenses - totalSalaries
+      const netProfit = grossProfit - totalExpenses - totalSalaries
 
       setData({
         sales: totalSales,
+        cogs: totalCogs,
+        grossProfit: grossProfit,
         expenses: totalExpenses,
         salaries: totalSalaries,
         profit: netProfit,
@@ -66,7 +77,8 @@ export default function ProfitLossPage() {
     }
   }
 
-  const margin = data.sales > 0 ? ((data.profit / data.sales) * 100).toFixed(1) : '0.0'
+  const grossMargin = data.sales > 0 ? ((data.grossProfit / data.sales) * 100).toFixed(1) : '0.0'
+  const netMargin = data.sales > 0 ? ((data.profit / data.sales) * 100).toFixed(1) : '0.0'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -78,7 +90,7 @@ export default function ProfitLossPage() {
             Profit & Loss Financial Statement
           </h2>
           <p style={{ color: '#a1a1aa', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-            Auto-calculated financial P&L summary of revenue, operating costs, and net margin.
+            Authoritative accounting P&L with historical COGS, gross margins, and net operating profit.
           </p>
         </div>
 
@@ -119,28 +131,57 @@ export default function ProfitLossPage() {
               </div>
 
               <div style={{ textAlign: 'right' }}>
-                <Badge variant={data.profit >= 0 ? 'success' : 'danger'} style={{ fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}>
-                  Net Margin: {margin}%
-                </Badge>
+                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                  <Badge variant="neutral">
+                    Gross Margin: {grossMargin}%
+                  </Badge>
+                  <Badge variant={data.profit >= 0 ? 'success' : 'danger'}>
+                    Net Margin: {netMargin}%
+                  </Badge>
+                </div>
                 <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '0.35rem' }}>
-                  {data.profit >= 0 ? '✅ Business is operating at a profit' : '⚠️ Costs exceed revenue for period'}
+                  {data.profit >= 0 ? '✅ Business is operating at a net profit' : '⚠️ Operating costs exceed gross profit for period'}
                 </div>
               </div>
             </div>
           </Card>
 
           {/* Breakdown Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
             {/* Sales Revenue */}
             <Card style={{ padding: '1.25rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#a1a1aa', textTransform: 'uppercase' }}>Gross Sales Revenue</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#a1a1aa', textTransform: 'uppercase' }}>Total Revenue</span>
                 <ArrowUpRight style={{ width: '18px', height: '18px', color: '#34d399' }} />
               </div>
-              <div className="num" style={{ fontSize: '1.75rem', fontWeight: 900, color: '#34d399' }}>
+              <div className="num" style={{ fontSize: '1.65rem', fontWeight: 900, color: '#34d399' }}>
                 {formatCurrency(data.sales)}
               </div>
-              <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '0.25rem' }}>(+) Operating Inflows</div>
+              <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '0.25rem' }}>Authoritative Canonical Sales</div>
+            </Card>
+
+            {/* Cost of Goods Sold */}
+            <Card style={{ padding: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#a1a1aa', textTransform: 'uppercase' }}>Cost of Goods Sold</span>
+                <PackageCheck style={{ width: '18px', height: '18px', color: '#f87171' }} />
+              </div>
+              <div className="num" style={{ fontSize: '1.65rem', fontWeight: 900, color: '#f87171' }}>
+                {formatCurrency(data.cogs)}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '0.25rem' }}>Historical Raw Material & COGS</div>
+            </Card>
+
+            {/* Gross Profit */}
+            <Card style={{ padding: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#a1a1aa', textTransform: 'uppercase' }}>Gross Margin / Profit</span>
+                <Layers style={{ width: '18px', height: '18px', color: '#fbbf24' }} />
+              </div>
+              <div className="num" style={{ fontSize: '1.65rem', fontWeight: 900, color: '#fbbf24' }}>
+                {formatCurrency(data.grossProfit)}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '0.25rem' }}>Margin: {grossMargin}%</div>
             </Card>
 
             {/* Operating Expenses */}
@@ -149,22 +190,22 @@ export default function ProfitLossPage() {
                 <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#a1a1aa', textTransform: 'uppercase' }}>Operating Expenses</span>
                 <ArrowDownLeft style={{ width: '18px', height: '18px', color: '#f87171' }} />
               </div>
-              <div className="num" style={{ fontSize: '1.75rem', fontWeight: 900, color: '#f87171' }}>
+              <div className="num" style={{ fontSize: '1.65rem', fontWeight: 900, color: '#f87171' }}>
                 {formatCurrency(data.expenses)}
               </div>
-              <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '0.25rem' }}>(-) Plant & Diesel Costs</div>
+              <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '0.25rem' }}>Fuel, Maintenance & Utilities</div>
             </Card>
 
             {/* Salaries Paid */}
             <Card style={{ padding: '1.25rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#a1a1aa', textTransform: 'uppercase' }}>Salary & Payroll</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#a1a1aa', textTransform: 'uppercase' }}>Payroll & Wages</span>
                 <ArrowDownLeft style={{ width: '18px', height: '18px', color: '#fbbf24' }} />
               </div>
-              <div className="num" style={{ fontSize: '1.75rem', fontWeight: 900, color: '#fbbf24' }}>
+              <div className="num" style={{ fontSize: '1.65rem', fontWeight: 900, color: '#fbbf24' }}>
                 {formatCurrency(data.salaries)}
               </div>
-              <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '0.25rem' }}>(-) Staff Wages & Bata</div>
+              <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '0.25rem' }}>Driver & Staff Salaries</div>
             </Card>
           </div>
         </div>

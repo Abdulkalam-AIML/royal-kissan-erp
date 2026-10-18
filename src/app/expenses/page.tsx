@@ -68,10 +68,17 @@ export default function ExpensesPage() {
     }
     setSaving(true)
     try {
-      const { data } = await supabase.from('expenses').insert({
-        ...form,
+      const expDate = form.expense_date || new Date().toISOString().split('T')[0]
+      const { data, error } = await supabase.from('expenses').insert({
+        category_name: form.category_name,
         amount: Number(form.amount),
+        expense_date: expDate,
+        date: expDate,
+        description: form.description || '',
+        payment_mode: form.payment_mode || 'cash'
       }).select().single()
+
+      if (error) throw error
 
       if (data) {
         setExpenses(prev => [data, ...prev])
@@ -87,6 +94,7 @@ export default function ExpensesPage() {
         payment_mode: 'cash',
       })
       loadExpenses()
+      alert('✅ Expense recorded successfully in database!')
     } catch (e: any) {
       alert(`Error saving expense: ${e.message}`)
     } finally {

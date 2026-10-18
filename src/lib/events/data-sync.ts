@@ -16,6 +16,7 @@ export type DataModuleKey =
   | 'collections'
   | 'dues'
   | 'attendance'
+  | 'salary'
   | 'all'
 
 const EVENT_NAME = 'rk_data_changed'

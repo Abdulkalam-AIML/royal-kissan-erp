@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { emitDataChange, useDataSyncListener } from '@/lib/events/data-sync'
+import { saveUnifiedBill } from '@/lib/services/billing-service'
 
 // Fallback preseeded data for drivers
 const FALLBACK_DRIVERS = [
@@ -572,28 +573,37 @@ export default function DriversPage() {
     })
     setCustomers(updatedCustomers)
 
-    const routeSalesPayload = {
-      invoice_number: invoiceNumber,
-      driver_id: selectedDriver.id,
-      route_id: selectedRoute?.id || null,
-      customer_name: billingCustomer.name,
-      product_name: billingForm.product_name,
-      quantity: billingForm.qty,
-      rate: billingForm.rate,
-      total_amount: total,
-      cash_paid: Number(billingForm.cash) || 0,
-      upi_paid: Number(billingForm.upi) || 0,
-      due_amount: due > 0 ? due : 0
-    }
+    const todayDate = new Date().toISOString().split('T')[0]
+    const cashVal = Number(billingForm.cash) || 0
+    const upiVal = Number(billingForm.upi) || 0
+    const totalPaid = cashVal + upiVal
 
     try {
-      const { error: routeSalesErr } = await supabase
-        .from('route_sales')
-        .insert(routeSalesPayload)
-
-      if (routeSalesErr) {
-        console.error('Failed to save route sale:', routeSalesErr.message)
-      }
+      await saveUnifiedBill({
+        invoice_number: invoiceNumber,
+        bill_type: 'route',
+        customer_name: billingCustomer.name,
+        driver_id: selectedDriver.id,
+        route_id: selectedRoute?.id || null,
+        route_customer_id: billingCustomer.id || null,
+        date: todayDate,
+        subtotal: total,
+        taxable_amount: total,
+        gst_amount: 0,
+        grand_total: total,
+        total_amount: total,
+        paid_amount: totalPaid,
+        due_amount: due > 0 ? due : 0,
+        cash_amount: cashVal,
+        upi_amount: upiVal,
+        payment_mode: cashVal > 0 && upiVal > 0 ? 'mixed' : upiVal > 0 ? 'upi' : due >= total ? 'due' : 'cash',
+        items: [{
+          product_name: billingForm.product_name,
+          quantity: billingForm.qty,
+          rate: billingForm.rate,
+          amount: total
+        }]
+      })
 
       setSuccessData({
         invoiceNumber,
@@ -612,8 +622,8 @@ export default function DriversPage() {
       setBillingModalOpen(false)
       loadDriversAndRoutes()
       loadProfileHistory(selectedDriver.id)
-    } catch (e) {
-      console.error(e)
+    } catch (e: any) {
+      alert(`Error saving route sale: ${e.message}`)
     } finally {
       setSubmitting(false)
     }

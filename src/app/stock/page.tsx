@@ -45,18 +45,33 @@ export default function StockPage() {
     try {
       const calc: Record<string, { opening: number; in: number; out: number; current: number }> = {}
       STOCK_ITEMS.forEach(item => {
-        calc[item.name] = { opening: 100, in: 45, out: 20, current: 125 }
+        calc[item.name] = { opening: 0, in: 0, out: 0, current: 0 }
       })
 
-      const { data: allTx } = await supabase.from('stock_transactions').select('*').order('created_at', { ascending: false })
+      const [{ data: dbProducts }, { data: allTx }] = await Promise.all([
+        supabase.from('products').select('id, name, stock_quantity'),
+        supabase.from('stock_transactions').select('*').order('created_at', { ascending: false })
+      ])
+
+      // Seed current stock from products table if available
+      if (dbProducts) {
+        dbProducts.forEach(p => {
+          const matchedItem = STOCK_ITEMS.find(i => i.name.toLowerCase().includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(i.name.toLowerCase()))
+          if (matchedItem && calc[matchedItem.name]) {
+            calc[matchedItem.name].opening = Number(p.stock_quantity) || 0
+            calc[matchedItem.name].current = Number(p.stock_quantity) || 0
+          }
+        })
+      }
+
       if (allTx) {
         allTx.forEach(tx => {
-          const name = tx.item_name || STOCK_ITEMS.find(i => tx.notes?.includes(`[${i.name}]`))?.name
+          const name = tx.item_name || tx.product_name || STOCK_ITEMS.find(i => tx.notes?.includes(`[${i.name}]`))?.name
           if (!name || !calc[name]) return
-          const qty = tx.quantity || 0
-          if (tx.transaction_type === 'opening') calc[name].opening += qty
+          const qty = Number(tx.quantity) || 0
+          if (tx.transaction_type === 'opening') calc[name].opening = qty
           else if (tx.transaction_type === 'in') calc[name].in += qty
-          else if (tx.transaction_type === 'out') calc[name].out += qty
+          else if (tx.transaction_type === 'out' || tx.transaction_type === 'sale') calc[name].out += qty
         })
         STOCK_ITEMS.forEach(item => {
           const d = calc[item.name]
@@ -81,22 +96,42 @@ export default function StockPage() {
     }
     setSaving(true)
     try {
-      const { data } = await supabase.from('stock_transactions').insert([{
+      // Find matching product in DB if exists
+      const { data: matchedProds } = await supabase.from('products').select('id, name, stock_quantity').ilike('name', `%${form.item.split(' ')[0]}%`).limit(1)
+      const matchedProd = matchedProds && matchedProds[0]
+
+      const { data, error } = await supabase.from('stock_transactions').insert([{
+        product_id: matchedProd?.id || null,
+        product_name: matchedProd?.name || form.item,
+        item_name: form.item,
         transaction_type: txType,
         quantity: form.quantity,
-        item_name: form.item,
         notes: form.notes ? `${form.notes} [${form.item}]` : `[${form.item}]`,
         reference_type: txType === 'opening' ? 'opening_balance' : 'adjustment',
       }]).select().single()
+
+      if (error) throw error
+
+      // Update product stock_quantity in products table if matched
+      if (matchedProd) {
+        let newStock = Number(matchedProd.stock_quantity) || 0
+        if (txType === 'in') newStock += form.quantity
+        else if (txType === 'out') newStock = Math.max(0, newStock - form.quantity)
+        else if (txType === 'opening') newStock = form.quantity
+
+        await supabase.from('products').update({ stock_quantity: newStock, updated_at: new Date().toISOString() }).eq('id', matchedProd.id)
+      }
 
       if (data) {
         setTransactions(prev => [data, ...prev])
       }
       emitDataChange('stock')
+      emitDataChange('products')
 
       setShowModal(false)
       setForm({ item: STOCK_ITEMS[0].name, quantity: 0, notes: '' })
       loadStockData()
+      alert('✅ Stock movement recorded successfully in database!')
     } catch (err: any) {
       alert(err.message || 'Failed to save stock movement')
     } finally {

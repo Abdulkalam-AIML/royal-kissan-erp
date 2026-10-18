@@ -56,25 +56,30 @@ export default function ProductsPage() {
     setSaving(true)
     try {
       if (editForm.id) {
-        const { data } = await supabase.from('products').update({
+        const { data, error } = await supabase.from('products').update({
           name: editForm.name,
-          default_rate: editForm.default_rate,
-          gst_rate: editForm.gst_rate,
+          default_rate: Number(editForm.default_rate) || 0,
+          gst_rate: Number(editForm.gst_rate) || 0,
           hsn_code: editForm.hsn_code,
           is_active: editForm.is_active,
           category: editForm.category,
+          updated_at: new Date().toISOString()
         }).eq('id', editForm.id).select().single()
+
+        if (error) throw error
 
         if (data) {
           setProducts(prev => prev.map(p => p.id === editingId ? data : p))
-        } else {
-          setProducts(prev => prev.map(p => p.id === editingId ? { ...p, ...editForm } : p))
         }
         emitDataChange('products')
+        setEditingId(null)
+        alert('✅ Product updated successfully!')
       }
-    } catch { /* ignore */ }
-    setEditingId(null)
-    setSaving(false)
+    } catch (e: any) {
+      alert(`Error updating product: ${e.message}`)
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function saveNewProduct() {
@@ -84,19 +89,25 @@ export default function ProductsPage() {
     }
     setSaving(true)
     try {
-      const { data } = await supabase.from('products').insert([addForm]).select().single()
+      const payload = {
+        ...addForm,
+        default_rate: Number(addForm.default_rate) || 0,
+        gst_rate: Number(addForm.gst_rate) || 0,
+      }
+      const { data, error } = await supabase.from('products').insert([payload]).select().single()
+      if (error) throw error
       if (data) {
         setProducts(prev => [...prev, data])
-      } else {
-        setProducts(prev => [...prev, { ...addForm, id: Date.now().toString() }])
       }
       emitDataChange('products')
-    } catch {
-      setProducts(prev => [...prev, { ...addForm, id: Date.now().toString() }])
+      setShowAdd(false)
+      setAddForm({ name: '', category: 'Can', unit: 'piece', default_rate: 0, gst_rate: 18, hsn_code: '2201', is_active: true })
+      alert('✅ New product saved successfully in database!')
+    } catch (e: any) {
+      alert(`Error saving product: ${e.message}`)
+    } finally {
+      setSaving(false)
     }
-    setShowAdd(false)
-    setAddForm({ name: '', category: 'Can', unit: 'piece', default_rate: 0, gst_rate: 18, hsn_code: '2201', is_active: true })
-    setSaving(false)
   }
 
   const columns: Column<any>[] = [

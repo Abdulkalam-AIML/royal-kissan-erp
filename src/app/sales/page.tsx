@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { TrendingUp, RefreshCw, Printer, Download, Eye, FileText, CheckCircle } from 'lucide-react'
+import { TrendingUp, RefreshCw, Printer, Download, Eye, FileText, CheckCircle, Plus, Receipt } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { DataTable, Column } from '@/components/ui/DataTable'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
@@ -18,6 +18,7 @@ import { useDataSyncListener } from '@/lib/events/data-sync'
 export default function SalesPage() {
   const [sales, setSales] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [selectedType, setSelectedType] = useState<string>('all')
   const [previewBill, setPreviewBill] = useState<any | null>(null)
   const supabase = createClient()
 
@@ -33,9 +34,24 @@ export default function SalesPage() {
         .select('id, invoice_number, date, customer_name, customer_phone, customer_address, customer_gstin, dealer_id, bill_type, total_amount, paid_amount, due_amount, payment_mode, created_at')
         .order('created_at', { ascending: false })
         .limit(100)
-      setSales(data || [])
+
+      let merged = data || []
+      try {
+        const rawLocal = localStorage.getItem('rk_local_bills')
+        if (rawLocal) {
+          const localBills = JSON.parse(rawLocal)
+          merged = [...localBills, ...merged.filter((b: any) => !localBills.some((lb: any) => lb.id === b.id || lb.invoice_number === b.invoice_number))]
+        }
+      } catch (e) {}
+
+      setSales(merged)
     } catch {
-      setSales([])
+      try {
+        const rawLocal = localStorage.getItem('rk_local_bills')
+        setSales(rawLocal ? JSON.parse(rawLocal) : [])
+      } catch {
+        setSales([])
+      }
     } finally {
       setLoading(false)
     }
@@ -105,7 +121,11 @@ export default function SalesPage() {
     {
       key: 'bill_type',
       title: 'Type',
-      render: (b) => <Badge variant="neutral">{(b.bill_type || 'Sale').replace(/_/g, ' ')}</Badge>,
+      render: (b) => {
+        const t = (b.bill_type || 'counter').toLowerCase()
+        const variant = t.includes('route') ? 'info' : t.includes('dealer') ? 'warning' : t.includes('customer') ? 'info' : 'neutral'
+        return <Badge variant={variant}>{t.replace(/_/g, ' ').toUpperCase()}</Badge>
+      },
     },
     {
       key: 'total_amount',
@@ -181,7 +201,11 @@ export default function SalesPage() {
     },
   ]
 
-  const totalSalesVal = sales.reduce((sum, b) => sum + (Number(b.total_amount) || 0), 0)
+  const filteredSales = selectedType === 'all' 
+    ? sales 
+    : sales.filter(s => (s.bill_type || '').toLowerCase().includes(selectedType))
+
+  const totalSalesVal = filteredSales.reduce((sum, b) => sum + (Number(b.total_amount) || 0), 0)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -192,16 +216,52 @@ export default function SalesPage() {
             Sales History & Billing Audit
           </h2>
           <p style={{ color: '#a1a1aa', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-            {sales.length} transactions recorded &bull; Total Sales Value: {' '}
+            {filteredSales.length} of {sales.length} transactions &bull; Total Sales: {' '}
             <span className="num" style={{ color: '#fbbf24', fontWeight: 800 }}>
               {formatCurrency(totalSalesVal)}
             </span>
           </p>
         </div>
 
-        <Button variant="secondary" size="sm" icon={<RefreshCw style={{ width: '14px', height: '14px' }} />} onClick={loadSales}>
-          Refresh
-        </Button>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <a href="/billing">
+            <Button variant="primary" icon={<Plus style={{ width: '15px', height: '15px' }} />}>
+              Create New Bill
+            </Button>
+          </a>
+          <Button variant="secondary" size="sm" icon={<RefreshCw style={{ width: '14px', height: '14px' }} />} onClick={loadSales}>
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* Bill Type Filter Tabs */}
+      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.75rem' }}>
+        {[
+          { key: 'all', label: 'All Invoices' },
+          { key: 'counter', label: 'Counter Bills' },
+          { key: 'customer', label: 'Customer Bills' },
+          { key: 'dealer', label: 'Dealer Bills' },
+          { key: 'route', label: 'Route Bills' }
+        ].map(tab => (
+          <button
+            type="button"
+            key={tab.key}
+            onClick={() => setSelectedType(tab.key)}
+            style={{
+              padding: '0.4rem 0.85rem',
+              borderRadius: '6px',
+              border: `1px solid ${selectedType === tab.key ? '#fbbf24' : 'rgba(255,255,255,0.08)'}`,
+              background: selectedType === tab.key ? 'rgba(251, 191, 36, 0.12)' : 'rgba(255,255,255,0.02)',
+              color: selectedType === tab.key ? '#fbbf24' : '#a1a1aa',
+              fontSize: '0.8rem',
+              fontWeight: selectedType === tab.key ? 700 : 500,
+              cursor: 'pointer'
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {loading ? (
@@ -209,7 +269,7 @@ export default function SalesPage() {
       ) : (
         <DataTable
           columns={columns}
-          data={sales}
+          data={filteredSales}
           searchPlaceholder="Search invoices, customer names, bill types..."
           exportFileName="royal-kissan-sales-history"
         />

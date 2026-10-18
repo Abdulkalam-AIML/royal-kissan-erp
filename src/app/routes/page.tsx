@@ -53,13 +53,23 @@ export default function RoutesPage() {
     }
     setSaving(true)
     try {
-      const { data, error } = await supabase.from('routes').insert([newRoute]).select().single()
+      const payload = {
+        name: newRoute.name,
+        area: newRoute.area || null,
+        driver_id: newRoute.driver_id || null,
+        is_active: true
+      }
+      const { data, error } = await supabase.from('routes').insert([payload]).select().single()
       if (error) throw error
-      setRoutes(prev => [...prev, data])
-      setSelectedRoute(data)
+      if (data) {
+        setRoutes(prev => [...prev, data])
+        setSelectedRoute(data)
+      }
       emitDataChange('routes')
       setShowAddModal(false)
       setNewRoute({ name: '', area: '', driver_id: '' })
+      loadInitialData()
+      alert('✅ Route saved successfully in database!')
     } catch (e: any) {
       alert(`Error saving route: ${e.message}`)
     } finally {

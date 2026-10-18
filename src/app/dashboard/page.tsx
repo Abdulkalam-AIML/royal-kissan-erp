@@ -119,7 +119,7 @@ export default function DashboardPage() {
       const [todayBillsRes, monthBillsRes, routeSalesRes, recentBillsRes, expensesRes] = await Promise.all([
         supabase.from('bills').select('total_amount, paid_amount, due_amount, cash_amount, upi_amount, card_amount').gte('date', todayStr),
         supabase.from('bills').select('total_amount, paid_amount, due_amount').gte('date', firstDayOfMonth),
-        supabase.from('route_sales').select('total_amount, cash_paid, upi_paid, due_amount').gte('sale_date', todayStr),
+        supabase.from('route_sales').select('bill_id, total_amount, cash_paid, upi_paid, due_amount').gte('sale_date', todayStr),
         supabase.from('bills').select('id, date, invoice_number, customer_name, bill_type, total_amount, paid_amount, due_amount, payment_status, created_at').order('created_at', { ascending: false }).limit(6),
         supabase.from('expenses').select('amount').gte('date', firstDayOfMonth)
       ])
@@ -143,7 +143,9 @@ export default function DashboardPage() {
         tUPI += Number(b.upi_amount) || 0
       })
 
-      routeSales.forEach((rs: any) => {
+      // Canonical bills is the single source of truth.
+      // Only include unlinked legacy route sales (where bill_id IS NULL) to guarantee zero double counting!
+      routeSales.filter((rs: any) => !rs.bill_id).forEach((rs: any) => {
         tSales += Number(rs.total_amount) || 0
         const paid = (Number(rs.cash_paid) || 0) + (Number(rs.upi_paid) || 0)
         tPaid += paid

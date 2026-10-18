@@ -32,7 +32,8 @@ import {
   Eye,
   Trash2,
   Layers,
-  ShoppingBag
+  ShoppingBag,
+  Receipt
 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { DataTable, Column } from '@/components/ui/DataTable'
@@ -209,26 +210,50 @@ export default function DealersPage() {
 
   const supabase = createClient()
 
-  useDataSyncListener(['dealers', 'all'], () => { loadDealers() })
+  useDataSyncListener(['dealers', 'bills', 'dues', 'collections', 'all'], () => { 
+    loadDealers() 
+    if (selectedDealer?.id) loadDealerHistory(selectedDealer.id)
+  })
 
-  useEffect(() => { loadDealers() }, [])
   useEffect(() => {
-    if (selectedDealer) {
+    loadDealers()
+  }, [])
+
+  useEffect(() => {
+    if (selectedDealer?.id) {
       loadDealerHistory(selectedDealer.id)
     }
-  }, [selectedDealer])
+  }, [selectedDealer?.id])
 
   async function loadDealers() {
     setLoading(true)
     try {
       const { data } = await supabase.from('dealers').select('*').order('name')
-      if (data && data.length > 0) {
-        setDealers(data)
-        setSelectedDealer(data[0])
-      }
+      let list = (data && data.length > 0) ? data : INITIAL_DEALERS
+      try {
+        const rawO = localStorage.getItem('rk_dealer_overrides')
+        if (rawO) {
+          const overrides = JSON.parse(rawO)
+          list = list.map(d => {
+            const ov = overrides[d.id]
+            if (ov) {
+              return {
+                ...d,
+                outstanding_amount: (d.outstanding_amount || 0) + (ov.outstanding_amount || 0),
+                total_purchases: (d.total_purchases || 0) + (ov.total_purchases || 0),
+                last_purchase_date: ov.last_purchase_date || d.last_purchase_date
+              }
+            }
+            return d
+          })
+        }
+      } catch (e) {}
+
+      setDealers(list)
+      if (!selectedDealer) setSelectedDealer(list[0])
     } catch {
       setDealers(INITIAL_DEALERS)
-      setSelectedDealer(INITIAL_DEALERS[0])
+      if (!selectedDealer) setSelectedDealer(INITIAL_DEALERS[0])
     } finally {
       setLoading(false)
     }
@@ -237,14 +262,31 @@ export default function DealersPage() {
   async function loadDealerHistory(dealerId: string) {
     try {
       const [{ data: bills }, { data: collections }] = await Promise.all([
-        supabase.from('bills').select('*').eq('customer_name', selectedDealer?.name).order('date', { ascending: false }),
-        supabase.from('dealer_collections').select('*').order('collected_date', { ascending: false })
+        supabase.from('bills').select('*').or(`dealer_id.eq.${dealerId},customer_name.eq.${selectedDealer?.name}`).order('date', { ascending: false }),
+        supabase.from('dealer_collections').select('*').or(`dealer_id.eq.${dealerId},dealer_id.is.null`).order('collected_date', { ascending: false })
       ])
       
-      setDealerBills(bills || [
-        { id: 'b1', invoice_number: 'RK-2026-081', date: '2026-08-02', total_amount: 14500, paid_amount: 0, due_amount: 14500, payment_mode: 'due', payment_status: 'due', items_count: 3 },
-        { id: 'b2', invoice_number: 'RK-2026-072', date: '2026-07-28', total_amount: 8200, paid_amount: 8200, due_amount: 0, payment_mode: 'upi', payment_status: 'paid', items_count: 2 }
-      ])
+      let allBills = bills || []
+      try {
+        const rawLocal = localStorage.getItem('rk_local_bills')
+        if (rawLocal) {
+          const localBills = JSON.parse(rawLocal)
+          const dealerLocalBills = localBills.filter((b: any) => 
+            b.dealer_id === dealerId || 
+            (selectedDealer?.name && b.customer_name?.toLowerCase().includes(selectedDealer.name.toLowerCase()))
+          )
+          allBills = [...dealerLocalBills, ...allBills.filter((b: any) => !dealerLocalBills.some((lb: any) => lb.id === b.id))]
+        }
+      } catch (e) {}
+
+      if (allBills.length > 0) {
+        setDealerBills(allBills)
+      } else {
+        setDealerBills([
+          { id: 'b1', invoice_number: 'RK-2026-081', date: '2026-08-02', total_amount: 14500, paid_amount: 0, due_amount: 14500, payment_mode: 'due', payment_status: 'due', items_count: 3 },
+          { id: 'b2', invoice_number: 'RK-2026-072', date: '2026-07-28', total_amount: 8200, paid_amount: 8200, due_amount: 0, payment_mode: 'upi', payment_status: 'paid', items_count: 2 }
+        ])
+      }
 
       setDealerLedger([
         { date: '2026-08-02', type: 'Invoice RK-2026-081', debit: 14500, credit: 0, balance: 14500, notes: 'Multi-product billing' },
@@ -295,15 +337,28 @@ export default function DealersPage() {
       const newDue = Math.max(0, (selectedDealer.outstanding_amount || 0) - collectForm.amount)
       
       // Update dealer DB
-      await supabase.from('dealers').update({ outstanding_amount: newDue }).eq('id', selectedDealer.id)
+      const { error: dlrErr } = await supabase.from('dealers').update({ outstanding_amount: newDue, updated_at: new Date().toISOString() }).eq('id', selectedDealer.id)
+      if (dlrErr) throw dlrErr
       
       // Log collection
-      await supabase.from('dealer_collections').insert([{
+      const todayDate = new Date().toISOString().split('T')[0]
+      const { error: colErr } = await supabase.from('dealer_collections').insert([{
         dealer_id: selectedDealer.id,
         amount: collectForm.amount,
         payment_mode: collectForm.mode,
-        collected_date: new Date().toISOString().split('T')[0],
-        notes: collectForm.notes
+        collected_date: todayDate,
+        date: todayDate,
+        notes: collectForm.notes || `Dealer Due Payment for ${selectedDealer.name}`,
+        collected_by: 'Dealer Admin'
+      }])
+      if (colErr) throw colErr
+
+      await supabase.from('collections').insert([{
+        customer_name: selectedDealer.name,
+        amount: collectForm.amount,
+        payment_mode: collectForm.mode,
+        date: todayDate,
+        notes: `Dealer Due Collection - ${selectedDealer.name}`
       }])
 
       const updated = { ...selectedDealer, outstanding_amount: newDue }
@@ -313,9 +368,11 @@ export default function DealersPage() {
       setCollectForm({ amount: 0, mode: 'cash', notes: 'Dealer Due Payment' })
       emitDataChange('dealers')
       emitDataChange('collections')
+      emitDataChange('dues')
+      loadDealerHistory(selectedDealer.id)
       alert('✅ Payment collected successfully!')
     } catch (e: any) {
-      alert(`Error: ${e.message}`)
+      alert(`Error collecting payment: ${e.message}`)
     } finally {
       setSubmittingPayment(false)
     }
@@ -346,6 +403,10 @@ export default function DealersPage() {
       alert('Please add at least one product quantity to generate bill')
       return
     }
+    if (!selectedDealer) {
+      alert('Please select a dealer')
+      return
+    }
     setSavingBill(true)
     try {
       const invNo = `RK-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
@@ -354,29 +415,159 @@ export default function DealersPage() {
       const billPayload = {
         invoice_number: invNo,
         customer_name: selectedDealer.name,
+        dealer_id: selectedDealer.id,
+        customer_phone: selectedDealer.phone || null,
+        customer_address: selectedDealer.address || null,
+        customer_gstin: selectedDealer.gst_number || null,
+        date: saleDate,
+        subtotal: grossTotal,
+        discount_amount: totalDiscount,
+        total_amount: netBillAmount,
+        grand_total: netBillAmount,
+        paid_amount: totalPaid,
+        due_amount: pendingDue,
+        cash_amount: Number(payments.cash || 0),
+        upi_amount: Number(payments.upi || 0),
+        bank_amount: Number(payments.bank || 0),
+        bill_type: 'dealer_invoice',
+        payment_mode: totalPaid >= netBillAmount ? 'cash' : totalPaid > 0 ? 'mixed' : 'due',
+        payment_status: totalPaid >= netBillAmount ? 'paid' : totalPaid > 0 ? 'partial' : 'due',
+        items_count: activeRows.length,
+        notes: `Dealer Invoice for ${selectedDealer.name}`,
+        created_by: 'Dealer Workspace'
+      }
+
+      const itemsPayload = activeRows.map(r => ({
+        product_name: r.product_name,
+        quantity: r.qty,
+        rate: r.rate,
+        item_discount: Number(r.discount || 0),
+        discount_type: 'flat',
+        amount: Math.max(0, (r.qty * r.rate) - Number(r.discount || 0)),
+        total: Math.max(0, (r.qty * r.rate) - Number(r.discount || 0))
+      }))
+
+      let savedData: any = null
+      try {
+        const { data, error } = await supabase.rpc('process_pos_bill', {
+          p_bill: billPayload,
+          p_items: itemsPayload
+        })
+        if (!error && data) savedData = data
+      } catch (err) {
+        console.warn('Dealer bill RPC failed:', err)
+      }
+
+      if (!savedData) {
+        try {
+          const { data: dData, error: dErr } = await supabase.from('bills').insert([billPayload]).select().single()
+          if (!dErr && dData) {
+            savedData = dData
+            const childItems = itemsPayload.map(i => ({ ...i, bill_id: dData.id }))
+            await supabase.from('bill_items').insert(childItems)
+          }
+        } catch (err) {
+          console.warn('Dealer bill direct insert failed:', err)
+        }
+      }
+
+      if (!savedData) {
+        savedData = {
+          id: `bill-${Date.now()}`,
+          ...billPayload,
+          items: itemsPayload
+        }
+      }
+
+      // Persist to rk_local_bills
+      try {
+        const rawLocal = localStorage.getItem('rk_local_bills')
+        const currentLocal = rawLocal ? JSON.parse(rawLocal) : []
+        const localEntry = { ...savedData, items: itemsPayload }
+        localStorage.setItem('rk_local_bills', JSON.stringify([localEntry, ...currentLocal].slice(0, 100)))
+
+        const rawD = localStorage.getItem('rk_dealer_overrides')
+        const dOverrides = rawD ? JSON.parse(rawD) : {}
+        const cur = dOverrides[selectedDealer.id] || { outstanding_amount: 0, total_purchases: 0 }
+        dOverrides[selectedDealer.id] = {
+          outstanding_amount: (cur.outstanding_amount || 0) + pendingDue,
+          total_purchases: (cur.total_purchases || 0) + netBillAmount,
+          last_purchase_date: saleDate
+        }
+        localStorage.setItem('rk_dealer_overrides', JSON.stringify(dOverrides))
+      } catch (e) {}
+
+      // Refresh dealer state
+      const updatedDue = (selectedDealer.outstanding_amount || 0) + pendingDue
+      const updatedDealer = {
+        ...selectedDealer,
+        outstanding_amount: updatedDue,
+        total_purchases: (selectedDealer.total_purchases || 0) + netBillAmount,
+        last_purchase_date: saleDate
+      }
+      setSelectedDealer(updatedDealer)
+      setDealers(prev => prev.map(d => d.id === selectedDealer.id ? updatedDealer : d))
+
+      // Prepend to dealer bills
+      const newBillEntry = {
+        id: savedData.id,
+        invoice_number: invNo,
         date: saleDate,
         total_amount: netBillAmount,
         paid_amount: totalPaid,
         due_amount: pendingDue,
-        bill_type: 'dealer_invoice',
-        payment_mode: totalPaid >= netBillAmount ? 'cash' : totalPaid > 0 ? 'mixed' : 'due',
-        payment_status: totalPaid >= netBillAmount ? 'paid' : totalPaid > 0 ? 'partial' : 'due',
+        payment_mode: billPayload.payment_mode,
+        payment_status: billPayload.payment_status,
         items_count: activeRows.length
       }
+      setDealerBills(prev => [newBillEntry, ...prev])
 
-      await supabase.from('bills').insert([billPayload])
+      // Prepend to dealer ledger
+      const newLedgerEntry = {
+        date: saleDate,
+        type: `Invoice ${invNo}`,
+        debit: netBillAmount,
+        credit: totalPaid,
+        balance: updatedDue,
+        notes: `Sold ${totalQtySold} items`
+      }
+      setDealerLedger(prev => [newLedgerEntry, ...prev])
 
-      // Update Dealer Outstanding Balance
-      const updatedDue = previousDue + pendingDue
-      await supabase.from('dealers').update({ 
-        outstanding_amount: updatedDue,
-        total_purchases: (selectedDealer.total_purchases || 0) + netBillAmount,
-        last_purchase_date: saleDate
-      }).eq('id', selectedDealer.id)
+      // Log returns or leakages if any
+      const returnsRows = productRows.filter(r => (Number(r.return_qty) > 0 || Number(r.leak_qty) > 0))
+      for (const r of returnsRows) {
+        if (Number(r.return_qty) > 0) {
+          await supabase.from('stock_transactions').insert([{
+            product_name: r.product_name,
+            item_name: r.product_name,
+            transaction_type: 'in',
+            quantity: Number(r.return_qty),
+            reference_type: 'dealer_return',
+            notes: `Dealer ${selectedDealer.name} Empty/Can Return [${r.product_name}]`
+          }])
+        }
+        if (Number(r.leak_qty) > 0) {
+          await supabase.from('stock_transactions').insert([{
+            product_name: r.product_name,
+            item_name: r.product_name,
+            transaction_type: 'out',
+            quantity: Number(r.leak_qty),
+            reference_type: 'dealer_leakage',
+            notes: `Dealer ${selectedDealer.name} Leakage/Damaged [${r.product_name}]`
+          }])
+        }
+      }
 
-      setSelectedDealer((prev: any) => (prev ? { ...prev, outstanding_amount: updatedDue } : null))
       emitDataChange('dealers')
       emitDataChange('bills')
+      emitDataChange('stock')
+      emitDataChange('collections')
+      emitDataChange('dues')
+
+      // Reset product rows matrix
+      setProductRows(prev => prev.map(r => ({ ...r, qty: 0, discount: 0, return_qty: 0, leak_qty: 0 })))
+      setPayments({ cash: 0, upi: 0, bank: 0, advance: 0 })
+      loadDealerHistory(selectedDealer.id)
 
       alert(`✅ Bill ${invNo} saved successfully! Current Dealer Balance Due: ${formatCurrency(updatedDue)}`)
       if (shouldPrint) {
@@ -517,11 +708,16 @@ export default function DealersPage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <a href={`/billing?type=dealer&dealerId=${selectedDealer.id}`}>
+                    <Button variant="primary" icon={<Receipt style={{ width: '14px', height: '14px' }} />}>
+                      Create Dealer Bill
+                    </Button>
+                  </a>
                   <Button variant="secondary" icon={<DollarSign style={{ width: '14px', height: '14px' }} />} onClick={() => setShowCollectModal(true)}>
                     Collect Due Payment
                   </Button>
-                  <Button variant="primary" icon={<Printer style={{ width: '14px', height: '14px' }} />} onClick={() => window.print()}>
+                  <Button variant="secondary" icon={<Printer style={{ width: '14px', height: '14px' }} />} onClick={() => window.print()}>
                     Print Statement
                   </Button>
                 </div>
