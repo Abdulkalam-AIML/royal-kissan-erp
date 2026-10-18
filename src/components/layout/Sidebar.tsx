@@ -24,7 +24,6 @@ import {
   FileText,
   PieChart,
   Bot,
-  Printer,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -89,8 +88,7 @@ const navGroups = [
   {
     group: 'System',
     items: [
-      { href: '/settings/printer', label: 'TVS Printer Setup', icon: Printer },
-      { href: '/settings',         label: 'System Settings',   icon: Settings },
+      { href: '/settings', label: 'System Settings', icon: Settings },
     ],
   },
 ]

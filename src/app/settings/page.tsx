@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Settings, Save, CheckCircle, Shield, Building, Printer } from 'lucide-react'
+import { Settings, Save, CheckCircle, Shield, Building } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -62,7 +62,7 @@ export default function SystemSettingsPage() {
             System Control & ERP Settings
           </h2>
           <p style={{ color: '#a1a1aa', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-            Manage organization branding, invoice prefixes, tax parameters, and thermal printer links.
+            Manage organization branding, invoice prefixes, tax parameters, and company profile.
           </p>
         </div>
 

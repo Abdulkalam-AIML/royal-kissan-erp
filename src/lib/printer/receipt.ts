@@ -236,45 +236,4 @@ export function generateReceiptBuffer(
   return builder.build()
 }
 
-/**
- * Generate ESC/POS Test Print ticket
- */
-export function generateTestReceiptBuffer(
-  config: PrinterSettings = DEFAULT_PRINTER_SETTINGS
-): Uint8Array {
-  const charWidth = config.character_width || 48
-  const builder = new EscPosBuilder(charWidth)
 
-  builder.align('center')
-  builder.bold(true)
-  builder.size('double_both')
-  builder.line('ROYAL KISSAN')
-  builder.size('normal')
-  builder.line('TVS RP3230ABW THERMAL TEST')
-  builder.bold(false)
-  builder.divider('=')
-
-  builder.align('left')
-  builder.bold(true)
-  builder.line('PRINTER STATUS: CONNECTED SUCCESS')
-  builder.bold(false)
-  builder.twoColumn('Printer Model:', config.printer_name)
-  builder.twoColumn('Connection:', 'Bluetooth ESC/POS')
-  builder.twoColumn('Paper Width:', config.paper_width)
-  builder.twoColumn('Characters/Line:', String(config.character_width))
-  builder.twoColumn('Auto Cut:', config.auto_cut ? 'ENABLED' : 'DISABLED')
-  builder.twoColumn('Cash Drawer:', config.drawer_enabled ? 'ENABLED' : 'DISABLED')
-  builder.twoColumn('Test Time:', new Date().toLocaleString('en-IN'))
-  builder.divider('-')
-
-  builder.align('center')
-  builder.line('ESC/POS Command Set Test Passed!')
-  builder.line('CP437 Character Encoding OK')
-  builder.feed(1)
-
-  builder.qrCode(`TVS-TEST-${Date.now()}`, 5)
-  builder.line(`TEST-ID: ${Date.now()}`)
-
-  builder.cut('full')
-  return builder.build()
-}

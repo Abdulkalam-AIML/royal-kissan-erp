@@ -25,7 +25,6 @@ import {
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import ReceiptPreviewModal from '@/components/printer/ReceiptPreviewModal'
-import { executePrintJob } from '@/lib/printer/printer'
 import { BillData } from '@/lib/printer/receipt'
 
 function BillingContent() {
@@ -124,14 +123,9 @@ function BillingContent() {
         }))
       }
 
-      const res = await executePrintJob(billData, { copyType: 'customer' })
-      if (res.success) {
-        alert(`🎉 Invoice ${bill.invoice_number} sent to printer!`)
-      } else {
-        alert(`❌ Printer Error: ${res.message}`)
-      }
+      setPreviewBill(billData)
     } catch (err: any) {
-      alert(`Print Exception: ${err?.message || err}`)
+      alert(`Error loading bill for reprint: ${err?.message || err}`)
     } finally {
       setPrintingId(null)
     }

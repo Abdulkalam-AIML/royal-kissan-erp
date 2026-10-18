@@ -463,29 +463,97 @@ button {
 }
 
 /* ================================================================
-   ROYAL KISSAN ERP — PRINT SYSTEM (A4, 80mm, 58mm DYNAMIC HEIGHT)
+   ROYAL KISSAN ERP — PRINT SYSTEM (A4, 80mm TVS-E, 58mm DYNAMIC HEIGHT)
    ================================================================ */
 @media print {
-  body * {
+  /* Hide all app chrome and interactive elements */
+  nav, aside, header, .sidebar, .header, .no-print, button, select, input,
+  .header-search, .header-status-pills, .modal-backdrop {
+    display: none !important;
     visibility: hidden !important;
   }
+
+  /* Document root reset for clean printing */
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide everything outside the active printable area */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Ensure printable area and its children are clearly visible */
   .printable-area, .printable-area * {
     visibility: visible !important;
   }
+
   .printable-area {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
     background: #ffffff !important;
     color: #000000 !important;
+    height: auto !important;
+    min-height: auto !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+    page-break-after: avoid;
+    break-after: avoid;
   }
+
+  /* 80mm Thermal Receipt (TVS-E RP3230ABW 80mm Roll) */
+  .print-format-80mm {
+    width: 76mm !important;
+    max-width: 80mm !important;
+    margin: 0 auto !important;
+    padding: 2mm 3mm !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+    border: none !important;
+    border-top: none !important;
+    border-bottom: none !important;
+    box-shadow: none !important;
+  }
+
+  /* 58mm Thermal Receipt (Compact Roll) */
+  .print-format-58mm {
+    width: 48mm !important;
+    max-width: 58mm !important;
+    margin: 0 auto !important;
+    padding: 1mm 2mm !important;
+    font-size: 9.5px !important;
+    line-height: 1.2 !important;
+    border: none !important;
+    border-top: none !important;
+    border-bottom: none !important;
+    box-shadow: none !important;
+  }
+
+  /* A4 Full Tax & Retail Invoice */
+  .print-format-a4 {
+    width: 100% !important;
+    max-width: 210mm !important;
+    margin: 0 auto !important;
+    padding: 8mm 12mm !important;
+    font-size: 12px !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
   @page {
     margin: 0;
     size: auto;
   }
 }
+

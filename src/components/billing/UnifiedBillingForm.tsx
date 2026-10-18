@@ -34,7 +34,6 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { executePrintJob } from '@/lib/printer/printer'
 import { BillData } from '@/lib/printer/receipt'
 import ReceiptPreviewModal from '@/components/printer/ReceiptPreviewModal'
 
@@ -129,7 +128,7 @@ export default function UnifiedBillingForm({
   const [saving, setSaving] = useState(false)
   const [lastSavedBill, setLastSavedBill] = useState<any | null>(null)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
-  const [printingThermal, setPrintingThermal] = useState(false)
+  const [savedBillForPrint, setSavedBillForPrint] = useState<BillData | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const supabase = createClient()
@@ -402,7 +401,7 @@ export default function UnifiedBillingForm({
         onSuccess(savedResult)
       }
 
-      // Handle Thermal Printing
+      // Handle Print Workflow
       if (shouldPrint) {
         const billDataObj: BillData = {
           id: savedResult.id,
@@ -434,21 +433,10 @@ export default function UnifiedBillingForm({
             total: i.total
           }))
         }
-
-        try {
-          setPrintingThermal(true)
-          const printRes = await executePrintJob(billDataObj, { copyType: 'customer' })
-          if (!printRes.success) {
-            alert(`⚠️ Bill saved to database, but printer was offline: ${printRes.message}`)
-          }
-        } catch (printErr: any) {
-          console.warn('Printer warning:', printErr)
-        } finally {
-          setPrintingThermal(false)
-        }
+        setSavedBillForPrint(billDataObj)
+      } else {
+        alert(`✅ ${billType.toUpperCase()} Bill #${savedResult.invoice_number} saved successfully! Amount: ₹${savedResult.total_amount}`)
       }
-
-      alert(`✅ ${billType.toUpperCase()} Bill #${savedResult.invoice_number} saved successfully! Amount: ₹${savedResult.total_amount}`)
 
       // Reset form for next invoice
       setCartItems([])
@@ -769,12 +757,11 @@ export default function UnifiedBillingForm({
                 type="button"
                 variant="secondary"
                 size="md"
-                loading={printingThermal}
                 disabled={saving}
                 onClick={() => handleSave(true)}
                 icon={<Printer style={{ width: '15px', height: '15px', color: '#fbbf24' }} />}
               >
-                Save & Thermal Print
+                Save & Print Bill
               </Button>
 
               <Button
@@ -797,11 +784,22 @@ export default function UnifiedBillingForm({
         </div>
       </div>
 
-      {/* Modal Preview if requested */}
+      {/* Modal Preview for Saved Bill (Save & Print) */}
+      {savedBillForPrint && (
+        <ReceiptPreviewModal
+          isOpen={!!savedBillForPrint}
+          onClose={() => setSavedBillForPrint(null)}
+          bill={savedBillForPrint}
+          initialFormat="80mm"
+        />
+      )}
+
+      {/* Modal Preview for Draft Bill */}
       {isPreviewOpen && (
         <ReceiptPreviewModal
           isOpen={isPreviewOpen}
           onClose={() => setIsPreviewOpen(false)}
+          initialFormat="80mm"
           bill={{
             invoice_number: invoiceNumber,
             bill_type: billType,

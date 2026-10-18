@@ -44,7 +44,8 @@ export default function ReceiptPreviewModal({
   onPrint,
   initialFormat = '80mm',
 }: ReceiptPreviewModalProps) {
-  const [copyType, setCopyType] = useState<CopyType>('customer')
+  const defaultCopy: CopyType = (bill?.dealer_name || bill?.dealer_id || bill?.bill_type === 'dealer') ? 'dealer' : 'customer'
+  const [copyType, setCopyType] = useState<CopyType>(defaultCopy)
   const [formatMode, setFormatMode] = useState<'80mm' | '58mm' | 'A4'>(initialFormat)
   const [printing, setPrinting] = useState(false)
   const [printStatus, setPrintStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -56,7 +57,7 @@ export default function ReceiptPreviewModal({
     ? new Date(bill.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
     : new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
 
-  const isDealerCopy = copyType === 'dealer' || Boolean(bill.dealer_name || bill.dealer_id)
+  const isDealerCopy = copyType === 'dealer'
   const isGstOn = bill.bill_type !== 'non_gst_invoice' && bill.gst_amount > 0
   const grandTotal = Number(bill.total_amount || 0)
   const subtotal = Number(bill.subtotal || 0)
@@ -68,27 +69,28 @@ export default function ReceiptPreviewModal({
   const paidAmount = Number(bill.paid_amount || 0)
   const dueAmount = Number(bill.due_amount || 0)
 
-  const dealerDisplayName = bill.dealer_name || bill.customer_name || 'Dealer'
+  const dealerDisplayName = bill.dealer_name || bill.customer_name || 'Customer'
   const dealerPhone = bill.dealer_phone || bill.customer_phone
   const dealerAddress = bill.dealer_address || bill.customer_address
   const dealerGstin = bill.dealer_gstin || bill.customer_gstin
 
   const handlePrintClick = async () => {
-    if (formatMode === 'A4') {
-      window.print()
-      return
-    }
-    if (!onPrint) {
-      window.print()
-      return
-    }
     setPrinting(true)
     setPrintStatus(null)
     try {
-      await onPrint(copyType)
-      setPrintStatus({ type: 'success', message: 'Bill Printed Successfully' })
+      // Trigger standard browser / system print dialog
+      window.print()
+
+      setPrintStatus({
+        type: 'success',
+        message: 'Device print dialog opened. Select your TVS-E RP3230ABW (or system printer) to print. Note: The operating system handles physical print spooling.',
+      })
+
+      if (onPrint) {
+        await onPrint(copyType)
+      }
     } catch (err: any) {
-      setPrintStatus({ type: 'error', message: err?.message || 'Printing failed' })
+      setPrintStatus({ type: 'error', message: err?.message || 'Failed to open system print dialog' })
     } finally {
       setPrinting(false)
     }
@@ -137,7 +139,7 @@ export default function ReceiptPreviewModal({
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Printer style={{ width: '20px', height: '20px', color: '#fbbf24' }} />
             <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#f4f4f5', margin: 0 }}>
-              Print Template ({isDealerCopy ? 'DEALER COPY' : formatMode.toUpperCase()})
+              Print Bill ({copyType.toUpperCase()} — {formatMode})
             </h3>
           </div>
 
@@ -212,7 +214,7 @@ export default function ReceiptPreviewModal({
           {/* ───────────────────────────────────────────────────────────────── */}
           {formatMode === 'A4' && (
             <div
-              className="printable-area"
+              className="printable-area print-format-a4"
               style={{
                 backgroundColor: '#fff',
                 color: '#000',
@@ -402,7 +404,7 @@ export default function ReceiptPreviewModal({
           {/* ───────────────────────────────────────────────────────────────── */}
           {formatMode === '80mm' && (
             <div
-              className="printable-area"
+              className="printable-area print-format-80mm"
               style={{
                 backgroundColor: '#fff',
                 color: '#000',
@@ -553,7 +555,7 @@ export default function ReceiptPreviewModal({
           {/* ───────────────────────────────────────────────────────────────── */}
           {formatMode === '58mm' && (
             <div
-              className="printable-area"
+              className="printable-area print-format-58mm"
               style={{
                 backgroundColor: '#fff',
                 color: '#000',
@@ -738,7 +740,7 @@ export default function ReceiptPreviewModal({
               }}
             >
               <Printer style={{ width: '16px', height: '16px' }} />
-              {printing ? 'Printing...' : `Print ${formatMode}`}
+              {printing ? 'Opening Print...' : `Print ${formatMode}`}
             </button>
           </div>
         </div>

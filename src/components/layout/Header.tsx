@@ -6,8 +6,6 @@ import Link from 'next/link'
 import {
   Menu,
   Search,
-  Printer,
-  Bluetooth,
   Database,
   User,
   Clock,
@@ -37,7 +35,6 @@ const breadcrumbMap: Record<string, string> = {
   '/analytics':       'Analytics',
   '/ai-assistant':    'AI Assistant',
   '/settings':        'System Settings',
-  '/settings/printer':'TVS Thermal Printer Setup',
 }
 
 export default function Header({
@@ -51,7 +48,6 @@ export default function Header({
   const currentPageTitle = breadcrumbMap[pathname] || 'Dashboard'
 
   const [timeStr, setTimeStr] = useState('')
-  const [printerOnline, setPrinterOnline] = useState(true)
   const [dbState, setDbState] = useState<'checking' | 'connected' | 'offline' | 'error'>('checking')
 
   useEffect(() => {
@@ -67,19 +63,8 @@ export default function Header({
     updateTime()
     const timer = setInterval(updateTime, 5000)
 
-    // Check Printer & DB Health
+    // Check DB Health
     const checkHealth = async () => {
-      try {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 1200)
-        const res = await fetch('/api/print/health', { signal: controller.signal })
-        clearTimeout(timeoutId)
-        const data = await res.json()
-        setPrinterOnline(data.online ?? true)
-      } catch (e) {
-        setPrinterOnline(false)
-      }
-
       try {
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 1800)
@@ -176,28 +161,6 @@ export default function Header({
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
         {/* Status Pills */}
         <div className="header-status-pills" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          {/* Bluetooth Thermal Printer Status */}
-          <Link
-            href="/settings/printer"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              padding: '0.25rem 0.6rem',
-              borderRadius: '9999px',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              backgroundColor: printerOnline ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-              color: printerOnline ? '#34d399' : '#f87171',
-              border: `1px solid ${printerOnline ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`,
-              textDecoration: 'none',
-            }}
-            title="TVS RP3230ABW Bluetooth Thermal Printer"
-          >
-            <Bluetooth style={{ width: '13px', height: '13px' }} />
-            <span>{printerOnline ? 'BT READY' : 'BT OFFLINE'}</span>
-          </Link>
-
           {/* Real Dynamic Database Health Status */}
           <div
             style={{

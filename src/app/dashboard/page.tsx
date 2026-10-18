@@ -21,7 +21,6 @@ import {
   Plus,
   ArrowRight,
   RefreshCw,
-  Printer,
 } from 'lucide-react'
 import { SkeletonCard, SkeletonTable } from '@/components/ui/Skeleton'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'

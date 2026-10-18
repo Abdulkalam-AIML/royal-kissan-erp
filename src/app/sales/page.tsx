@@ -9,7 +9,6 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { SkeletonTable } from '@/components/ui/Skeleton'
-import { executePrintJob } from '@/lib/printer/printer'
 import ReceiptPreviewModal from '@/components/printer/ReceiptPreviewModal'
 import { BillData } from '@/lib/printer/receipt'
 import { CopyType } from '@/lib/printer/printer-config'
@@ -87,12 +86,8 @@ export default function SalesPage() {
       payment_method: bill.payment_mode || 'cash',
     }
 
-    const res = await executePrintJob(billData, { copyType })
-    if (res.success) {
-      alert(`🎉 ${copyType.toUpperCase()} COPY ${billData.invoice_number} sent to printer!`)
-    } else {
-      alert(`Print Error: ${res.message}`)
-    }
+    // System print dialog is handled cleanly by ReceiptPreviewModal
+    console.log(`Print job initiated for ${copyType} copy: ${billData.invoice_number}`)
   }
 
   const columns: Column<any>[] = [
