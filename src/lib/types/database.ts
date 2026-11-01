@@ -118,6 +118,13 @@ export interface BillItem {
   total?: number
   cost_per_unit_at_sale?: number
   cogs_amount?: number
+  rate_source?: string
+  rate_rule_id?: string | null
+  unit?: string
+  is_tax_inclusive?: boolean
+  original_rate?: number
+  override_reason?: string
+  overridden_by?: string
   created_at?: string
 }
 

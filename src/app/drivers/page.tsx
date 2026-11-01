@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { emitDataChange, useDataSyncListener } from '@/lib/events/data-sync'
 import { saveUnifiedBill } from '@/lib/services/billing-service'
+import { resolveProductRate, RateSource } from '@/lib/pricing/pricing-engine'
+import { fetchPricingRules } from '@/lib/services/pricing-service'
+import type { PricingRule } from '@/lib/pricing/pricing-engine'
 
 // Fallback preseeded data for drivers
 const FALLBACK_DRIVERS = [
@@ -93,13 +96,24 @@ export default function DriversPage() {
   
   // Billing form state
   const [billingCustomer, setBillingCustomer] = useState<any | null>(null)
-  const [billingForm, setBillingForm] = useState({
+  const [billingForm, setBillingForm] = useState<{
+    qty: number
+    rate: number
+    cash: number
+    upi: number
+    product_name: string
+    rate_source?: string
+    rate_rule_id?: string | null
+  }>({
     qty: 0,
     rate: 0,
     cash: 0,
     upi: 0,
-    product_name: 'Water Can (20L)'
+    product_name: 'Water Can (20L)',
+    rate_source: 'Route Rate',
+    rate_rule_id: null
   })
+  const [pricingRules, setPricingRules] = useState<PricingRule[]>([])
   const [billingModalOpen, setBillingModalOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [successData, setSuccessData] = useState<any | null>(null)
@@ -152,6 +166,9 @@ export default function DriversPage() {
 
   useEffect(() => {
     loadDriversAndRoutes()
+    fetchPricingRules().then(rules => {
+      if (rules && rules.length > 0) setPricingRules(rules)
+    })
   }, [])
 
   async function loadDriversAndRoutes() {
@@ -533,12 +550,29 @@ export default function DriversPage() {
 
   const openBillingModal = (customer: any) => {
     setBillingCustomer(customer)
+    const prodName = customer.product_name || 'Water Can (20L)'
+    const qty = customer.qty_entered || customer.default_qty || 1
+
+    const res = resolveProductRate({
+      productId: customer.product_id || '',
+      productName: prodName,
+      defaultRate: customer.default_rate || 15.00,
+      unit: 'piece',
+      customerId: customer.id,
+      routeId: selectedRoute?.id || null,
+      billDate: new Date().toISOString().split('T')[0],
+      quantity: qty,
+      availableRules: pricingRules
+    })
+
     setBillingForm({
-      qty: customer.qty_entered || customer.default_qty || 1,
-      rate: customer.rate_entered || customer.default_rate || 15.00,
+      qty,
+      rate: customer.rate_entered || res.resolvedRate,
       cash: customer.cash_paid || 0,
       upi: customer.upi_paid || 0,
-      product_name: customer.product_name || 'Water Can (20L)'
+      product_name: prodName,
+      rate_source: res.rateSource,
+      rate_rule_id: res.ruleId
     })
     setBillingModalOpen(true)
   }
@@ -601,7 +635,12 @@ export default function DriversPage() {
           product_name: billingForm.product_name,
           quantity: billingForm.qty,
           rate: billingForm.rate,
-          amount: total
+          original_rate: billingForm.rate,
+          rate_source: (billingForm.rate_source || 'Route Rate') as RateSource,
+          rate_rule_id: billingForm.rate_rule_id || null,
+          unit: 'piece',
+          amount: total,
+          total: total
         }]
       })
 
@@ -1717,7 +1756,12 @@ export default function DriversPage() {
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Rate (₹) [Default: ₹{billingCustomer.default_rate || 0}]</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                    <label className="form-label" style={{ margin: 0 }}>Rate (₹)</label>
+                    <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(251,191,36,0.15)', color: '#fbbf24', fontWeight: 800 }}>
+                      {billingForm.rate_source || 'Route Rate'}
+                    </span>
+                  </div>
                   <input
                     type="number"
                     className="form-input"

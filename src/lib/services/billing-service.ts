@@ -17,6 +17,13 @@ export interface UnifiedBillItemInput {
   gst_amount?: number
   amount: number
   total?: number
+  rate_source?: string
+  rate_rule_id?: string | null
+  unit?: string
+  is_tax_inclusive?: boolean
+  original_rate?: number
+  override_reason?: string | null
+  overridden_by?: string | null
 }
 
 export interface UnifiedReturnItemInput {
@@ -164,7 +171,14 @@ export async function saveUnifiedBill(payload: UnifiedBillPayload): Promise<Unif
     amount: item.amount,
     total: item.total ?? item.amount,
     cost_per_unit_at_sale: item.cost_per_unit_at_sale ?? item.cost_price ?? 0,
-    cogs_amount: (item.cost_per_unit_at_sale ?? item.cost_price ?? 0) * item.quantity
+    cogs_amount: (item.cost_per_unit_at_sale ?? item.cost_price ?? 0) * item.quantity,
+    rate_source: item.rate_source || 'Default Product Rate',
+    rate_rule_id: item.rate_rule_id || null,
+    unit: item.unit || 'piece',
+    is_tax_inclusive: Boolean(item.is_tax_inclusive),
+    original_rate: item.original_rate ?? item.rate,
+    override_reason: item.override_reason || null,
+    overridden_by: item.overridden_by || null
   }))
 
   let resultBill: any = null

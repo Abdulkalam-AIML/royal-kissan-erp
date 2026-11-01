@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { emitDataChange, useDataSyncListener } from '@/lib/events/data-sync'
-import { Package, Plus, Edit, Check, X, Shield, RefreshCw } from 'lucide-react'
+import Link from 'next/link'
+import { Package, Plus, Edit, Check, X, Shield, RefreshCw, Tag } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { DataTable, Column } from '@/components/ui/DataTable'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
@@ -206,9 +207,16 @@ export default function ProductsPage() {
           </p>
         </div>
 
-        <Button variant="primary" icon={<Plus style={{ width: '16px', height: '16px' }} />} onClick={() => setShowAdd(true)}>
-          Add New Product
-        </Button>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <Link href="/rates">
+            <Button variant="secondary" icon={<Tag style={{ width: '15px', height: '15px', color: '#fbbf24' }} />}>
+              Rate Management & Rules
+            </Button>
+          </Link>
+          <Button variant="primary" icon={<Plus style={{ width: '16px', height: '16px' }} />} onClick={() => setShowAdd(true)}>
+            Add New Product
+          </Button>
+        </div>
       </div>
 
       {loading ? (

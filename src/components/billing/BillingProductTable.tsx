@@ -1,9 +1,35 @@
 'use client'
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { Product } from '@/lib/types/database'
 import { formatCurrency } from '@/lib/utils/formatters'
-import { Plus, Trash2, Package, RotateCcw, AlertTriangle, Search, Percent } from 'lucide-react'
+import { 
+  PricingRule, 
+  RateSource, 
+  resolveProductRate, 
+  calculateLineFinancials, 
+  round2 
+} from '@/lib/pricing/pricing-engine'
+import ProductCardCatalog from './ProductCardCatalog'
+import BillingItemCard from './BillingItemCard'
+import { 
+  Plus, 
+  Trash2, 
+  Package, 
+  RotateCcw, 
+  AlertTriangle, 
+  Percent, 
+  Tag, 
+  Edit3, 
+  Check, 
+  X, 
+  ShieldAlert,
+  Info,
+  Layers,
+  LayoutGrid,
+  ListFilter,
+  ShoppingCart
+} from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 
@@ -11,8 +37,21 @@ export interface BillingCartItem {
   id: string
   product_id?: string | null
   product_name: string
+  category?: string
+  unit: string
+  stock_quantity?: number
   quantity: number
-  rate: number // Selling rate for this specific bill
+  rate: number // Active applied selling rate
+  original_rate: number // Resolved before any manual override
+  rate_source: RateSource
+  rate_rule_id?: string | null
+  is_tax_inclusive: boolean
+  is_manually_overridden?: boolean
+  override_reason?: string
+  overridden_by?: string
+  has_conflict?: boolean
+  conflict_details?: string | null
+  is_missing_rate?: boolean
   mrp?: number
   cost_price?: number
   item_discount: number
@@ -30,523 +69,629 @@ export interface BillingCartItem {
 interface BillingProductTableProps {
   items: BillingCartItem[]
   availableProducts: Product[]
+  pricingRules?: PricingRule[]
+  customerId?: string | null
+  dealerId?: string | null
+  routeId?: string | null
+  customerCategory?: string | null
+  billDate?: string
   isGstEnabled: boolean
-  showReturnsAndLeakages?: boolean // True for Route and Dealer bills
+  showReturnsAndLeakages?: boolean
+  renderMode?: 'all' | 'catalog-only' | 'cart-only'
   onItemsChange: (items: BillingCartItem[]) => void
 }
 
 export default function BillingProductTable({
   items,
   availableProducts,
+  pricingRules = [],
+  customerId = null,
+  dealerId = null,
+  routeId = null,
+  customerCategory = null,
+  billDate = new Date().toISOString().split('T')[0],
   isGstEnabled,
   showReturnsAndLeakages = false,
+  renderMode = 'all',
   onItemsChange
 }: BillingProductTableProps) {
-  const [productSearch, setProductSearch] = useState('')
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  // View mode for selected items: 'cards' (default) or 'table'
+  const [selectedItemsViewMode, setSelectedItemsViewMode] = useState<'cards' | 'table'>('cards')
 
-  function calculateItemFinancials(
+  // Manual Override Modal State
+  const [overrideItemIndex, setOverrideItemIndex] = useState<number | null>(null)
+  const [overrideRateInput, setOverrideRateInput] = useState('')
+  const [overrideReasonInput, setOverrideReasonInput] = useState('')
+  const [overrideUserInput, setOverrideUserInput] = useState('POS Operator')
+
+  // Helper to re-run financial math using the canonical pricing engine
+  function recalculateItem(
+    item: BillingCartItem,
     qty: number,
     rate: number,
-    itemDiscount: number,
+    discountVal: number,
     discountType: 'flat' | 'percent',
     gstRate: number
-  ) {
-    const rawAmt = Math.max(0, qty * rate)
-    let discVal = 0
-    if (discountType === 'percent') {
-      discVal = (rawAmt * Math.min(100, itemDiscount)) / 100
-    } else {
-      discVal = Math.min(rawAmt, itemDiscount)
-    }
-
-    const netBeforeTax = Math.max(0, rawAmt - discVal)
-    const taxable = netBeforeTax
-    let gst = 0
-
-    if (isGstEnabled && gstRate > 0) {
-      gst = (taxable * gstRate) / 100
-    }
-
-    const lineTotal = taxable + gst
+  ): BillingCartItem {
+    const fin = calculateLineFinancials({
+      quantity: qty,
+      rate,
+      itemDiscount: discountVal,
+      discountType,
+      gstRate,
+      isTaxInclusive: item.is_tax_inclusive,
+      isGstEnabled,
+      costPrice: item.cost_price || 0
+    })
 
     return {
-      taxable_amount: Math.round(taxable * 100) / 100,
-      gst_amount: Math.round(gst * 100) / 100,
-      amount: Math.round(lineTotal * 100) / 100,
-      total: Math.round(lineTotal * 100) / 100
+      ...item,
+      quantity: qty,
+      rate,
+      item_discount: discountVal,
+      discount_type: discountType,
+      gst_rate: fin.gstRate,
+      taxable_amount: fin.taxableAmount,
+      gst_amount: fin.gstAmount,
+      amount: fin.lineTotal,
+      total: fin.lineTotal
     }
   }
 
+  // Adding product: runs through central rate resolver
   function handleAddProduct(prod: Product) {
+    const resolution = resolveProductRate({
+      productId: prod.id,
+      productName: prod.name,
+      defaultRate: Number(prod.default_rate) || 0,
+      defaultGstRate: isGstEnabled ? (Number(prod.gst_rate) || 0) : 0,
+      unit: prod.unit || 'piece',
+      customerId,
+      dealerId,
+      routeId,
+      customerCategory,
+      billDate,
+      quantity: 1,
+      availableRules: pricingRules
+    })
+
     const existingIndex = items.findIndex(i => i.product_id === prod.id || i.product_name === prod.name)
     if (existingIndex >= 0) {
       const updated = [...items]
       const current = updated[existingIndex]
       const newQty = current.quantity + 1
-      const fin = calculateItemFinancials(
+      updated[existingIndex] = recalculateItem(
+        current,
         newQty,
         current.rate,
         current.item_discount,
         current.discount_type,
         current.gst_rate
       )
-      updated[existingIndex] = {
-        ...current,
-        quantity: newQty,
-        ...fin
-      }
       onItemsChange(updated)
     } else {
-      const rate = Number(prod.default_rate) || 0
-      const gstRate = isGstEnabled ? (Number(prod.gst_rate) || 0) : 0
-      const fin = calculateItemFinancials(1, rate, 0, 'flat', gstRate)
-
-      const newItem: BillingCartItem = {
+      const initialItem: BillingCartItem = {
         id: `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         product_id: prod.id,
         product_name: prod.name,
+        category: prod.category || 'General',
+        unit: resolution.unit || prod.unit || 'piece',
+        stock_quantity: prod.stock_quantity ?? 0,
         quantity: 1,
-        rate: rate,
-        mrp: prod.mrp || rate,
+        rate: resolution.resolvedRate,
+        original_rate: resolution.resolvedRate,
+        rate_source: resolution.rateSource,
+        rate_rule_id: resolution.ruleId,
+        is_tax_inclusive: resolution.isTaxInclusive,
+        is_manually_overridden: false,
+        has_conflict: resolution.hasConflict,
+        conflict_details: resolution.conflictDetails,
+        is_missing_rate: resolution.isMissing,
+        mrp: prod.mrp || resolution.resolvedRate,
         cost_price: prod.cost_price || 0,
         item_discount: 0,
         discount_type: 'flat',
-        gst_rate: gstRate,
+        gst_rate: resolution.gstRate,
+        taxable_amount: 0,
+        gst_amount: 0,
+        amount: 0,
+        total: 0,
         return_qty: 0,
-        leak_qty: 0,
-        ...fin
+        leak_qty: 0
       }
-      onItemsChange([...items, newItem])
+
+      const calculated = recalculateItem(
+        initialItem,
+        1,
+        resolution.resolvedRate,
+        0,
+        'flat',
+        resolution.gstRate
+      )
+      onItemsChange([...items, calculated])
     }
-    setProductSearch('')
-    setIsDropdownOpen(false)
   }
 
-  function handleCustomItemAdd(name: string) {
-    if (!name.trim()) return
-    const fin = calculateItemFinancials(1, 0, 0, 'flat', isGstEnabled ? 18 : 0)
-    const newItem: BillingCartItem = {
-      id: `cart-${Date.now()}`,
-      product_id: null,
-      product_name: name.trim(),
-      quantity: 1,
-      rate: 0,
-      mrp: 0,
-      cost_price: 0,
-      item_discount: 0,
-      discount_type: 'flat',
-      gst_rate: isGstEnabled ? 18 : 0,
-      return_qty: 0,
-      leak_qty: 0,
-      ...fin
-    }
-    onItemsChange([...items, newItem])
-    setProductSearch('')
-    setIsDropdownOpen(false)
-  }
-
-  function updateItem(index: number, updates: Partial<BillingCartItem>) {
+  // Update item quantity
+  function handleQuantityChange(index: number, newQty: number) {
     const updated = [...items]
-    const current = { ...updated[index], ...updates }
-    
-    // Recalculate financials
-    const fin = calculateItemFinancials(
-      Math.max(1, current.quantity),
-      Math.max(0, current.rate),
-      Math.max(0, current.item_discount || 0),
-      current.discount_type || 'flat',
-      isGstEnabled ? (current.gst_rate || 0) : 0
+    const current = updated[index]
+    updated[index] = recalculateItem(
+      current,
+      newQty,
+      current.rate,
+      current.item_discount,
+      current.discount_type,
+      current.gst_rate
     )
-
-    updated[index] = {
-      ...current,
-      ...fin
-    }
     onItemsChange(updated)
   }
 
-  function removeItem(index: number) {
+  // Update item discount
+  function handleDiscountChange(index: number, discountVal: number, discountType: 'flat' | 'percent') {
+    const updated = [...items]
+    const current = updated[index]
+    updated[index] = recalculateItem(
+      current,
+      current.quantity,
+      current.rate,
+      discountVal,
+      discountType,
+      current.gst_rate
+    )
+    onItemsChange(updated)
+  }
+
+  // Remove item
+  function handleRemoveItem(index: number) {
     const updated = items.filter((_, i) => i !== index)
     onItemsChange(updated)
   }
 
-  const filteredProducts = availableProducts.filter(p => 
-    p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-    (p.category || '').toLowerCase().includes(productSearch.toLowerCase())
-  )
+  // Open manual override modal
+  function handleOpenOverride(index: number) {
+    const item = items[index]
+    setOverrideItemIndex(index)
+    setOverrideRateInput(String(item.rate))
+    setOverrideReasonInput(item.override_reason || '')
+    setOverrideUserInput(item.overridden_by || 'POS Operator')
+  }
+
+  // Apply manual override
+  function handleApplyOverride() {
+    if (overrideItemIndex === null) return
+    const newRate = Number(overrideRateInput)
+    if (isNaN(newRate) || newRate <= 0) {
+      alert('⚠️ Please enter a valid positive selling rate.')
+      return
+    }
+    if (!overrideReasonInput.trim()) {
+      alert('⚠️ Mandatory Audit Compliance: Please specify the reason for this manual rate override.')
+      return
+    }
+
+    const updated = [...items]
+    const current = updated[overrideItemIndex]
+    const recalculated = recalculateItem(
+      current,
+      current.quantity,
+      newRate,
+      current.item_discount,
+      current.discount_type,
+      current.gst_rate
+    )
+
+    updated[overrideItemIndex] = {
+      ...recalculated,
+      rate: newRate,
+      rate_source: 'Manual Override',
+      is_manually_overridden: true,
+      override_reason: overrideReasonInput.trim(),
+      overridden_by: overrideUserInput.trim() || 'POS Operator'
+    }
+
+    onItemsChange(updated)
+    setOverrideItemIndex(null)
+  }
+
+  const totalQuantity = items.reduce((sum, item) => sum + (item.quantity || 0), 0)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      {/* Quick Add Buttons & Search Bar */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#d4d4d8', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Package style={{ width: '15px', height: '15px', color: '#fbbf24' }} />
-            Bill Line Items & Products ({items.length})
-          </label>
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* =========================================================================
+          SECTION 1: PRODUCT SELECTION — VISUAL PRODUCT CARDS & DISCOVERY TOOLBAR
+          ========================================================================= */}
+      {(renderMode === 'all' || renderMode === 'catalog-only') && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div>
+              <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                STEP 1: SELECT PRODUCTS
+              </div>
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fff', margin: 0 }}>
+                Visual Product Catalog & Live Rate Resolver
+              </h2>
+            </div>
+            <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>
+              {availableProducts.length} Products Available • Live Deterministic Pricing Engine
+            </span>
+          </div>
 
-        {/* Quick Add Chips */}
-        {availableProducts.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-            {availableProducts.slice(0, 8).map(prod => (
+          <ProductCardCatalog
+            products={availableProducts}
+            cartItems={items}
+            pricingRules={pricingRules}
+            customerId={customerId}
+            dealerId={dealerId}
+            routeId={routeId}
+            customerCategory={customerCategory}
+            billDate={billDate}
+            isGstEnabled={isGstEnabled}
+            onAddProduct={handleAddProduct}
+          />
+        </div>
+      )}
+
+      {/* =========================================================================
+          SECTION 2: SELECTED BILL ITEMS — INDIVIDUAL BILLING CARDS
+          ========================================================================= */}
+      {(renderMode === 'all' || renderMode === 'cart-only') && (
+        <div style={{ borderTop: renderMode === 'all' ? '1px solid rgba(255, 255, 255, 0.08)' : 'none', paddingTop: renderMode === 'all' ? '1.25rem' : '0' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              STEP 2: REVIEW LINE ITEMS
+            </div>
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <ShoppingCart style={{ width: '18px', height: '18px', color: '#fbbf24' }} />
+              Selected Bill Line Items ({items.length} Products, {totalQuantity} Units)
+            </h2>
+          </div>
+
+          {/* View Mode Toggle: Cards (Default) vs Table */}
+          {items.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: '#18181b', padding: '3px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
               <button
                 type="button"
-                key={prod.id}
-                onClick={() => handleAddProduct(prod)}
+                onClick={() => setSelectedItemsViewMode('cards')}
                 style={{
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '6px',
-                  padding: '0.4rem 0.75rem',
-                  color: '#e4e4e7',
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.4rem',
-                  transition: 'all 0.15s'
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.borderColor = '#fbbf24'
-                  e.currentTarget.style.background = 'rgba(251, 191, 36, 0.1)'
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'
-                  e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
+                  gap: '0.35rem',
+                  padding: '0.35rem 0.65rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: selectedItemsViewMode === 'cards' ? 'rgba(251, 191, 36, 0.18)' : 'transparent',
+                  color: selectedItemsViewMode === 'cards' ? '#fbbf24' : '#a1a1aa',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
                 }}
               >
-                <Plus style={{ width: '12px', height: '12px', color: '#fbbf24' }} />
-                <span>{prod.name}</span>
-                <span className="num" style={{ color: '#fbbf24', fontSize: '0.75rem' }}>
-                  ₹{prod.default_rate}
-                </span>
+                <LayoutGrid style={{ width: '13px', height: '13px' }} />
+                Item Cards View
               </button>
-            ))}
-          </div>
-        )}
 
-        {/* Search / Add Dropdown */}
-        <div style={{ position: 'relative' }}>
-          <Input 
-            placeholder="🔍 Type product name or barcode to add..."
-            value={productSearch}
-            onChange={e => {
-              setProductSearch(e.target.value)
-              setIsDropdownOpen(true)
-            }}
-            onFocus={() => setIsDropdownOpen(true)}
-          />
-
-          {isDropdownOpen && productSearch && (
-            <div style={{
-              position: 'absolute',
-              top: '100%',
-              left: 0,
-              right: 0,
-              maxHeight: '220px',
-              overflowY: 'auto',
-              background: '#18181b',
-              border: '1px solid rgba(255,255,255,0.12)',
-              borderRadius: '8px',
-              marginTop: '4px',
-              zIndex: 40,
-              boxShadow: '0 10px 25px -5px rgba(0,0,0,0.6)'
-            }}>
-              {filteredProducts.length === 0 ? (
-                <div style={{ padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ color: '#a1a1aa', fontSize: '0.85rem' }}>Product not found.</span>
-                  <Button 
-                    type="button" 
-                    variant="primary" 
-                    size="sm" 
-                    icon={<Plus style={{ width: '13px', height: '13px' }} />}
-                    onClick={() => handleCustomItemAdd(productSearch)}
-                  >
-                    Add Custom Item "{productSearch}"
-                  </Button>
-                </div>
-              ) : (
-                filteredProducts.map(prod => (
-                  <div
-                    key={prod.id}
-                    onClick={() => handleAddProduct(prod)}
-                    style={{
-                      padding: '0.65rem 1rem',
-                      borderBottom: '1px solid rgba(255,255,255,0.04)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(251, 191, 36, 0.08)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <div>
-                      <span style={{ fontWeight: 700, color: '#f4f4f5', fontSize: '0.88rem' }}>{prod.name}</span>
-                      <span style={{ fontSize: '0.75rem', color: '#71717a', marginLeft: '0.5rem' }}>{prod.category}</span>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <span className="num" style={{ fontWeight: 700, color: '#fbbf24', fontSize: '0.9rem' }}>
-                        ₹{prod.default_rate}
-                      </span>
-                      {prod.stock_quantity !== undefined && (
-                        <div style={{ fontSize: '0.7rem', color: (prod.stock_quantity || 0) < 10 ? '#f87171' : '#a1a1aa' }}>
-                          Stock: {prod.stock_quantity} {prod.unit || 'pcs'}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
+              <button
+                type="button"
+                onClick={() => setSelectedItemsViewMode('table')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  padding: '0.35rem 0.65rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: selectedItemsViewMode === 'table' ? 'rgba(251, 191, 36, 0.18)' : 'transparent',
+                  color: selectedItemsViewMode === 'table' ? '#fbbf24' : '#a1a1aa',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                <ListFilter style={{ width: '13px', height: '13px' }} />
+                Compact Table View
+              </button>
             </div>
           )}
         </div>
-      </div>
 
-      {/* Main Table */}
-      {items.length === 0 ? (
-        <div style={{ 
-          border: '1px dashed rgba(255,255,255,0.12)', 
-          borderRadius: '10px', 
-          padding: '2.5rem 1rem', 
-          textAlign: 'center', 
-          color: '#71717a' 
-        }}>
-          <Package style={{ width: '36px', height: '36px', margin: '0 auto 0.75rem', color: '#52525b' }} />
-          <div style={{ fontWeight: 700, color: '#a1a1aa', fontSize: '1rem' }}>No products added yet</div>
-          <div style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
-            Click on a product chip above or search to add items to this bill.
+        {/* Selected Items List */}
+        {items.length === 0 ? (
+          <div
+            style={{
+              border: '1.5px dashed rgba(255, 255, 255, 0.12)',
+              borderRadius: '14px',
+              padding: '3rem 1.5rem',
+              textAlign: 'center',
+              background: 'rgba(255, 255, 255, 0.01)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '0.75rem'
+            }}
+          >
+            <div
+              style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                background: 'rgba(251, 191, 36, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fbbf24'
+              }}
+            >
+              <ShoppingCart style={{ width: '28px', height: '28px' }} />
+            </div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#e4e4e7' }}>
+              No Products Added to Bill Yet
+            </div>
+            <p style={{ color: '#71717a', fontSize: '0.85rem', maxWidth: '420px', margin: 0 }}>
+              Click on any product card in the catalog above to add line items. Rates, taxes, discounts, and dues update live.
+            </p>
           </div>
-        </div>
-      ) : (
-        <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-            <thead>
-              <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.08)', color: '#a1a1aa', textAlign: 'left' }}>
-                <th style={{ padding: '0.75rem 0.85rem' }}>#</th>
-                <th style={{ padding: '0.75rem 0.85rem' }}>Product Name</th>
-                <th style={{ padding: '0.75rem 0.85rem', width: '90px' }}>Qty</th>
-                <th style={{ padding: '0.75rem 0.85rem', width: '110px' }}>Rate (₹)</th>
-                <th style={{ padding: '0.75rem 0.85rem', width: '110px' }}>Discount</th>
-                {isGstEnabled && (
-                  <th style={{ padding: '0.75rem 0.85rem', width: '85px' }}>GST %</th>
-                )}
-                {showReturnsAndLeakages && (
-                  <>
-                    <th style={{ padding: '0.75rem 0.85rem', width: '85px', color: '#34d399' }}>Return</th>
-                    <th style={{ padding: '0.75rem 0.85rem', width: '85px', color: '#f87171' }}>Leak</th>
-                  </>
-                )}
-                <th style={{ padding: '0.75rem 0.85rem', textAlign: 'right', width: '120px' }}>Line Total (₹)</th>
-                <th style={{ padding: '0.75rem 0.5rem', width: '40px', textAlign: 'center' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item, index) => (
-                <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                  <td style={{ padding: '0.75rem 0.85rem', color: '#71717a' }}>{index + 1}</td>
-                  
-                  {/* Product Name */}
-                  <td style={{ padding: '0.75rem 0.85rem' }}>
-                    <div style={{ fontWeight: 700, color: '#f4f4f5' }}>{item.product_name}</div>
-                    {item.cost_price ? (
-                      <div style={{ fontSize: '0.7rem', color: '#71717a' }}>
-                        Cost: ₹{item.cost_price} &bull; COGS: ₹{item.cost_price * item.quantity}
-                      </div>
-                    ) : null}
-                  </td>
-
-                  {/* Quantity */}
-                  <td style={{ padding: '0.75rem 0.5rem' }}>
-                    <input 
-                      type="number" 
-                      min="1"
-                      className="num"
-                      value={item.quantity}
-                      onChange={e => updateItem(index, { quantity: Number(e.target.value) || 1 })}
-                      style={{
-                        width: '100%',
-                        padding: '0.35rem 0.5rem',
-                        background: '#18181b',
-                        border: '1px solid rgba(255,255,255,0.15)',
-                        borderRadius: '4px',
-                        color: '#fff',
-                        fontWeight: 700,
-                        textAlign: 'center'
-                      }}
-                    />
-                  </td>
-
-                  {/* Editable Selling Rate */}
-                  <td style={{ padding: '0.75rem 0.5rem' }}>
-                    <input 
-                      type="number" 
-                      step="0.5"
-                      min="0"
-                      className="num"
-                      value={item.rate}
-                      onChange={e => updateItem(index, { rate: Number(e.target.value) || 0 })}
-                      style={{
-                        width: '100%',
-                        padding: '0.35rem 0.5rem',
-                        background: '#18181b',
-                        border: '1px solid rgba(251,191,36,0.3)',
-                        borderRadius: '4px',
-                        color: '#fbbf24',
-                        fontWeight: 700,
-                        textAlign: 'right'
-                      }}
-                    />
-                  </td>
-
-                  {/* Item Discount */}
-                  <td style={{ padding: '0.75rem 0.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                      <input 
-                        type="number" 
-                        min="0"
-                        className="num"
-                        value={item.item_discount || ''}
-                        placeholder="0"
-                        onChange={e => updateItem(index, { item_discount: Number(e.target.value) || 0 })}
-                        style={{
-                          width: '60px',
-                          padding: '0.35rem 0.35rem',
-                          background: '#18181b',
-                          border: '1px solid rgba(255,255,255,0.15)',
-                          borderRadius: '4px',
-                          color: '#fff',
-                          textAlign: 'right'
-                        }}
+        ) : selectedItemsViewMode === 'cards' ? (
+          /* Cards Mode: Individual Billing Item Cards */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {items.map((item, index) => (
+              <BillingItemCard
+                key={item.id}
+                item={item}
+                index={index}
+                isGstEnabled={isGstEnabled}
+                showReturnsAndLeakages={showReturnsAndLeakages}
+                onQuantityChange={newQty => handleQuantityChange(index, newQty)}
+                onDiscountChange={(discountVal, discountType) => handleDiscountChange(index, discountVal, discountType)}
+                onReturnQtyChange={retQty => {
+                  const updated = [...items]
+                  updated[index] = { ...updated[index], return_qty: retQty }
+                  onItemsChange(updated)
+                }}
+                onLeakQtyChange={leakQty => {
+                  const updated = [...items]
+                  updated[index] = { ...updated[index], leak_qty: leakQty }
+                  onItemsChange(updated)
+                }}
+                onOpenOverrideModal={() => handleOpenOverride(index)}
+                onRemove={() => handleRemoveItem(index)}
+              />
+            ))}
+          </div>
+        ) : (
+          /* Compact Table Mode */
+          <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', background: '#121214' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.08)', color: '#a1a1aa', textAlign: 'left' }}>
+                  <th style={{ padding: '0.75rem 0.85rem', width: '30px' }}>#</th>
+                  <th style={{ padding: '0.75rem 0.85rem' }}>Product & Variant</th>
+                  <th style={{ padding: '0.75rem 0.65rem' }}>Unit</th>
+                  <th style={{ padding: '0.75rem 0.65rem' }}>Stock</th>
+                  <th style={{ padding: '0.75rem 0.65rem', textAlign: 'center' }}>Qty</th>
+                  <th style={{ padding: '0.75rem 0.85rem' }}>Unit Rate</th>
+                  <th style={{ padding: '0.75rem 0.65rem' }}>Discount</th>
+                  {isGstEnabled && <th style={{ padding: '0.75rem 0.65rem' }}>GST Tax</th>}
+                  <th style={{ padding: '0.75rem 0.85rem', textAlign: 'right' }}>Line Total (₹)</th>
+                  <th style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, index) => (
+                  <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    <td style={{ padding: '0.75rem 0.85rem', color: '#71717a' }}>{index + 1}</td>
+                    <td style={{ padding: '0.75rem 0.85rem' }}>
+                      <div style={{ fontWeight: 700, color: '#fff' }}>{item.product_name}</div>
+                      <div style={{ fontSize: '0.7rem', color: '#71717a' }}>{item.category || 'Standard'}</div>
+                    </td>
+                    <td style={{ padding: '0.75rem 0.65rem', color: '#a1a1aa' }}>{item.unit}</td>
+                    <td style={{ padding: '0.75rem 0.65rem', color: (item.stock_quantity ?? 0) > 0 ? '#34d399' : '#f87171', fontWeight: 700 }}>
+                      {item.stock_quantity ?? 0}
+                    </td>
+                    <td style={{ padding: '0.75rem 0.65rem', textAlign: 'center' }}>
+                      <input
+                        type="number"
+                        min="1"
+                        value={item.quantity}
+                        onChange={e => handleQuantityChange(index, Math.max(1, Number(e.target.value) || 1))}
+                        style={{ width: '50px', background: '#18181b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '4px', color: '#fff', textAlign: 'center', padding: '3px' }}
                       />
+                    </td>
+                    <td style={{ padding: '0.75rem 0.85rem' }}>
+                      <div style={{ fontWeight: 800, color: '#fbbf24' }}>₹{item.rate}</div>
+                      <div style={{ fontSize: '0.68rem', color: '#a1a1aa' }}>{item.rate_source}</div>
+                    </td>
+                    <td style={{ padding: '0.75rem 0.65rem' }}>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={item.item_discount || ''}
+                        onChange={e => handleDiscountChange(index, Number(e.target.value) || 0, item.discount_type)}
+                        style={{ width: '55px', background: '#18181b', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '4px', color: '#fff', textAlign: 'center', padding: '3px' }}
+                      />
+                    </td>
+                    {isGstEnabled && (
+                      <td style={{ padding: '0.75rem 0.65rem', fontSize: '0.78rem', color: '#e4e4e7' }}>
+                        {item.gst_rate}% (₹{item.gst_amount?.toFixed(2)})
+                      </td>
+                    )}
+                    <td style={{ padding: '0.75rem 0.85rem', textAlign: 'right', fontWeight: 800, color: '#fbbf24', fontSize: '0.95rem' }}>
+                      {formatCurrency(item.total)}
+                    </td>
+                    <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>
                       <button
                         type="button"
-                        onClick={() => updateItem(index, { discount_type: item.discount_type === 'flat' ? 'percent' : 'flat' })}
-                        style={{
-                          background: 'rgba(255,255,255,0.06)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '4px',
-                          color: '#a1a1aa',
-                          fontSize: '0.7rem',
-                          padding: '4px 6px',
-                          cursor: 'pointer'
-                        }}
-                        title="Toggle Flat ₹ or Percent %"
+                        onClick={() => handleRemoveItem(index)}
+                        style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}
                       >
-                        {item.discount_type === 'percent' ? '%' : '₹'}
+                        <Trash2 style={{ width: '14px', height: '14px' }} />
                       </button>
-                    </div>
-                  </td>
-
-                  {/* GST % */}
-                  {isGstEnabled && (
-                    <td style={{ padding: '0.75rem 0.5rem' }}>
-                      <select
-                        value={item.gst_rate}
-                        onChange={e => updateItem(index, { gst_rate: Number(e.target.value) || 0 })}
-                        style={{
-                          width: '100%',
-                          padding: '0.35rem 0.25rem',
-                          background: '#18181b',
-                          border: '1px solid rgba(255,255,255,0.15)',
-                          borderRadius: '4px',
-                          color: '#e4e4e7',
-                          fontSize: '0.8rem'
-                        }}
-                      >
-                        <option value="0">0%</option>
-                        <option value="5">5%</option>
-                        <option value="12">12%</option>
-                        <option value="18">18%</option>
-                        <option value="28">28%</option>
-                      </select>
                     </td>
-                  )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      )}
 
-                  {/* Route / Dealer Returns & Leakages */}
-                  {showReturnsAndLeakages && (
-                    <>
-                      <td style={{ padding: '0.75rem 0.5rem' }}>
-                        <input 
-                          type="number"
-                          min="0"
-                          className="num"
-                          value={item.return_qty || ''}
-                          placeholder="0"
-                          onChange={e => updateItem(index, { return_qty: Number(e.target.value) || 0 })}
-                          style={{
-                            width: '100%',
-                            padding: '0.35rem 0.35rem',
-                            background: '#18181b',
-                            border: '1px solid rgba(52, 211, 153, 0.3)',
-                            borderRadius: '4px',
-                            color: '#34d399',
-                            fontWeight: 700,
-                            textAlign: 'center'
-                          }}
-                        />
-                      </td>
-                      <td style={{ padding: '0.75rem 0.5rem' }}>
-                        <input 
-                          type="number"
-                          min="0"
-                          className="num"
-                          value={item.leak_qty || ''}
-                          placeholder="0"
-                          onChange={e => updateItem(index, { leak_qty: Number(e.target.value) || 0 })}
-                          style={{
-                            width: '100%',
-                            padding: '0.35rem 0.35rem',
-                            background: '#18181b',
-                            border: '1px solid rgba(248, 113, 113, 0.3)',
-                            borderRadius: '4px',
-                            color: '#f87171',
-                            fontWeight: 700,
-                            textAlign: 'center'
-                          }}
-                        />
-                      </td>
-                    </>
-                  )}
+      {/* Manual Rate Override Modal (Preserves Audit Compliance) */}
+      {(renderMode === 'all' || renderMode === 'cart-only') && overrideItemIndex !== null && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.85)',
+          backdropFilter: 'blur(5px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: '#121214',
+            border: '1.5px solid rgba(251, 191, 36, 0.4)',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '460px',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.7)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '1.25rem 1.5rem',
+              borderBottom: '1px solid rgba(255,255,255,0.08)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              background: 'rgba(251,191,36,0.05)'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#fff' }}>
+                  Authorize Rate Override
+                </h3>
+                <div style={{ fontSize: '0.75rem', color: '#fbbf24', marginTop: '2px' }}>
+                  Audit Trail & Financial Governance
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOverrideItemIndex(null)}
+                style={{ background: 'none', border: 'none', color: '#71717a', cursor: 'pointer', fontSize: '1.2rem' }}
+              >
+                ✕
+              </button>
+            </div>
 
-                  {/* Line Total */}
-                  <td style={{ padding: '0.75rem 0.85rem', textAlign: 'right' }}>
-                    <span className="num" style={{ fontWeight: 800, color: '#f4f4f5', fontSize: '0.95rem' }}>
-                      {formatCurrency(item.total)}
-                    </span>
-                    {item.gst_amount > 0 && (
-                      <div style={{ fontSize: '0.68rem', color: '#a1a1aa' }}>
-                        (Tax: ₹{item.gst_amount})
-                      </div>
-                    )}
-                  </td>
+            <div style={{ padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', fontSize: '0.85rem' }}>
+                <div style={{ color: '#71717a', fontSize: '0.75rem' }}>Product:</div>
+                <div style={{ fontWeight: 800, color: '#fff' }}>
+                  {items[overrideItemIndex]?.product_name}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '2px' }}>
+                  Original Resolved Rate: <strong style={{ color: '#fbbf24' }}>₹{items[overrideItemIndex]?.original_rate}</strong> ({items[overrideItemIndex]?.rate_source})
+                </div>
+              </div>
 
-                  {/* Remove Action */}
-                  <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>
-                    <button
-                      type="button"
-                      onClick={() => removeItem(index)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#71717a',
-                        cursor: 'pointer',
-                        padding: '4px'
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
-                      onMouseLeave={e => e.currentTarget.style.color = '#71717a'}
-                      title="Remove Item"
-                    >
-                      <Trash2 style={{ width: '15px', height: '15px' }} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: '#fbbf24', fontWeight: 700, marginBottom: '0.35rem' }}>
+                  New Unit Selling Rate (₹) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={overrideRateInput}
+                  onChange={e => setOverrideRateInput(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: '#18181b',
+                    border: '1px solid #fbbf24',
+                    borderRadius: '8px',
+                    color: '#fbbf24',
+                    fontWeight: 800,
+                    fontSize: '1.1rem',
+                    padding: '0.55rem 0.75rem'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: '#ef4444', fontWeight: 700, marginBottom: '0.35rem' }}>
+                  Mandatory Reason for Override *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Special promotional discount, bulk agreement"
+                  value={overrideReasonInput}
+                  onChange={e => setOverrideReasonInput(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: '#18181b',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    padding: '0.55rem 0.75rem',
+                    fontSize: '0.85rem'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: '#a1a1aa', fontWeight: 600, marginBottom: '0.35rem' }}>
+                  Authorizing User / Operator
+                </label>
+                <input
+                  type="text"
+                  value={overrideUserInput}
+                  onChange={e => setOverrideUserInput(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: '#18181b',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    padding: '0.55rem 0.75rem',
+                    fontSize: '0.85rem'
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{
+              padding: '1rem 1.5rem',
+              borderTop: '1px solid rgba(255,255,255,0.08)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '0.75rem',
+              background: '#0d0d0f'
+            }}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                onClick={() => setOverrideItemIndex(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="md"
+                onClick={handleApplyOverride}
+                icon={<Check style={{ width: '15px', height: '15px' }} />}
+                style={{ fontWeight: 800 }}
+              >
+                Apply Authorized Override
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

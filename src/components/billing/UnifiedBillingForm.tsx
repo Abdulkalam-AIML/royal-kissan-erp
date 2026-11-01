@@ -14,6 +14,8 @@ import {
   RouteCustomer 
 } from '@/lib/types/database'
 import { saveUnifiedBill, UnifiedBillResponse } from '@/lib/services/billing-service'
+import { fetchPricingRules } from '@/lib/services/pricing-service'
+import { PricingRule, resolveProductRate, calculateLineFinancials, round2 } from '@/lib/pricing/pricing-engine'
 import BillingCustomerSelector from './BillingCustomerSelector'
 import BillingDealerSelector from './BillingDealerSelector'
 import BillingRouteSelector from './BillingRouteSelector'
@@ -106,6 +108,10 @@ export default function UnifiedBillingForm({
   const [selectedRouteId, setSelectedRouteId] = useState(initialRouteId || '')
   const [selectedRouteCustomerId, setSelectedRouteCustomerId] = useState('')
 
+  // Central Pricing Engine Rules & Status
+  const [pricingRules, setPricingRules] = useState<PricingRule[]>([])
+  const [rateChangeNotice, setRateChangeNotice] = useState<string | null>(null)
+
   // Product Cart State
   const [cartItems, setCartItems] = useState<BillingCartItem[]>([])
 
@@ -151,19 +157,22 @@ export default function UnifiedBillingForm({
     }
   }, [initialDealerId, initialCustomerId, dealers, customers])
 
-  // Load catalog entities
+  // Load catalog entities and authoritative pricing rules
   useEffect(() => {
     async function loadMasterData() {
       try {
-        const [prodRes, custRes, dlrRes, drvRes, rteRes] = await Promise.all([
+        const [prodRes, custRes, dlrRes, drvRes, rteRes, rules] = await Promise.all([
           supabase.from('products').select('*').eq('is_active', true).order('name'),
           supabase.from('customers').select('*').order('name'),
           supabase.from('dealers').select('*').order('name'),
           supabase.from('drivers').select('*').eq('is_active', true).order('name'),
-          supabase.from('routes').select('*').eq('is_active', true).order('name')
+          supabase.from('routes').select('*').eq('is_active', true).order('name'),
+          fetchPricingRules()
         ])
 
         if (prodRes.data && prodRes.data.length > 0) setProducts(prodRes.data)
+        if (rules && rules.length > 0) setPricingRules(rules)
+
         if (custRes.data && custRes.data.length > 0) {
           setCustomers(custRes.data)
           if (initialCustomerId) {
@@ -188,8 +197,80 @@ export default function UnifiedBillingForm({
     loadMasterData()
   }, [])
 
+  // Dynamic cart rate re-resolution when customer, dealer, or route changes
+  function reResolveCartRates(
+    currentItems: BillingCartItem[],
+    newCustomerId?: string | null,
+    newDealerId?: string | null,
+    newRouteId?: string | null,
+    newCategory?: string | null
+  ) {
+    if (currentItems.length === 0) return
+
+    let changedCount = 0
+    const updated = currentItems.map(item => {
+      // Preserve manual operator overrides
+      if (item.is_manually_overridden) return item
+
+      const prod = products.find(p => p.id === item.product_id || p.name === item.product_name)
+      const res = resolveProductRate({
+        productId: item.product_id || prod?.id || '',
+        productName: item.product_name,
+        defaultRate: prod ? Number(prod.default_rate) : item.rate,
+        defaultGstRate: item.gst_rate,
+        unit: item.unit,
+        customerId: newCustomerId,
+        dealerId: newDealerId,
+        routeId: newRouteId,
+        customerCategory: newCategory,
+        billDate: date,
+        quantity: item.quantity,
+        availableRules: pricingRules
+      })
+
+      if (res.resolvedRate !== item.rate || res.rateSource !== item.rate_source) {
+        changedCount++
+      }
+
+      const fin = calculateLineFinancials({
+        quantity: item.quantity,
+        rate: res.resolvedRate,
+        itemDiscount: item.item_discount,
+        discountType: item.discount_type,
+        gstRate: isGstEnabled ? res.gstRate : 0,
+        isTaxInclusive: res.isTaxInclusive,
+        isGstEnabled,
+        costPrice: item.cost_price || 0
+      })
+
+      return {
+        ...item,
+        rate: res.resolvedRate,
+        original_rate: res.resolvedRate,
+        rate_source: res.rateSource,
+        rate_rule_id: res.ruleId,
+        is_tax_inclusive: res.isTaxInclusive,
+        has_conflict: res.hasConflict,
+        conflict_details: res.conflictDetails,
+        is_missing_rate: res.isMissing,
+        taxable_amount: fin.taxableAmount,
+        gst_amount: fin.gstAmount,
+        amount: fin.lineTotal,
+        total: fin.lineTotal
+      }
+    })
+
+    setCartItems(updated)
+
+    if (changedCount > 0) {
+      setRateChangeNotice(`⚡ Rate rules updated: ${changedCount} product rate(s) recalculated based on selected account/route hierarchy.`)
+      setTimeout(() => setRateChangeNotice(null), 5000)
+    }
+  }
+
   // Auto calculate financial totals
   const subtotal = cartItems.reduce((sum, item) => sum + item.quantity * item.rate, 0)
+  const totalQuantity = cartItems.reduce((sum, item) => sum + (item.quantity || 0), 0)
   const itemDiscounts = cartItems.reduce((sum, item) => {
     if (item.discount_type === 'percent') {
       return sum + (item.quantity * item.rate * (item.item_discount || 0)) / 100
@@ -219,6 +300,16 @@ export default function UnifiedBillingForm({
   const totalCogs = cartItems.reduce((sum, item) => sum + (item.cost_price || 0) * item.quantity, 0)
   const dueAmount = Math.max(0, Math.round((grandTotal - paidAmount) * 100) / 100)
 
+  const previousOutstanding = billType === 'customer'
+    ? Number(selectedCustomer?.outstanding_amount || 0)
+    : billType === 'dealer'
+      ? Number(selectedDealer?.outstanding_amount || 0)
+      : 0
+
+  // State for pre-confirmation modal
+  const [isConfirmationOpen, setIsConfirmationOpen] = useState(false)
+  const [confirmPendingPrint, setConfirmPendingPrint] = useState(false)
+
   // Auto update paid amount when total changes if non-due/mixed
   useEffect(() => {
     if (paymentMode === 'cash') {
@@ -244,32 +335,83 @@ export default function UnifiedBillingForm({
   // Handle Preset Stop item
   function handlePresetItem(preset: { productName: string; rate: number; quantity: number }) {
     const matchedProd = products.find(p => p.name.toLowerCase() === preset.productName.toLowerCase())
+    const res = resolveProductRate({
+      productId: matchedProd?.id || '',
+      productName: preset.productName,
+      defaultRate: preset.rate || Number(matchedProd?.default_rate) || 15,
+      defaultGstRate: isGstEnabled ? (Number(matchedProd?.gst_rate) || 0) : 0,
+      unit: matchedProd?.unit || 'piece',
+      customerId: selectedCustomer?.id,
+      dealerId: selectedDealer?.id,
+      routeId: selectedRouteId,
+      customerCategory: selectedCustomer?.customer_type,
+      billDate: date,
+      quantity: preset.quantity,
+      availableRules: pricingRules
+    })
+
+    const fin = calculateLineFinancials({
+      quantity: preset.quantity,
+      rate: res.resolvedRate,
+      itemDiscount: 0,
+      discountType: 'flat',
+      gstRate: isGstEnabled ? res.gstRate : 0,
+      isTaxInclusive: res.isTaxInclusive,
+      isGstEnabled,
+      costPrice: matchedProd?.cost_price || 0
+    })
+
     const newItem: BillingCartItem = {
       id: `cart-stop-${Date.now()}`,
       product_id: matchedProd?.id || null,
       product_name: matchedProd?.name || preset.productName,
+      category: matchedProd?.category || 'Can',
+      unit: res.unit || matchedProd?.unit || 'piece',
+      stock_quantity: matchedProd?.stock_quantity ?? 0,
       quantity: preset.quantity,
-      rate: preset.rate,
-      mrp: matchedProd?.mrp || preset.rate,
+      rate: res.resolvedRate,
+      original_rate: res.resolvedRate,
+      rate_source: res.rateSource,
+      rate_rule_id: res.ruleId,
+      is_tax_inclusive: res.isTaxInclusive,
+      is_manually_overridden: false,
+      has_conflict: res.hasConflict,
+      conflict_details: res.conflictDetails,
+      is_missing_rate: res.isMissing,
+      mrp: matchedProd?.mrp || res.resolvedRate,
       cost_price: matchedProd?.cost_price || 0,
       item_discount: 0,
       discount_type: 'flat',
-      gst_rate: isGstEnabled ? (matchedProd?.gst_rate || 0) : 0,
-      taxable_amount: preset.quantity * preset.rate,
-      gst_amount: 0,
-      amount: preset.quantity * preset.rate,
-      total: preset.quantity * preset.rate,
+      gst_rate: res.gstRate,
+      taxable_amount: fin.taxableAmount,
+      gst_amount: fin.gstAmount,
+      amount: fin.lineTotal,
+      total: fin.lineTotal,
       return_qty: 0,
       leak_qty: 0
     }
     setCartItems(prev => [...prev, newItem])
   }
 
-  // Transactional Save Execution
-  async function handleSave(shouldPrint = false) {
+  // Pre-save validation & confirmation trigger
+  function handleInitiateSave(shouldPrint = false) {
     if (cartItems.length === 0) {
       alert('⚠️ Please add at least one product line item to this bill.')
       return
+    }
+
+    // Rate Accuracy Guard: Block confirmation if any product rate is 0.00 / missing
+    const zeroRateItem = cartItems.find(i => i.is_missing_rate || Number(i.rate) <= 0)
+    if (zeroRateItem) {
+      alert(`⚠️ Bill confirmation blocked: Product "${zeroRateItem.product_name}" has no valid selling rate (rate is ₹0.00). Please configure a rate or enter an approved override before confirming.`)
+      return
+    }
+
+    // Rate Conflict Guard: Warn operator if overlapping pricing rules detected
+    const conflictItem = cartItems.find(i => i.has_conflict)
+    if (conflictItem) {
+      const proceed = confirm(`⚠️ Rate Conflict Notice: Product "${conflictItem.product_name}" has overlapping active pricing rules (${conflictItem.conflict_details || 'Multiple active rates'}). Do you want to proceed with applied rate ₹${conflictItem.rate}?`)
+      if (!proceed) return
     }
 
     if (billType === 'customer' && !selectedCustomer) {
@@ -287,6 +429,13 @@ export default function UnifiedBillingForm({
       return
     }
 
+    setConfirmPendingPrint(shouldPrint)
+    setIsConfirmationOpen(true)
+  }
+
+  // Transactional Save Execution
+  async function executeSave(shouldPrint = false) {
+    setIsConfirmationOpen(false)
     setSaving(true)
     setErrorMessage(null)
 
@@ -379,6 +528,13 @@ export default function UnifiedBillingForm({
           product_name: i.product_name,
           quantity: i.quantity,
           rate: i.rate,
+          original_rate: i.original_rate ?? i.rate,
+          rate_source: i.rate_source || 'Default Product Rate',
+          rate_rule_id: i.rate_rule_id || null,
+          unit: i.unit || 'piece',
+          is_tax_inclusive: Boolean(i.is_tax_inclusive),
+          override_reason: i.override_reason || null,
+          overridden_by: i.overridden_by || null,
           mrp: i.mrp ?? i.rate,
           cost_price: i.cost_price || 0,
           cost_per_unit_at_sale: i.cost_price || 0,
@@ -434,8 +590,6 @@ export default function UnifiedBillingForm({
           }))
         }
         setSavedBillForPrint(billDataObj)
-      } else {
-        alert(`✅ ${billType.toUpperCase()} Bill #${savedResult.invoice_number} saved successfully! Amount: ₹${savedResult.total_amount}`)
       }
 
       // Reset form for next invoice
@@ -477,6 +631,82 @@ export default function UnifiedBillingForm({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      {/* 0. SAVED BILL NOTIFICATION BANNER */}
+      {lastSavedBill && (
+        <div style={{
+          background: 'rgba(52, 211, 153, 0.1)',
+          border: '1.5px solid #34d399',
+          borderRadius: '12px',
+          padding: '1rem 1.25rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '1rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{
+              width: '38px',
+              height: '38px',
+              borderRadius: '50%',
+              background: '#34d399',
+              color: '#000',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 800
+            }}>
+              ✓
+            </div>
+            <div>
+              <div style={{ fontWeight: 800, color: '#34d399', fontSize: '1rem' }}>
+                Invoice #{lastSavedBill.invoice_number} Created Successfully!
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>
+                Total: ₹{lastSavedBill.total_amount?.toLocaleString('en-IN')} | Paid: ₹{lastSavedBill.paid_amount?.toLocaleString('en-IN')} | Due: ₹{lastSavedBill.due_amount?.toLocaleString('en-IN')}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const billDataObj: BillData = {
+                  id: lastSavedBill.id,
+                  invoice_number: lastSavedBill.invoice_number,
+                  bill_type: lastSavedBill.bill_type,
+                  customer_name: lastSavedBill.customer_name,
+                  customer_phone: lastSavedBill.customer_phone,
+                  subtotal: lastSavedBill.subtotal || lastSavedBill.total_amount,
+                  gst_amount: Number(lastSavedBill.gst_amount) || 0,
+                  total_amount: lastSavedBill.total_amount,
+                  paid_amount: lastSavedBill.paid_amount,
+                  due_amount: lastSavedBill.due_amount,
+                  payment_method: lastSavedBill.payment_mode,
+                  payment_status: lastSavedBill.payment_status,
+                  date: lastSavedBill.date,
+                  items: []
+                }
+                setSavedBillForPrint(billDataObj)
+              }}
+              icon={<Printer style={{ width: '14px', height: '14px' }} />}
+            >
+              Print Receipt
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() => setLastSavedBill(null)}
+            >
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* 1. PROMINENT BILL TYPE SELECTOR AT TOP */}
       <div style={{
         background: '#121214',
@@ -632,7 +862,10 @@ export default function UnifiedBillingForm({
           <BillingCustomerSelector
             customers={customers}
             selectedCustomer={selectedCustomer}
-            onSelectCustomer={setSelectedCustomer}
+            onSelectCustomer={cust => {
+              setSelectedCustomer(cust)
+              reResolveCartRates(cartItems, cust?.id, null, selectedRouteId, cust?.customer_type)
+            }}
             onCustomerCreated={newCust => setCustomers(prev => [newCust, ...prev])}
           />
         )}
@@ -641,7 +874,10 @@ export default function UnifiedBillingForm({
           <BillingDealerSelector
             dealers={dealers}
             selectedDealer={selectedDealer}
-            onSelectDealer={setSelectedDealer}
+            onSelectDealer={dlr => {
+              setSelectedDealer(dlr)
+              reResolveCartRates(cartItems, null, dlr?.id, selectedRouteId, null)
+            }}
             onDealerCreated={newDlr => setDealers(prev => [newDlr, ...prev])}
           />
         )}
@@ -655,15 +891,42 @@ export default function UnifiedBillingForm({
             selectedRouteCustomerId={selectedRouteCustomerId}
             deliveryDate={date}
             onDriverChange={setSelectedDriverId}
-            onRouteChange={setSelectedRouteId}
-            onRouteCustomerSelect={stop => setSelectedRouteCustomerId(stop?.id || '')}
+            onRouteChange={rteId => {
+              setSelectedRouteId(rteId)
+              reResolveCartRates(cartItems, selectedCustomer?.id, selectedDealer?.id, rteId, selectedCustomer?.customer_type)
+            }}
+            onRouteCustomerSelect={stop => {
+              setSelectedRouteCustomerId(stop?.id || '')
+              if (stop) {
+                reResolveCartRates(cartItems, stop.id, null, selectedRouteId, null)
+              }
+            }}
             onDeliveryDateChange={setDate}
             onApplyPresetItem={handlePresetItem}
           />
         )}
       </div>
 
-      {/* 3. SHARED PRODUCT CART TABLE */}
+      {/* Rate Change Notification Banner */}
+      {rateChangeNotice && (
+        <div style={{
+          background: 'rgba(251, 191, 36, 0.1)',
+          border: '1px solid rgba(251, 191, 36, 0.4)',
+          borderRadius: '8px',
+          padding: '0.65rem 1rem',
+          color: '#fbbf24',
+          fontSize: '0.85rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.6rem',
+          fontWeight: 600
+        }}>
+          <AlertTriangle style={{ width: '16px', height: '16px', flexShrink: 0 }} />
+          <span>{rateChangeNotice}</span>
+        </div>
+      )}
+
+      {/* 3. PRODUCT SELECTION CATALOG — FULL WIDTH VISUAL CARDS & DISCOVERY */}
       <div style={{
         background: '#121214',
         border: '1px solid rgba(255,255,255,0.06)',
@@ -671,118 +934,372 @@ export default function UnifiedBillingForm({
         padding: '1.25rem'
       }}>
         <BillingProductTable
+          renderMode="catalog-only"
           items={cartItems}
           availableProducts={products}
+          pricingRules={pricingRules}
+          customerId={selectedCustomer?.id}
+          dealerId={selectedDealer?.id}
+          routeId={selectedRouteId}
+          customerCategory={selectedCustomer?.customer_type}
+          billDate={date}
           isGstEnabled={isGstEnabled}
           showReturnsAndLeakages={billType === 'route' || billType === 'dealer'}
           onItemsChange={setCartItems}
         />
       </div>
 
-      {/* 4. PAYMENT & FINANCIAL SUMMARY GRID */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
-        {/* Payment Panel */}
-        <div style={{
-          background: '#121214',
-          border: '1px solid rgba(255,255,255,0.06)',
-          borderRadius: '12px',
-          padding: '1.25rem'
-        }}>
-          <BillingPaymentPanel
-            grandTotal={grandTotal}
-            paidAmount={paidAmount}
-            paymentMode={paymentMode}
-            cashAmount={cashAmount}
-            upiAmount={upiAmount}
-            cardAmount={cardAmount}
-            bankAmount={bankAmount}
-            walletAmount={walletAmount}
-            notes={notes}
-            reference={reference}
-            onPaidAmountChange={setPaidAmount}
-            onPaymentModeChange={setPaymentMode}
-            onCashChange={setCashAmount}
-            onUpiChange={setUpiAmount}
-            onCardChange={setCardAmount}
-            onBankChange={setBankAmount}
-            onWalletChange={setWalletAmount}
-            onNotesChange={setNotes}
-            onReferenceChange={setReference}
-          />
+      {/* 4. BILLING WORKSPACE: SELECTED ITEM CARDS (LEFT) & STICKY FINANCIAL SUMMARY (RIGHT) */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_390px] lg:grid-cols-[1fr_360px] gap-5 items-start">
+        {/* Left Column: Selected Bill Line Items & Payment Configuration */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', minWidth: 0 }}>
+          <div style={{
+            background: '#121214',
+            border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: '12px',
+            padding: '1.25rem'
+          }}>
+            <BillingProductTable
+              renderMode="cart-only"
+              items={cartItems}
+              availableProducts={products}
+              pricingRules={pricingRules}
+              customerId={selectedCustomer?.id}
+              dealerId={selectedDealer?.id}
+              routeId={selectedRouteId}
+              customerCategory={selectedCustomer?.customer_type}
+              billDate={date}
+              isGstEnabled={isGstEnabled}
+              showReturnsAndLeakages={billType === 'route' || billType === 'dealer'}
+              onItemsChange={setCartItems}
+            />
+          </div>
+
+          {/* Payment Panel */}
+          <div style={{
+            background: '#121214',
+            border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: '12px',
+            padding: '1.25rem'
+          }}>
+            <BillingPaymentPanel
+              grandTotal={grandTotal}
+              paidAmount={paidAmount}
+              paymentMode={paymentMode}
+              cashAmount={cashAmount}
+              upiAmount={upiAmount}
+              cardAmount={cardAmount}
+              bankAmount={bankAmount}
+              walletAmount={walletAmount}
+              notes={notes}
+              reference={reference}
+              onPaidAmountChange={setPaidAmount}
+              onPaymentModeChange={setPaymentMode}
+              onCashChange={setCashAmount}
+              onUpiChange={setUpiAmount}
+              onCardChange={setCardAmount}
+              onBankChange={setBankAmount}
+              onWalletChange={setWalletAmount}
+              onNotesChange={setNotes}
+              onReferenceChange={setReference}
+            />
+          </div>
         </div>
 
-        {/* Financial Summary */}
+        {/* Right Column: Sticky Billing Financial Summary */}
         <div style={{
-          background: '#121214',
-          border: '1px solid rgba(255,255,255,0.06)',
-          borderRadius: '12px',
-          padding: '1.25rem'
+          position: 'sticky',
+          top: '1rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1rem'
         }}>
-          <BillingSummary
-            subtotal={subtotal}
-            taxableAmount={taxableAmount}
-            cgstAmount={cgstAmount}
-            sgstAmount={sgstAmount}
-            igstAmount={igstAmount}
-            gstAmount={totalGst}
-            discountAmount={totalDiscount}
-            roundOff={roundOff}
-            grandTotal={grandTotal}
-            paidAmount={paidAmount}
-            dueAmount={dueAmount}
-            totalCogs={totalCogs}
-            isGstEnabled={isGstEnabled}
-            billDiscountValue={billDiscountValue}
-            billDiscountType={billDiscountType}
-            onBillDiscountValueChange={setBillDiscountValue}
-            onBillDiscountTypeChange={setBillDiscountType}
-          />
+          <div style={{
+            background: '#121214',
+            border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: '12px',
+            padding: '1.25rem'
+          }}>
+            <BillingSummary
+              subtotal={subtotal}
+              totalQuantity={totalQuantity}
+              taxableAmount={taxableAmount}
+              cgstAmount={cgstAmount}
+              sgstAmount={sgstAmount}
+              igstAmount={igstAmount}
+              gstAmount={totalGst}
+              discountAmount={totalDiscount}
+              roundOff={roundOff}
+              grandTotal={grandTotal}
+              paidAmount={paidAmount}
+              dueAmount={dueAmount}
+              previousOutstanding={previousOutstanding}
+              paymentMode={paymentMode}
+              selectedAccountName={billType === 'customer' ? selectedCustomer?.name : billType === 'dealer' ? selectedDealer?.name : undefined}
+              totalCogs={totalCogs}
+              isGstEnabled={isGstEnabled}
+              billDiscountValue={billDiscountValue}
+              billDiscountType={billDiscountType}
+              onBillDiscountValueChange={setBillDiscountValue}
+              onBillDiscountTypeChange={setBillDiscountType}
+            />
 
-          {/* Action Buttons */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginTop: '1.25rem' }}>
-            <Button
-              type="button"
-              variant="primary"
-              size="lg"
-              loading={saving}
-              onClick={() => handleSave(false)}
-              icon={<Save style={{ width: '18px', height: '18px' }} />}
-              style={{ width: '100%', justifyContent: 'center', fontSize: '1rem', fontWeight: 800 }}
-            >
-              Post & Save {billType.toUpperCase()} Bill
-            </Button>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginTop: '1.25rem' }}>
               <Button
                 type="button"
-                variant="secondary"
-                size="md"
-                disabled={saving}
-                onClick={() => handleSave(true)}
-                icon={<Printer style={{ width: '15px', height: '15px', color: '#fbbf24' }} />}
+                variant="primary"
+                size="lg"
+                loading={saving}
+                onClick={() => handleInitiateSave(false)}
+                icon={<Save style={{ width: '18px', height: '18px' }} />}
+                style={{ width: '100%', justifyContent: 'center', fontSize: '1rem', fontWeight: 800 }}
               >
-                Save & Print Bill
+                Post & Save {billType.toUpperCase()} Bill
               </Button>
 
-              <Button
-                type="button"
-                variant="secondary"
-                size="md"
-                onClick={() => {
-                  if (cartItems.length === 0) {
-                    alert('Please add items first to preview bill receipt.')
-                    return
-                  }
-                  setIsPreviewOpen(true)
-                }}
-                icon={<FileText style={{ width: '15px', height: '15px' }} />}
-              >
-                Receipt Preview
-              </Button>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  disabled={saving}
+                  onClick={() => handleInitiateSave(true)}
+                  icon={<Printer style={{ width: '15px', height: '15px', color: '#fbbf24' }} />}
+                >
+                  Save & Print Bill
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  onClick={() => {
+                    if (cartItems.length === 0) {
+                      alert('Please add items first to preview bill receipt.')
+                      return
+                    }
+                    setIsPreviewOpen(true)
+                  }}
+                  icon={<FileText style={{ width: '15px', height: '15px' }} />}
+                >
+                  Receipt Preview
+                </Button>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Bill Confirmation & Preview Modal (Phase 5 Requirement 10) */}
+      {isConfirmationOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.85)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: '#121214',
+            border: '1.5px solid rgba(251, 191, 36, 0.4)',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '640px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.7)',
+            overflow: 'hidden'
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: '1.25rem 1.5rem',
+              borderBottom: '1px solid rgba(255,255,255,0.08)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              background: 'rgba(251, 191, 36, 0.05)'
+            }}>
+              <div>
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  REVIEW BEFORE CONFIRMATION
+                </div>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>
+                  Confirm {billType.toUpperCase()} Bill #{invoiceNumber}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsConfirmationOpen(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#71717a',
+                  cursor: 'pointer',
+                  fontSize: '1.25rem',
+                  padding: '0.25rem'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div style={{ padding: '1.25rem 1.5rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Account summary */}
+              <div style={{
+                background: 'rgba(255,255,255,0.02)',
+                border: '1px solid rgba(255,255,255,0.06)',
+                borderRadius: '8px',
+                padding: '0.75rem 1rem',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: '0.75rem',
+                fontSize: '0.85rem'
+              }}>
+                <div>
+                  <div style={{ color: '#71717a', fontSize: '0.75rem' }}>Billed To</div>
+                  <div style={{ fontWeight: 700, color: '#e4e4e7' }}>
+                    {billType === 'customer' ? selectedCustomer?.name : billType === 'dealer' ? selectedDealer?.name : walkinName.trim() || 'Walk-in Customer'}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ color: '#71717a', fontSize: '0.75rem' }}>Invoice Date</div>
+                  <div style={{ fontWeight: 700, color: '#e4e4e7' }}>{date}</div>
+                </div>
+                <div>
+                  <div style={{ color: '#71717a', fontSize: '0.75rem' }}>Payment Mode</div>
+                  <div style={{ fontWeight: 700, color: '#fbbf24', textTransform: 'uppercase' }}>{paymentMode}</div>
+                </div>
+              </div>
+
+              {/* Items summary */}
+              <div>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a1a1aa', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+                  Items to be billed ({cartItems.length} lines, {totalQuantity} units)
+                </div>
+                <div style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                    <thead>
+                      <tr style={{ background: 'rgba(255,255,255,0.04)', color: '#71717a', textAlign: 'left' }}>
+                        <th style={{ padding: '0.5rem 0.75rem' }}>Product</th>
+                        <th style={{ padding: '0.5rem', textAlign: 'center' }}>Qty</th>
+                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Applied Rate</th>
+                        <th style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>Line Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cartItems.map((item, idx) => (
+                        <tr key={idx} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                          <td style={{ padding: '0.5rem 0.75rem' }}>
+                            <div style={{ fontWeight: 600, color: '#e4e4e7' }}>{item.product_name}</div>
+                            <div style={{ fontSize: '0.7rem', color: '#fbbf24' }}>{item.rate_source}</div>
+                          </td>
+                          <td style={{ padding: '0.5rem', textAlign: 'center', color: '#e4e4e7' }}>
+                            {item.quantity} {item.unit}
+                          </td>
+                          <td style={{ padding: '0.5rem', textAlign: 'right', color: '#e4e4e7' }}>
+                            ₹{item.rate}
+                          </td>
+                          <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#fff' }}>
+                            ₹{item.total.toLocaleString('en-IN')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Financial Breakdown */}
+              <div style={{
+                background: 'rgba(0,0,0,0.3)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '8px',
+                padding: '0.85rem 1rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.4rem',
+                fontSize: '0.85rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#a1a1aa' }}>
+                  <span>Subtotal:</span>
+                  <span>₹{subtotal.toLocaleString('en-IN')}</span>
+                </div>
+                {totalDiscount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#34d399' }}>
+                    <span>Discounts:</span>
+                    <span>-₹{totalDiscount.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                {isGstEnabled && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#a1a1aa' }}>
+                    <span>Tax (GST):</span>
+                    <span>₹{totalGst.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '1.05rem', color: '#fff', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '0.5rem' }}>
+                  <span>Grand Total:</span>
+                  <span style={{ color: '#fbbf24' }}>₹{grandTotal.toLocaleString('en-IN')}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#34d399', fontWeight: 700 }}>
+                  <span>Paid Now:</span>
+                  <span>₹{paidAmount.toLocaleString('en-IN')}</span>
+                </div>
+                {dueAmount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#f87171', fontWeight: 700 }}>
+                    <span>Remaining Due (This Bill):</span>
+                    <span>₹{dueAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                {previousOutstanding > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#fb923c', fontSize: '0.8rem', borderTop: '1px dashed rgba(255,255,255,0.1)', paddingTop: '0.4rem' }}>
+                    <span>Net Balance (Previous ₹{previousOutstanding.toLocaleString('en-IN')} + Due):</span>
+                    <span style={{ fontWeight: 800 }}>₹{(previousOutstanding + dueAmount).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div style={{
+              padding: '1rem 1.5rem',
+              borderTop: '1px solid rgba(255,255,255,0.08)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '0.75rem',
+              background: '#0d0d0f'
+            }}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                onClick={() => setIsConfirmationOpen(false)}
+              >
+                Back to Edit
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="md"
+                loading={saving}
+                onClick={() => executeSave(confirmPendingPrint)}
+                icon={<CheckCircle style={{ width: '16px', height: '16px' }} />}
+              >
+                {confirmPendingPrint ? 'Confirm & Print Bill' : 'Confirm & Save Bill'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Preview for Saved Bill (Save & Print) */}
       {savedBillForPrint && (

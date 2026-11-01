@@ -2,9 +2,10 @@
 
 import { useState } from 'react'
 import Image from 'next/image'
-import { X, Printer, CheckCircle, AlertTriangle } from 'lucide-react'
+import { X, Printer, CheckCircle, AlertTriangle, Bluetooth, Wifi, Smartphone, Send } from 'lucide-react'
 import { BillData } from '@/lib/printer/receipt'
 import { CopyType } from '@/lib/printer/printer-config'
+import { enqueueThermalPrintJob } from '@/lib/services/print-job-service'
 
 interface ReceiptPreviewModalProps {
   isOpen: boolean
@@ -47,8 +48,10 @@ export default function ReceiptPreviewModal({
   const defaultCopy: CopyType = (bill?.dealer_name || bill?.dealer_id || bill?.bill_type === 'dealer') ? 'dealer' : 'customer'
   const [copyType, setCopyType] = useState<CopyType>(defaultCopy)
   const [formatMode, setFormatMode] = useState<'80mm' | '58mm' | 'A4'>(initialFormat)
+  const [selectedTransport, setSelectedTransport] = useState<'bluetooth' | 'wifi'>('bluetooth')
   const [printing, setPrinting] = useState(false)
-  const [printStatus, setPrintStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [thermalQueueing, setThermalQueueing] = useState(false)
+  const [printStatus, setPrintStatus] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null)
 
   if (!isOpen || !bill) return null
 
@@ -74,18 +77,16 @@ export default function ReceiptPreviewModal({
   const dealerAddress = bill.dealer_address || bill.customer_address
   const dealerGstin = bill.dealer_gstin || bill.customer_gstin
 
-  const handlePrintClick = async () => {
+  // Standard Universal Browser / System Print
+  const handleSystemPrint = async () => {
     setPrinting(true)
     setPrintStatus(null)
     try {
-      // Trigger standard browser / system print dialog
       window.print()
-
       setPrintStatus({
         type: 'success',
-        message: 'Device print dialog opened. Select your TVS-E RP3230ABW (or system printer) to print. Note: The operating system handles physical print spooling.',
+        message: 'Device print dialog opened. Select your TVS-E RP3230ABW (or system printer) to complete printing.',
       })
-
       if (onPrint) {
         await onPrint(copyType)
       }
@@ -93,6 +94,40 @@ export default function ReceiptPreviewModal({
       setPrintStatus({ type: 'error', message: err?.message || 'Failed to open system print dialog' })
     } finally {
       setPrinting(false)
+    }
+  }
+
+  // TVS Thermal Print Bridge via Supabase Queue
+  const handleThermalBridgePrint = async () => {
+    setThermalQueueing(true)
+    setPrintStatus({
+      type: 'info',
+      message: `Dispatching to TVS RP 3230 ABW via ${selectedTransport.toUpperCase()}...`,
+    })
+
+    try {
+      const res = await enqueueThermalPrintJob(bill, copyType, selectedTransport)
+      if (res.success) {
+        setPrintStatus({
+          type: 'success',
+          message: res.message + ' (Android Print Bridge will print physically)',
+        })
+        if (onPrint) {
+          await onPrint(copyType)
+        }
+      } else {
+        setPrintStatus({
+          type: 'error',
+          message: res.message,
+        })
+      }
+    } catch (err: any) {
+      setPrintStatus({
+        type: 'error',
+        message: `Failed to queue thermal job: ${err?.message || err}`,
+      })
+    } finally {
+      setThermalQueueing(false)
     }
   }
 
@@ -736,26 +771,95 @@ export default function ReceiptPreviewModal({
             Close
           </button>
 
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {/* Transport Selector */}
+            <div style={{ display: 'flex', alignItems: 'center', background: '#18181b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '2px' }}>
+              <button
+                type="button"
+                onClick={() => setSelectedTransport('bluetooth')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  background: selectedTransport === 'bluetooth' ? '#fbbf24' : 'transparent',
+                  color: selectedTransport === 'bluetooth' ? '#000' : '#a1a1aa',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                <Bluetooth style={{ width: '12px', height: '12px' }} />
+                BT
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedTransport('wifi')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  background: selectedTransport === 'wifi' ? '#fbbf24' : 'transparent',
+                  color: selectedTransport === 'wifi' ? '#000' : '#a1a1aa',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                <Wifi style={{ width: '12px', height: '12px' }} />
+                Wi-Fi
+              </button>
+            </div>
+
+            {/* Universal Browser Print Fallback */}
             <button
-              onClick={handlePrintClick}
+              onClick={handleSystemPrint}
               disabled={printing}
               style={{
-                padding: '0.55rem 1.25rem',
+                padding: '0.55rem 1rem',
                 borderRadius: '6px',
-                backgroundColor: '#fbbf24',
-                color: '#000',
-                fontWeight: 700,
-                border: 'none',
+                backgroundColor: '#27272a',
+                color: '#fff',
+                fontWeight: 600,
+                border: '1px solid rgba(255, 255, 255, 0.1)',
                 cursor: printing ? 'wait' : 'pointer',
                 fontSize: '0.85rem',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.5rem',
               }}
+              title="Prints using operating system dialog (macOS/Windows/PDF)"
             >
-              <Printer style={{ width: '16px', height: '16px' }} />
-              {printing ? 'Opening Print...' : `Print ${formatMode}`}
+              <Printer style={{ width: '15px', height: '15px', color: '#a1a1aa' }} />
+              {printing ? 'Opening...' : 'Browser Print / PDF'}
+            </button>
+
+            {/* Primary TVS Thermal Print Bridge Action */}
+            <button
+              onClick={handleThermalBridgePrint}
+              disabled={thermalQueueing}
+              style={{
+                padding: '0.55rem 1.25rem',
+                borderRadius: '6px',
+                backgroundColor: '#fbbf24',
+                color: '#000',
+                fontWeight: 800,
+                border: 'none',
+                cursor: thermalQueueing ? 'wait' : 'pointer',
+                fontSize: '0.85rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                boxShadow: '0 2px 10px rgba(251, 191, 36, 0.2)'
+              }}
+            >
+              <Send style={{ width: '15px', height: '15px' }} />
+              {thermalQueueing ? 'Dispatching...' : `Print to TVS (${selectedTransport.toUpperCase()})`}
             </button>
           </div>
         </div>

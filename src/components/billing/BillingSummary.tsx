@@ -1,11 +1,25 @@
 'use client'
 
 import { formatCurrency } from '@/lib/utils/formatters'
-import { Calculator, Tag, Percent, DollarSign, CheckCircle, Clock, AlertTriangle } from 'lucide-react'
+import { 
+  Calculator, 
+  Tag, 
+  Percent, 
+  DollarSign, 
+  CheckCircle, 
+  Clock, 
+  AlertTriangle,
+  History,
+  CreditCard,
+  Package,
+  Layers,
+  ArrowRight
+} from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 
 interface BillingSummaryProps {
   subtotal: number
+  totalQuantity?: number
   taxableAmount: number
   cgstAmount: number
   sgstAmount: number
@@ -16,6 +30,9 @@ interface BillingSummaryProps {
   grandTotal: number
   paidAmount: number
   dueAmount: number
+  previousOutstanding?: number
+  paymentMode?: string
+  selectedAccountName?: string
   totalCogs?: number
   isGstEnabled: boolean
   billDiscountValue: number
@@ -26,6 +43,7 @@ interface BillingSummaryProps {
 
 export default function BillingSummary({
   subtotal,
+  totalQuantity = 0,
   taxableAmount,
   cgstAmount,
   sgstAmount,
@@ -36,6 +54,9 @@ export default function BillingSummary({
   grandTotal,
   paidAmount,
   dueAmount,
+  previousOutstanding = 0,
+  paymentMode = 'cash',
+  selectedAccountName,
   totalCogs = 0,
   isGstEnabled,
   billDiscountValue,
@@ -46,6 +67,7 @@ export default function BillingSummary({
   const paymentStatus = dueAmount <= 0 ? 'paid' : (paidAmount > 0 ? 'partial' : 'due')
   const grossProfit = Math.max(0, taxableAmount - totalCogs)
   const marginPct = taxableAmount > 0 ? ((grossProfit / taxableAmount) * 100).toFixed(1) : '0.0'
+  const netRunningDue = Math.max(0, previousOutstanding + dueAmount)
 
   return (
     <div style={{
@@ -57,10 +79,11 @@ export default function BillingSummary({
       flexDirection: 'column',
       gap: '0.85rem'
     }}>
+      {/* Header with live status */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.65rem' }}>
         <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
           <Calculator style={{ width: '15px', height: '15px' }} />
-          Financial Breakdown
+          Financial Breakdown & Visibility
         </span>
         <Badge variant={paymentStatus === 'paid' ? 'success' : paymentStatus === 'partial' ? 'warning' : 'danger'}>
           {paymentStatus === 'paid' ? 'Fully Settled' : paymentStatus === 'partial' ? 'Partially Paid' : 'Credit / Outstanding'}
@@ -69,9 +92,13 @@ export default function BillingSummary({
 
       {/* Rows */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', fontSize: '0.85rem' }}>
-        {/* Gross Subtotal */}
+        
+        {/* Items Gross Subtotal & Qty */}
         <div style={{ display: 'flex', justifyContent: 'space-between', color: '#a1a1aa' }}>
-          <span>Items Gross Subtotal</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <Package style={{ width: '13px', height: '13px', color: '#a1a1aa' }} />
+            Items Subtotal {totalQuantity > 0 ? `(${totalQuantity} items)` : ''}
+          </span>
           <span className="num" style={{ color: '#f4f4f5', fontWeight: 600 }}>{formatCurrency(subtotal)}</span>
         </div>
 
@@ -148,6 +175,10 @@ export default function BillingSummary({
                 <span className="num">+{formatCurrency(igstAmount)}</span>
               </div>
             )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#a1a1aa', fontWeight: 600 }}>
+              <span>Total Tax (GST)</span>
+              <span className="num" style={{ color: '#fbbf24' }}>+{formatCurrency(gstAmount)}</span>
+            </div>
           </>
         )}
 
@@ -169,11 +200,40 @@ export default function BillingSummary({
         justifyContent: 'space-between',
         alignItems: 'baseline'
       }}>
-        <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>Grand Total</span>
+        <div>
+          <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>Grand Total</span>
+          <div style={{ fontSize: '0.7rem', color: '#a1a1aa' }}>Payment Method: <strong style={{ color: '#fbbf24', textTransform: 'uppercase' }}>{paymentMode}</strong></div>
+        </div>
         <span className="num" style={{ fontSize: '1.6rem', fontWeight: 900, color: '#fbbf24' }}>
           {formatCurrency(grandTotal)}
         </span>
       </div>
+
+      {/* Previous Outstanding Balance & Running Reconciliation */}
+      {previousOutstanding > 0 && (
+        <div style={{
+          background: 'rgba(239,68,68,0.08)',
+          border: '1px solid rgba(239,68,68,0.25)',
+          borderRadius: '8px',
+          padding: '0.55rem 0.75rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.35rem',
+          fontSize: '0.8rem'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#fca5a5' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <History style={{ width: '13px', height: '13px' }} />
+              Previous Due ({selectedAccountName || 'Account'})
+            </span>
+            <span className="num" style={{ fontWeight: 700 }}>{formatCurrency(previousOutstanding)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#fff', borderTop: '1px dashed rgba(239,68,68,0.2)', paddingTop: '0.3rem', fontWeight: 700 }}>
+            <span>Total Outstanding After Bill</span>
+            <span className="num" style={{ color: '#f87171' }}>{formatCurrency(netRunningDue)}</span>
+          </div>
+        </div>
+      )}
 
       {/* Paid & Due Breakdown */}
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
@@ -184,7 +244,7 @@ export default function BillingSummary({
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Balance Due</div>
+          <div style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Remaining Due</div>
           <div className="num" style={{ fontWeight: 800, color: dueAmount > 0 ? '#f87171' : '#34d399', fontSize: '1.1rem' }}>
             {formatCurrency(dueAmount)}
           </div>

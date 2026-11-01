@@ -25,9 +25,11 @@ import {
   PieChart,
   Bot,
   Settings,
+  Printer,
   ChevronLeft,
   ChevronRight,
   Droplet,
+  Tag,
 } from 'lucide-react'
 
 const navGroups = [
@@ -41,6 +43,7 @@ const navGroups = [
     group: 'Sales & Billing',
     items: [
       { href: '/billing',   label: 'Billing & POS', icon: Receipt },
+      { href: '/rates',     label: 'Rate Management', icon: Tag },
       { href: '/sales',     label: 'Sales History',  icon: TrendingUp },
       { href: '/customers', label: 'Customers',      icon: Users },
     ],
@@ -88,6 +91,7 @@ const navGroups = [
   {
     group: 'System',
     items: [
+      { href: '/settings/printer', label: 'TVS Printer Setup', icon: Printer },
       { href: '/settings', label: 'System Settings', icon: Settings },
     ],
   },
