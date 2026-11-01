@@ -1,11 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Image from 'next/image'
-import { X, Printer, CheckCircle, AlertTriangle, Bluetooth, Wifi, Smartphone, Send } from 'lucide-react'
+import { X, Printer, CheckCircle, AlertTriangle, Bluetooth, Wifi, Smartphone, Send, Radio } from 'lucide-react'
 import { BillData } from '@/lib/printer/receipt'
 import { CopyType } from '@/lib/printer/printer-config'
-import { enqueueThermalPrintJob } from '@/lib/services/print-job-service'
+import { 
+  enqueueThermalPrintJob, 
+  getPrinterSettings, 
+  getBridgeWorkerStatus, 
+  PrintBridgeWorkerRecord 
+} from '@/lib/services/print-job-service'
 
 interface ReceiptPreviewModalProps {
   isOpen: boolean
@@ -48,10 +53,26 @@ export default function ReceiptPreviewModal({
   const defaultCopy: CopyType = (bill?.dealer_name || bill?.dealer_id || bill?.bill_type === 'dealer') ? 'dealer' : 'customer'
   const [copyType, setCopyType] = useState<CopyType>(defaultCopy)
   const [formatMode, setFormatMode] = useState<'80mm' | '58mm' | 'A4'>(initialFormat)
-  const [selectedTransport, setSelectedTransport] = useState<'bluetooth' | 'wifi'>('bluetooth')
+  const [selectedTransport, setSelectedTransport] = useState<'bluetooth' | 'wifi'>('wifi')
+  const [bridgeWorker, setBridgeWorker] = useState<PrintBridgeWorkerRecord | null>(null)
   const [printing, setPrinting] = useState(false)
   const [thermalQueueing, setThermalQueueing] = useState(false)
   const [printStatus, setPrintStatus] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    async function initSettings() {
+      const [settings, worker] = await Promise.all([
+        getPrinterSettings(),
+        getBridgeWorkerStatus()
+      ])
+      if (settings?.preferred_connection) {
+        setSelectedTransport(settings.preferred_connection === 'bluetooth' ? 'bluetooth' : 'wifi')
+      }
+      setBridgeWorker(worker)
+    }
+    initSettings()
+  }, [isOpen])
 
   if (!isOpen || !bill) return null
 
@@ -776,26 +797,6 @@ export default function ReceiptPreviewModal({
             <div style={{ display: 'flex', alignItems: 'center', background: '#18181b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '2px' }}>
               <button
                 type="button"
-                onClick={() => setSelectedTransport('bluetooth')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '4px 8px',
-                  borderRadius: '4px',
-                  border: 'none',
-                  background: selectedTransport === 'bluetooth' ? '#fbbf24' : 'transparent',
-                  color: selectedTransport === 'bluetooth' ? '#000' : '#a1a1aa',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                <Bluetooth style={{ width: '12px', height: '12px' }} />
-                BT
-              </button>
-              <button
-                type="button"
                 onClick={() => setSelectedTransport('wifi')}
                 style={{
                   display: 'flex',
@@ -804,8 +805,8 @@ export default function ReceiptPreviewModal({
                   padding: '4px 8px',
                   borderRadius: '4px',
                   border: 'none',
-                  background: selectedTransport === 'wifi' ? '#fbbf24' : 'transparent',
-                  color: selectedTransport === 'wifi' ? '#000' : '#a1a1aa',
+                  background: selectedTransport === 'wifi' ? '#10b981' : 'transparent',
+                  color: selectedTransport === 'wifi' ? '#fff' : '#a1a1aa',
                   fontSize: '0.75rem',
                   fontWeight: 700,
                   cursor: 'pointer'
@@ -813,6 +814,26 @@ export default function ReceiptPreviewModal({
               >
                 <Wifi style={{ width: '12px', height: '12px' }} />
                 Wi-Fi
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedTransport('bluetooth')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  background: selectedTransport === 'bluetooth' ? '#3b82f6' : 'transparent',
+                  color: selectedTransport === 'bluetooth' ? '#fff' : '#a1a1aa',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                <Bluetooth style={{ width: '12px', height: '12px' }} />
+                BT
               </button>
             </div>
 

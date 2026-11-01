@@ -43,14 +43,42 @@ export interface PrinterDeviceRecord {
   registered_device_id?: string
 }
 
+export interface PrintBridgeWorkerRecord {
+  worker_id: string
+  device_name: string
+  app_version: string
+  preferred_transport: 'wifi' | 'bluetooth' | 'auto'
+  status: 'ONLINE' | 'OFFLINE' | 'BUSY'
+  ip_address?: string
+  last_heartbeat: string
+  created_at: string
+  updated_at: string
+  isOnline?: boolean
+}
+
+export interface PrinterSettingsRecord {
+  id: string
+  organization_id: string
+  preferred_connection: 'wifi' | 'bluetooth' | 'auto'
+  automatic_fallback: boolean
+  receipt_width: string
+  character_width: number
+  print_logo: boolean
+  print_qr: boolean
+  auto_cut: boolean
+  cash_drawer: boolean
+  updated_at?: string
+}
+
 /**
  * Enqueues a thermal print job into the Supabase cloud queue for TVS RP 3230 ABW.
  * Includes client-side idempotency protection to prevent rapid double-clicks.
+ * Defaults to Wi-Fi RAW socket transport as requested.
  */
 export async function enqueueThermalPrintJob(
   bill: BillData,
   copyType: CopyType = 'customer',
-  connectionType: 'bluetooth' | 'wifi' | 'auto' = 'bluetooth'
+  connectionType: 'bluetooth' | 'wifi' | 'auto' = 'wifi'
 ): Promise<EnqueuePrintJobResult> {
   const supabase = createClient()
 
@@ -122,7 +150,6 @@ export async function enqueueThermalPrintJob(
       .single()
 
     if (error) {
-      // If table doesn't exist yet, return soft failure with advice
       return {
         success: false,
         message: `Cloud queue insert failed: ${error.message}. Ensure migration 005_thermal_print_queue.sql is applied.`
@@ -133,7 +160,7 @@ export async function enqueueThermalPrintJob(
       success: true,
       jobId: inserted.id,
       status: inserted.status,
-      message: `Print job #${bill.invoice_number} successfully queued for TVS RP 3230 ABW!`
+      message: `Print job #${bill.invoice_number} queued for TVS RP 3230 ABW via ${connectionType.toUpperCase()}!`
     }
   } catch (err: any) {
     return {
@@ -146,7 +173,7 @@ export async function enqueueThermalPrintJob(
 /**
  * Fetch recent print jobs for queue inspection in ERP UI
  */
-export async function getRecentPrintJobs(limit: number = 20): Promise<PrintJobRecord[]> {
+export async function getRecentPrintJobs(limit: number = 25): Promise<PrintJobRecord[]> {
   const supabase = createClient()
   try {
     const { data, error } = await supabase
@@ -192,6 +219,75 @@ export async function savePrinterDevice(device: Partial<PrinterDeviceRecord>): P
         ...device,
         updated_at: new Date().toISOString()
       })
+
+    return !error
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Fetch latest Android Print Bridge worker heartbeat & online/offline status
+ */
+export async function getBridgeWorkerStatus(): Promise<PrintBridgeWorkerRecord | null> {
+  const supabase = createClient()
+  try {
+    const { data, error } = await supabase
+      .from('print_bridge_workers')
+      .select('*')
+      .order('last_heartbeat', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error || !data) return null
+
+    const diffMs = Date.now() - new Date(data.last_heartbeat).getTime()
+    // Worker is considered online if heartbeat was within last 30 seconds
+    const isOnline = diffMs < 30000
+
+    return {
+      ...data,
+      isOnline,
+      status: isOnline ? 'ONLINE' : 'OFFLINE'
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Fetch global printer settings from Supabase
+ */
+export async function getPrinterSettings(): Promise<PrinterSettingsRecord | null> {
+  const supabase = createClient()
+  try {
+    const { data, error } = await supabase
+      .from('printer_settings')
+      .select('*')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error || !data) return null
+    return data as PrinterSettingsRecord
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Save or update printer settings
+ */
+export async function savePrinterSettings(settings: Partial<PrinterSettingsRecord>): Promise<boolean> {
+  const supabase = createClient()
+  try {
+    const { error } = await supabase
+      .from('printer_settings')
+      .upsert({
+        organization_id: 'default_org',
+        ...settings,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'organization_id' })
 
     return !error
   } catch {
