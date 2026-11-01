@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS public.print_jobs (
     -- Status Enum: 'PENDING', 'CLAIMED', 'SENDING', 'SENT', 'COMPLETED', 'FAILED', 'UNKNOWN_OUTCOME'
     idempotency_key TEXT UNIQUE,
     payload_json JSONB NOT NULL,
-    copy_type TEXT NOT NULL DEFAULT 'customer', -- 'customer' | 'dealer' | 'kitchen' | 'duplicate'
+    copy_type TEXT NOT NULL DEFAULT 'customer',
     retry_count INTEGER NOT NULL DEFAULT 0,
     error_message TEXT,
     created_by TEXT DEFAULT 'ERP Web POS',
@@ -59,39 +59,31 @@ CREATE TABLE IF NOT EXISTS public.print_jobs (
     completed_at TIMESTAMPTZ
 );
 
--- Fast Indexing for real-time polling and claiming
 CREATE INDEX IF NOT EXISTS idx_print_jobs_status_created ON public.print_jobs(status, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_print_jobs_invoice_number ON public.print_jobs(invoice_number);
 CREATE INDEX IF NOT EXISTS idx_print_jobs_idempotency ON public.print_jobs(idempotency_key);
 
--- 3. PRINTER SETTINGS TABLE
+-- 3. UPGRADE PRINTER SETTINGS TABLE SAFELY
 CREATE TABLE IF NOT EXISTS public.printer_settings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id TEXT NOT NULL DEFAULT 'default_org' UNIQUE,
-    default_printer_id UUID REFERENCES public.printer_devices(id) ON DELETE SET NULL,
-    preferred_connection TEXT NOT NULL DEFAULT 'bluetooth', -- 'bluetooth' | 'wifi' | 'auto'
-    automatic_fallback BOOLEAN NOT NULL DEFAULT true,
-    receipt_width TEXT NOT NULL DEFAULT '80mm',
-    character_width INTEGER NOT NULL DEFAULT 48,
-    print_logo BOOLEAN NOT NULL DEFAULT true,
-    print_qr BOOLEAN NOT NULL DEFAULT true,
-    auto_cut BOOLEAN NOT NULL DEFAULT true,
-    cash_drawer BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Seed default settings
-INSERT INTO public.printer_settings (
-    organization_id, preferred_connection, automatic_fallback, receipt_width, character_width, print_logo, print_qr, auto_cut, cash_drawer
-)
-VALUES (
-    'default_org', 'bluetooth', true, '80mm', 48, true, true, true, true
-)
-ON CONFLICT (organization_id) DO NOTHING;
+ALTER TABLE public.printer_settings ADD COLUMN IF NOT EXISTS organization_id TEXT NOT NULL DEFAULT 'default_org';
+ALTER TABLE public.printer_settings ADD COLUMN IF NOT EXISTS default_printer_id UUID REFERENCES public.printer_devices(id) ON DELETE SET NULL;
+ALTER TABLE public.printer_settings ADD COLUMN IF NOT EXISTS preferred_connection TEXT NOT NULL DEFAULT 'bluetooth';
+ALTER TABLE public.printer_settings ADD COLUMN IF NOT EXISTS automatic_fallback BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.printer_settings ADD COLUMN IF NOT EXISTS receipt_width TEXT NOT NULL DEFAULT '80mm';
+ALTER TABLE public.printer_settings ADD COLUMN IF NOT EXISTS character_width INTEGER NOT NULL DEFAULT 48;
+ALTER TABLE public.printer_settings ADD COLUMN IF NOT EXISTS print_logo BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.printer_settings ADD COLUMN IF NOT EXISTS print_qr BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.printer_settings ADD COLUMN IF NOT EXISTS auto_cut BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.printer_settings ADD COLUMN IF NOT EXISTS cash_drawer BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.printer_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_printer_settings_org ON public.printer_settings(organization_id);
 
 -- 4. ATOMIC JOB CLAIMING RPC FUNCTION
--- Concurrently claims the oldest PENDING job safely using FOR UPDATE SKIP LOCKED
 CREATE OR REPLACE FUNCTION public.claim_next_print_job(
     p_worker_id TEXT DEFAULT 'android-worker',
     p_preferred_transport TEXT DEFAULT NULL
@@ -135,17 +127,19 @@ ALTER TABLE public.printer_devices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.print_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.printer_settings ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow authenticated read printer_devices" 
-    ON public.printer_devices FOR SELECT USING (true);
-CREATE POLICY "Allow authenticated manage printer_devices" 
-    ON public.printer_devices FOR ALL USING (true);
+DROP POLICY IF EXISTS "Allow authenticated read printer_devices" ON public.printer_devices;
+DROP POLICY IF EXISTS "Allow authenticated manage printer_devices" ON public.printer_devices;
+DROP POLICY IF EXISTS "Allow authenticated read print_jobs" ON public.print_jobs;
+DROP POLICY IF EXISTS "Allow authenticated insert/update print_jobs" ON public.print_jobs;
+DROP POLICY IF EXISTS "Allow authenticated read printer_settings" ON public.printer_settings;
+DROP POLICY IF EXISTS "Allow authenticated update printer_settings" ON public.printer_settings;
+DROP POLICY IF EXISTS "public_all_print_jobs" ON public.print_jobs;
+DROP POLICY IF EXISTS "public_all_printer_devices" ON public.printer_devices;
+DROP POLICY IF EXISTS "public_all_printer_settings" ON public.printer_settings;
 
-CREATE POLICY "Allow authenticated read print_jobs" 
-    ON public.print_jobs FOR SELECT USING (true);
-CREATE POLICY "Allow authenticated insert/update print_jobs" 
-    ON public.print_jobs FOR ALL USING (true);
+CREATE POLICY "public_all_printer_devices" ON public.printer_devices FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "public_all_print_jobs" ON public.print_jobs FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "public_all_printer_settings" ON public.printer_settings FOR ALL USING (true) WITH CHECK (true);
 
-CREATE POLICY "Allow authenticated read printer_settings" 
-    ON public.printer_settings FOR SELECT USING (true);
-CREATE POLICY "Allow authenticated update printer_settings" 
-    ON public.printer_settings FOR ALL USING (true);
+-- 6. REFRESH POSTGREST SCHEMA CACHE
+NOTIFY pgrst, 'reload schema';
