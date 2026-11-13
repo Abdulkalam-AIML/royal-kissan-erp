@@ -28,6 +28,8 @@ import {
   getBridgeWorkerStatus,
   getPrinterSettings,
   savePrinterSettings,
+  confirmPhysicalPrint,
+  retryPrintJob,
   PrintJobRecord, 
   PrinterDeviceRecord,
   PrintBridgeWorkerRecord,
@@ -184,6 +186,26 @@ export default function PrinterManagementPage() {
       setStatusMsg({ type: 'error', text: e?.message || 'Error queueing test print' })
     } finally {
       setTestingPrint(false)
+    }
+  }
+
+  async function handleConfirmPhysical(jobId: string) {
+    const res = await confirmPhysicalPrint(jobId, 'operator_confirmed')
+    if (res.success) {
+      setStatusMsg({ type: 'success', text: `✅ Print job marked as PRINTED (Physical paper confirmed).` })
+      loadData()
+    } else {
+      setStatusMsg({ type: 'error', text: res.message })
+    }
+  }
+
+  async function handleRetryJob(jobId: string) {
+    const res = await retryPrintJob(jobId, 'Operator')
+    if (res.success) {
+      setStatusMsg({ type: 'success', text: `✅ Print job re-queued in PENDING state for pickup.` })
+      loadData()
+    } else {
+      setStatusMsg({ type: 'error', text: res.message })
     }
   }
 
@@ -422,22 +444,35 @@ export default function PrinterManagementPage() {
                   <th style={{ padding: '0.6rem 0.75rem' }}>Status</th>
                   <th style={{ padding: '0.6rem 0.75rem' }}>Copy</th>
                   <th style={{ padding: '0.6rem 0.75rem' }}>Queued Time</th>
-                  <th style={{ padding: '0.6rem 0.75rem' }}>Outcome / Worker</th>
+                  <th style={{ padding: '0.6rem 0.75rem' }}>Outcome / Worker / Error</th>
+                  <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {jobs.map(j => {
                   const payload = j.payload_json
-                  const isSuccess = j.status === 'SENT' || j.status === 'COMPLETED'
+                  const isPrinted = j.status === 'PRINTED' || j.status === 'COMPLETED'
+                  const isSent = j.status === 'SENT'
+                  const isSending = j.status === 'SENDING'
+                  const isClaimed = j.status === 'CLAIMED'
                   const isPending = j.status === 'PENDING'
-                  const isClaimed = j.status === 'CLAIMED' || j.status === 'SENDING'
-                  const isWifi = j.connection_type === 'wifi'
+                  const isFailed = j.status === 'FAILED'
+                  const isUnknown = j.status === 'UNKNOWN_OUTCOME'
+                  
+                  const transportUsed = (j.actual_transport || j.connection_type || 'wifi').toLowerCase()
+                  const isWifi = transportUsed === 'wifi'
 
                   let outcomeText = 'Pending Pickup'
                   if (j.error_message) {
                     outcomeText = `Error: ${j.error_message}`
-                  } else if (j.claimed_by) {
-                    outcomeText = `Worker: ${j.claimed_by}`
+                  } else if (isPrinted) {
+                    outcomeText = `Verified: ${j.verification_method || 'hardware_status'}`
+                  } else if (isSent) {
+                    outcomeText = `Data in buffer (${transportUsed.toUpperCase()}). Paper verification pending.`
+                  } else if (isSending) {
+                    outcomeText = `Transmitting payload to TVS RP 3230 ABW...`
+                  } else if (isClaimed) {
+                    outcomeText = `Claimed by worker: ${j.claimed_by || 'Android Bridge'}`
                   } else if (isPending) {
                     outcomeText = bridgeWorker?.isOnline 
                       ? 'Waiting for Bridge Claim' 
@@ -455,13 +490,40 @@ export default function PrinterManagementPage() {
                       <td style={{ padding: '0.6rem 0.75rem', color: '#a1a1aa' }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
                           {isWifi ? <Wifi style={{ width: '13px', height: '13px', color: '#10b981' }} /> : <Bluetooth style={{ width: '13px', height: '13px', color: '#3b82f6' }} />}
-                          <strong style={{ color: isWifi ? '#34d399' : '#60a5fa' }}>{j.connection_type.toUpperCase()}</strong>
+                          <strong style={{ color: isWifi ? '#34d399' : '#60a5fa' }}>{transportUsed.toUpperCase()}</strong>
                         </span>
                       </td>
                       <td style={{ padding: '0.6rem 0.75rem' }}>
-                        <Badge variant={isSuccess ? 'success' : isPending ? 'warning' : isClaimed ? 'info' : 'danger'}>
-                          {j.status}
-                        </Badge>
+                        {isPrinted ? (
+                          <Badge variant="success">PRINTED</Badge>
+                        ) : isSent ? (
+                          <Badge 
+                            variant="info" 
+                            style={{ backgroundColor: 'rgba(14, 165, 233, 0.15)', color: '#38bdf8', borderColor: 'rgba(14, 165, 233, 0.3)' }}
+                          >
+                            SENT (IN BUFFER)
+                          </Badge>
+                        ) : isSending ? (
+                          <Badge 
+                            variant="info" 
+                            style={{ backgroundColor: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', borderColor: 'rgba(99, 102, 241, 0.3)' }}
+                          >
+                            SENDING
+                          </Badge>
+                        ) : isClaimed ? (
+                          <Badge variant="info">CLAIMED</Badge>
+                        ) : isPending ? (
+                          <Badge variant="warning">PENDING</Badge>
+                        ) : isUnknown ? (
+                          <Badge 
+                            variant="warning" 
+                            style={{ backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', borderColor: '#f59e0b' }}
+                          >
+                            UNKNOWN OUTCOME
+                          </Badge>
+                        ) : (
+                          <Badge variant="danger">FAILED</Badge>
+                        )}
                       </td>
                       <td style={{ padding: '0.6rem 0.75rem', color: '#a1a1aa', textTransform: 'uppercase' }}>
                         {j.copy_type}
@@ -469,8 +531,48 @@ export default function PrinterManagementPage() {
                       <td style={{ padding: '0.6rem 0.75rem', color: '#71717a' }}>
                         {new Date(j.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                       </td>
-                      <td style={{ padding: '0.6rem 0.75rem', color: j.error_message ? '#ef4444' : isPending ? '#fbbf24' : '#a1a1aa', fontSize: '0.78rem' }}>
+                      <td style={{ padding: '0.6rem 0.75rem', color: j.error_message ? '#ef4444' : isUnknown ? '#fbbf24' : isPrinted ? '#34d399' : isPending ? '#fbbf24' : '#a1a1aa', fontSize: '0.78rem' }}>
                         {outcomeText}
+                      </td>
+                      <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>
+                        {isSent && (
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmPhysical(j.id)}
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: '4px',
+                              backgroundColor: '#10b981',
+                              color: '#fff',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              border: 'none',
+                              cursor: 'pointer'
+                            }}
+                            title="Confirm that paper has physically emerged from TVS printer"
+                          >
+                            ✓ Confirm
+                          </button>
+                        )}
+                        {(isFailed || isUnknown) && (
+                          <button
+                            type="button"
+                            onClick={() => handleRetryJob(j.id)}
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: '4px',
+                              backgroundColor: isUnknown ? '#f59e0b' : '#ef4444',
+                              color: isUnknown ? '#000' : '#fff',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              border: 'none',
+                              cursor: 'pointer'
+                            }}
+                            title="Reset to PENDING for manual reprint"
+                          >
+                            🔄 Retry
+                          </button>
+                        )}
                       </td>
                     </tr>
                   )

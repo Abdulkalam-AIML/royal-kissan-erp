@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 export type DataModuleKey =
   | 'bills'
   | 'sales'
+  | 'purchases'
   | 'expenses'
   | 'products'
   | 'stock'

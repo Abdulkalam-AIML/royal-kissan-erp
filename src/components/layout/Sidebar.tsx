@@ -30,6 +30,7 @@ import {
   ChevronRight,
   Droplet,
   Tag,
+  ShoppingBag,
 } from 'lucide-react'
 
 const navGroups = [
@@ -59,6 +60,7 @@ const navGroups = [
   {
     group: 'Inventory',
     items: [
+      { href: '/purchases', label: 'Purchases',       icon: ShoppingBag },
       { href: '/stock',    label: 'Stock Control',   icon: Boxes },
       { href: '/products', label: 'Products',        icon: Package },
     ],

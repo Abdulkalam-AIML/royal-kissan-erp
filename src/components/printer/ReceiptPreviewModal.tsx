@@ -2,14 +2,18 @@
 
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
-import { X, Printer, CheckCircle, AlertTriangle, Bluetooth, Wifi, Smartphone, Send, Radio } from 'lucide-react'
+import { X, Printer, CheckCircle, AlertTriangle, Bluetooth, Wifi, Smartphone, Send, Radio, Clock, RefreshCw, Check } from 'lucide-react'
 import { BillData } from '@/lib/printer/receipt'
 import { CopyType } from '@/lib/printer/printer-config'
 import { 
   enqueueThermalPrintJob, 
   getPrinterSettings, 
   getBridgeWorkerStatus, 
-  PrintBridgeWorkerRecord 
+  getPrintJobById,
+  confirmPhysicalPrint,
+  retryPrintJob,
+  PrintBridgeWorkerRecord,
+  PrintJobRecord 
 } from '@/lib/services/print-job-service'
 
 interface ReceiptPreviewModalProps {
@@ -58,9 +62,20 @@ export default function ReceiptPreviewModal({
   const [printing, setPrinting] = useState(false)
   const [thermalQueueing, setThermalQueueing] = useState(false)
   const [printStatus, setPrintStatus] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null)
+  
+  // Real-time print job lifecycle tracking
+  const [trackedJobId, setTrackedJobId] = useState<string | null>(null)
+  const [trackedJob, setTrackedJob] = useState<PrintJobRecord | null>(null)
+  const [isConfirmingPrint, setIsConfirmingPrint] = useState(false)
+  const [isRetrying, setIsRetrying] = useState(false)
 
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) {
+      setTrackedJobId(null)
+      setTrackedJob(null)
+      setPrintStatus(null)
+      return
+    }
     async function initSettings() {
       const [settings, worker] = await Promise.all([
         getPrinterSettings(),
@@ -72,7 +87,40 @@ export default function ReceiptPreviewModal({
       setBridgeWorker(worker)
     }
     initSettings()
+
+    // Poll bridge worker status every 6 seconds while modal is open
+    const workerInterval = setInterval(async () => {
+      const worker = await getBridgeWorkerStatus()
+      setBridgeWorker(worker)
+    }, 6000)
+
+    return () => clearInterval(workerInterval)
   }, [isOpen])
+
+  // Track active print job state changes across the lifecycle
+  useEffect(() => {
+    if (!trackedJobId) return
+
+    let isSubscribed = true
+    const interval = setInterval(async () => {
+      const job = await getPrintJobById(trackedJobId)
+      if (!isSubscribed || !job) return
+      setTrackedJob(job)
+
+      // Stop high-frequency polling on terminal states
+      if (job.status === 'PRINTED' || job.status === 'COMPLETED') {
+        clearInterval(interval)
+        if (onPrint) {
+          await onPrint(copyType)
+        }
+      }
+    }, 1200)
+
+    return () => {
+      isSubscribed = false
+      clearInterval(interval)
+    }
+  }, [trackedJobId, onPrint, copyType])
 
   if (!isOpen || !bill) return null
 
@@ -121,20 +169,15 @@ export default function ReceiptPreviewModal({
   // TVS Thermal Print Bridge via Supabase Queue
   const handleThermalBridgePrint = async () => {
     setThermalQueueing(true)
-    setPrintStatus({
-      type: 'info',
-      message: `Dispatching to TVS RP 3230 ABW via ${selectedTransport.toUpperCase()}...`,
-    })
+    setPrintStatus(null)
 
     try {
       const res = await enqueueThermalPrintJob(bill, copyType, selectedTransport)
-      if (res.success) {
-        setPrintStatus({
-          type: 'success',
-          message: res.message + ' (Android Print Bridge will print physically)',
-        })
-        if (onPrint) {
-          await onPrint(copyType)
+      if (res.success && res.jobId) {
+        setTrackedJobId(res.jobId)
+        const initialJob = await getPrintJobById(res.jobId)
+        if (initialJob) {
+          setTrackedJob(initialJob)
         }
       } else {
         setPrintStatus({
@@ -149,6 +192,56 @@ export default function ReceiptPreviewModal({
       })
     } finally {
       setThermalQueueing(false)
+    }
+  }
+
+  // Confirm Physical Print (Verified paper output)
+  const handleConfirmPaperPrinted = async () => {
+    if (!trackedJob?.id) return
+    setIsConfirmingPrint(true)
+    try {
+      const res = await confirmPhysicalPrint(trackedJob.id, 'operator_confirmed')
+      if (res.success) {
+        setTrackedJob(prev => prev ? {
+          ...prev,
+          status: 'PRINTED',
+          verification_method: 'operator_confirmed',
+          printed_at: new Date().toISOString()
+        } : null)
+        if (onPrint) {
+          await onPrint(copyType)
+        }
+      } else {
+        setPrintStatus({ type: 'error', message: res.message })
+      }
+    } catch (err: any) {
+      setPrintStatus({ type: 'error', message: `Confirmation failed: ${err?.message || err}` })
+    } finally {
+      setIsConfirmingPrint(false)
+    }
+  }
+
+  // Manual Retry for FAILED or UNKNOWN_OUTCOME jobs
+  const handleManualRetry = async () => {
+    if (!trackedJob?.id) return
+    setIsRetrying(true)
+    try {
+      const res = await retryPrintJob(trackedJob.id, 'Operator')
+      if (res.success) {
+        setTrackedJob(prev => prev ? {
+          ...prev,
+          status: 'PENDING',
+          claimed_by: null,
+          claimed_at: null,
+          error_message: null
+        } : null)
+      } else {
+        setPrintStatus({ type: 'error', message: res.message })
+      }
+    } catch (err: any) {
+      setPrintStatus({ type: 'error', message: `Retry failed: ${err?.message || err}` })
+    } finally {
+      setIsRetrying(false)
     }
   }
 
@@ -205,11 +298,43 @@ export default function ReceiptPreviewModal({
             backgroundColor: '#09090b',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Printer style={{ width: '20px', height: '20px', color: '#fbbf24' }} />
-            <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#f4f4f5', margin: 0 }}>
-              Print Bill ({copyType.toUpperCase()} — {formatMode})
-            </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Printer style={{ width: '20px', height: '20px', color: '#fbbf24' }} />
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#f4f4f5', margin: 0 }}>
+                Print Bill ({copyType.toUpperCase()} — {formatMode})
+              </h3>
+            </div>
+
+            {/* Android Bridge Heartbeat Pill */}
+            {bridgeWorker && (
+              <div 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.35rem', 
+                  backgroundColor: bridgeWorker.isOnline ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                  border: `1px solid ${bridgeWorker.isOnline ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  fontSize: '0.72rem'
+                }}
+                title={`Worker: ${bridgeWorker.worker_id} (${bridgeWorker.device_name}) - Last seen ${bridgeWorker.last_heartbeat}`}
+              >
+                <span style={{ 
+                  width: '6px', 
+                  height: '6px', 
+                  borderRadius: '50%', 
+                  backgroundColor: bridgeWorker.isOnline ? '#10b981' : '#ef4444' 
+                }} />
+                <span style={{ color: bridgeWorker.isOnline ? '#34d399' : '#f87171', fontWeight: 700 }}>
+                  Bridge {bridgeWorker.isOnline ? 'Online' : 'Offline'}
+                </span>
+                <span style={{ color: '#71717a' }}>
+                  ({Math.max(1, Math.round((Date.now() - new Date(bridgeWorker.last_heartbeat).getTime()) / 1000))}s ago)
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Mode Switcher Pills */}
@@ -743,7 +868,196 @@ export default function ReceiptPreviewModal({
             </div>
           )}
 
-          {printStatus && (
+          {/* Real-time Thermal Print Lifecycle Tracker */}
+          {trackedJob && (
+            <div
+              className="no-print"
+              style={{
+                marginTop: '1rem',
+                padding: '0.85rem 1rem',
+                borderRadius: '8px',
+                backgroundColor: 
+                  trackedJob.status === 'PRINTED' || trackedJob.status === 'COMPLETED' ? 'rgba(16, 185, 129, 0.12)' :
+                  trackedJob.status === 'SENT' ? 'rgba(14, 165, 233, 0.12)' :
+                  trackedJob.status === 'SENDING' ? 'rgba(99, 102, 241, 0.12)' :
+                  trackedJob.status === 'CLAIMED' ? 'rgba(59, 130, 246, 0.12)' :
+                  trackedJob.status === 'UNKNOWN_OUTCOME' ? 'rgba(245, 158, 11, 0.14)' :
+                  trackedJob.status === 'FAILED' ? 'rgba(239, 68, 68, 0.14)' :
+                  'rgba(251, 191, 36, 0.1)',
+                border: `1px solid ${
+                  trackedJob.status === 'PRINTED' || trackedJob.status === 'COMPLETED' ? '#10b981' :
+                  trackedJob.status === 'SENT' ? '#0284c7' :
+                  trackedJob.status === 'SENDING' ? '#6366f1' :
+                  trackedJob.status === 'CLAIMED' ? '#3b82f6' :
+                  trackedJob.status === 'UNKNOWN_OUTCOME' ? '#f59e0b' :
+                  trackedJob.status === 'FAILED' ? '#ef4444' :
+                  '#fbbf24'
+                }`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.5rem',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  {trackedJob.status === 'PRINTED' || trackedJob.status === 'COMPLETED' ? (
+                    <CheckCircle style={{ width: '18px', height: '18px', color: '#10b981' }} />
+                  ) : trackedJob.status === 'SENT' ? (
+                    <Check style={{ width: '18px', height: '18px', color: '#0284c7' }} />
+                  ) : trackedJob.status === 'SENDING' ? (
+                    <Send style={{ width: '18px', height: '18px', color: '#6366f1' }} />
+                  ) : trackedJob.status === 'CLAIMED' ? (
+                    <RefreshCw style={{ width: '18px', height: '18px', color: '#3b82f6', animation: 'spin 1.5s linear infinite' }} />
+                  ) : trackedJob.status === 'FAILED' ? (
+                    <AlertTriangle style={{ width: '18px', height: '18px', color: '#ef4444' }} />
+                  ) : trackedJob.status === 'UNKNOWN_OUTCOME' ? (
+                    <AlertTriangle style={{ width: '18px', height: '18px', color: '#f59e0b' }} />
+                  ) : (
+                    <Clock style={{ width: '18px', height: '18px', color: '#fbbf24' }} />
+                  )}
+                  <span style={{
+                    fontSize: '0.85rem',
+                    fontWeight: 800,
+                    color: 
+                      trackedJob.status === 'PRINTED' || trackedJob.status === 'COMPLETED' ? '#34d399' :
+                      trackedJob.status === 'SENT' ? '#38bdf8' :
+                      trackedJob.status === 'SENDING' ? '#818cf8' :
+                      trackedJob.status === 'CLAIMED' ? '#60a5fa' :
+                      trackedJob.status === 'UNKNOWN_OUTCOME' ? '#fbbf24' :
+                      trackedJob.status === 'FAILED' ? '#f87171' :
+                      '#fbbf24'
+                  }}>
+                    {trackedJob.status === 'PRINTED' || trackedJob.status === 'COMPLETED' ? 'PRINTED — PAPER OUTPUT CONFIRMED' :
+                     trackedJob.status === 'SENT' ? 'SENT — DATA TRANSMITTED TO PRINTER BUFFER' :
+                     trackedJob.status === 'SENDING' ? 'SENDING — TRANSMITTING TO TVS RP 3230 ABW...' :
+                     trackedJob.status === 'CLAIMED' ? 'CLAIMED — ANDROID BRIDGE PROCESSING' :
+                     trackedJob.status === 'UNKNOWN_OUTCOME' ? 'UNKNOWN OUTCOME — CONNECTION INTERRUPTED' :
+                     trackedJob.status === 'FAILED' ? 'PRINT FAILED' :
+                     'PENDING — QUEUED IN CLOUD'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span style={{
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    backgroundColor: '#18181b',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.1)'
+                  }}>
+                    TRANSPORT: {(trackedJob.actual_transport || trackedJob.connection_type || selectedTransport).toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ fontSize: '0.78rem', color: '#d4d4d8', lineHeight: 1.4 }}>
+                {trackedJob.status === 'PRINTED' || trackedJob.status === 'COMPLETED' ? (
+                  <>
+                    ✅ Receipt printed physically on TVS RP 3230 ABW.
+                    {trackedJob.verification_method && (
+                      <span style={{ color: '#a1a1aa' }}> (Verification: {trackedJob.verification_method})</span>
+                    )}
+                  </>
+                ) : trackedJob.status === 'SENT' ? (
+                  <div>
+                    <span>
+                      ℹ️ Data received by TVS print buffer over {(trackedJob.actual_transport || selectedTransport).toUpperCase()}. Awaiting physical paper exit.
+                    </span>
+                    <div style={{ marginTop: '0.4rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={handleConfirmPaperPrinted}
+                        disabled={isConfirmingPrint}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '4px',
+                          backgroundColor: '#10b981',
+                          color: '#fff',
+                          fontWeight: 700,
+                          fontSize: '0.75rem',
+                          border: 'none',
+                          cursor: isConfirmingPrint ? 'wait' : 'pointer'
+                        }}
+                      >
+                        {isConfirmingPrint ? 'Confirming...' : '✓ Confirm Paper Printed'}
+                      </button>
+                      <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>Click when paper emerges from printer</span>
+                    </div>
+                  </div>
+                ) : trackedJob.status === 'SENDING' ? (
+                  <span>Streaming binary ESC/POS payload to printer...</span>
+                ) : trackedJob.status === 'CLAIMED' ? (
+                  <span>Claimed by worker <code style={{ color: '#fbbf24' }}>{trackedJob.claimed_by || 'Android Bridge'}</code>. Opening hardware socket...</span>
+                ) : trackedJob.status === 'UNKNOWN_OUTCOME' ? (
+                  <div>
+                    <span style={{ color: '#f87171', fontWeight: 600 }}>
+                      ⚠️ Transmission was interrupted mid-flight. The ticket may have partially printed or aborted.
+                    </span>
+                    <div style={{ fontSize: '0.72rem', color: '#a1a1aa', marginTop: '2px' }}>
+                      Automatic retry is strictly disabled to prevent duplicate bills. Check physical printer paper first.
+                    </div>
+                    <div style={{ marginTop: '0.4rem' }}>
+                      <button
+                        type="button"
+                        onClick={handleManualRetry}
+                        disabled={isRetrying}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '4px',
+                          backgroundColor: '#f59e0b',
+                          color: '#000',
+                          fontWeight: 700,
+                          fontSize: '0.75rem',
+                          border: 'none',
+                          cursor: isRetrying ? 'wait' : 'pointer'
+                        }}
+                      >
+                        {isRetrying ? 'Re-queueing...' : '⚠️ Confirm & Manual Reprint'}
+                      </button>
+                    </div>
+                  </div>
+                ) : trackedJob.status === 'FAILED' ? (
+                  <div>
+                    <span style={{ color: '#f87171' }}>
+                      ❌ Error: {trackedJob.error_message || 'Socket or transmission failure.'}
+                    </span>
+                    <div style={{ marginTop: '0.4rem' }}>
+                      <button
+                        type="button"
+                        onClick={handleManualRetry}
+                        disabled={isRetrying}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '4px',
+                          backgroundColor: '#ef4444',
+                          color: '#fff',
+                          fontWeight: 700,
+                          fontSize: '0.75rem',
+                          border: 'none',
+                          cursor: isRetrying ? 'wait' : 'pointer'
+                        }}
+                      >
+                        {isRetrying ? 'Re-queueing...' : '🔄 Retry Print Job'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <span>
+                    Waiting for Android Print Bridge to claim job from Supabase queue. 
+                    {bridgeWorker?.isOnline ? (
+                      <span style={{ color: '#34d399' }}> Bridge is online and listening.</span>
+                    ) : (
+                      <span style={{ color: '#f87171' }}> (Bridge is currently offline — launch Royal Kissan Print Bridge on Android device).</span>
+                    )}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!trackedJob && printStatus && (
             <div
               className="no-print"
               style={{

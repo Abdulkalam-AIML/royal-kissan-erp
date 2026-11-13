@@ -10,22 +10,35 @@ export interface EnqueuePrintJobResult {
   isDuplicate?: boolean
 }
 
+export type PrintJobStatus = 
+  | 'PENDING' 
+  | 'CLAIMED' 
+  | 'SENDING' 
+  | 'SENT' 
+  | 'PRINTED' 
+  | 'COMPLETED' 
+  | 'FAILED' 
+  | 'UNKNOWN_OUTCOME'
+
 export interface PrintJobRecord {
   id: string
   invoice_number: string
-  invoice_id?: string
+  invoice_id?: string | null
   connection_type: 'bluetooth' | 'wifi' | 'auto'
-  status: 'PENDING' | 'CLAIMED' | 'SENDING' | 'SENT' | 'COMPLETED' | 'FAILED' | 'UNKNOWN_OUTCOME'
+  actual_transport?: 'wifi' | 'bluetooth' | null
+  status: PrintJobStatus
   idempotency_key: string
   payload_json: any
   copy_type: CopyType
   retry_count: number
-  error_message?: string
-  created_by?: string
-  claimed_by?: string
+  error_message?: string | null
+  verification_method?: 'hardware_status' | 'operator_confirmed' | 'transmission_ack' | string | null
+  created_by?: string | null
+  claimed_by?: string | null
   created_at: string
-  claimed_at?: string
-  completed_at?: string
+  claimed_at?: string | null
+  completed_at?: string | null
+  printed_at?: string | null
 }
 
 export interface PrinterDeviceRecord {
@@ -292,5 +305,110 @@ export async function savePrinterSettings(settings: Partial<PrinterSettingsRecor
     return !error
   } catch {
     return false
+  }
+}
+
+/**
+ * Fetch a specific print job by ID for live status tracking
+ */
+export async function getPrintJobById(jobId: string): Promise<PrintJobRecord | null> {
+  const supabase = createClient()
+  try {
+    const { data, error } = await supabase
+      .from('print_jobs')
+      .select('*')
+      .eq('id', jobId)
+      .maybeSingle()
+
+    if (error || !data) return null
+    return data as PrintJobRecord
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Confirm physical print verification (by operator or hardware status)
+ * Transitions status to PRINTED
+ */
+export async function confirmPhysicalPrint(
+  jobId: string, 
+  verificationMethod: string = 'operator_confirmed'
+): Promise<{ success: boolean; message: string }> {
+  const supabase = createClient()
+  try {
+    const { data, error } = await supabase.rpc('confirm_physical_print', {
+      p_job_id: jobId,
+      p_verification_method: verificationMethod
+    })
+
+    if (error) {
+      // Fallback direct table update if RPC not accessible
+      const { error: patchError } = await supabase
+        .from('print_jobs')
+        .update({
+          status: 'PRINTED',
+          verification_method: verificationMethod,
+          printed_at: new Date().toISOString(),
+          error_message: null
+        })
+        .eq('id', jobId)
+
+      if (patchError) {
+        return { success: false, message: patchError.message }
+      }
+      return { success: true, message: 'Physical print confirmed!' }
+    }
+
+    return {
+      success: data?.success ?? true,
+      message: data?.message || 'Physical print verified and confirmed.'
+    }
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Failed to confirm print' }
+  }
+}
+
+/**
+ * Manual retry for a FAILED or UNKNOWN_OUTCOME print job.
+ * Strictly requires explicit operator action to avoid duplicate ticket generation.
+ */
+export async function retryPrintJob(
+  jobId: string,
+  requestedBy: string = 'Operator'
+): Promise<{ success: boolean; message: string }> {
+  const supabase = createClient()
+  try {
+    const { data, error } = await supabase.rpc('retry_print_job', {
+      p_job_id: jobId,
+      p_requested_by: requestedBy
+    })
+
+    if (error) {
+      // Fallback direct table update
+      const { error: patchError } = await supabase
+        .from('print_jobs')
+        .update({
+          status: 'PENDING',
+          claimed_by: null,
+          claimed_at: null,
+          error_message: null,
+          verification_method: null,
+          printed_at: null
+        })
+        .eq('id', jobId)
+
+      if (patchError) {
+        return { success: false, message: patchError.message }
+      }
+      return { success: true, message: 'Job reset to PENDING for reprint.' }
+    }
+
+    return {
+      success: data?.success ?? true,
+      message: data?.message || 'Print job re-queued in PENDING state.'
+    }
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Failed to retry job' }
   }
 }

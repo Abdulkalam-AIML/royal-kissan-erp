@@ -231,3 +231,94 @@ export interface CustomerDue {
   last_updated?: string
   created_at?: string
 }
+
+export interface Supplier {
+  id: string
+  name: string
+  phone?: string | null
+  email?: string | null
+  address?: string | null
+  gstin?: string | null
+  outstanding_balance?: number
+  is_active?: boolean
+  created_at?: string
+  updated_at?: string
+}
+
+export interface PurchaseItem {
+  id?: string
+  purchase_id?: string
+  product_id?: string | null
+  product_name: string
+  quantity: number
+  unit: string
+  rate: number
+  amount: number
+  gst_rate?: number
+  gst_amount?: number
+  created_at?: string
+}
+
+export interface Purchase {
+  id: string
+  purchase_number: string
+  supplier_id?: string | null
+  supplier_name: string
+  supplier_phone?: string | null
+  supplier_invoice_number?: string | null
+  purchase_date: string
+  subtotal: number
+  discount_amount: number
+  gst_amount: number
+  grand_total: number
+  paid_amount: number
+  due_amount: number
+  payment_method: string
+  purchase_status: string
+  notes?: string | null
+  created_by?: string
+  created_at?: string
+  updated_at?: string
+  items?: PurchaseItem[]
+  items_count?: number
+}
+
+export interface PurchaseWithItems extends Purchase {
+  items: PurchaseItem[]
+}
+
+export interface WhatsAppSettings {
+  id?: string
+  organization_id?: string
+  enabled: boolean
+  phone_number_id?: string | null
+  whatsapp_business_account_id?: string | null
+  access_token?: string | null
+  default_recipient_phone: string
+  recipient_type: 'owner' | 'admin' | 'supplier' | 'custom'
+  send_to_supplier: boolean
+  webhook_verify_token?: string | null
+  updated_at?: string
+}
+
+export type WhatsAppNotificationStatus = 'QUEUED' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED'
+
+export interface WhatsAppNotification {
+  id: string
+  purchase_id?: string | null
+  purchase_number?: string | null
+  recipient_phone: string
+  recipient_name?: string | null
+  recipient_type?: string
+  message_type: string
+  message_content: string
+  status: WhatsAppNotificationStatus
+  meta_message_id?: string | null
+  idempotency_key?: string | null
+  error_message?: string | null
+  retry_count: number
+  sent_at?: string | null
+  delivered_at?: string | null
+  created_at: string
+  updated_at?: string
+}
