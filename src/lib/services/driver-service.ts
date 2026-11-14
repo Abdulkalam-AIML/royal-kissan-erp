@@ -667,6 +667,7 @@ export interface DriverDashboardStats {
   todayRouteSales: number
   todayCollections: number
   pendingSettlements: number
+  vehiclesInUse: number
 }
 
 export async function getDriverDashboardStats(): Promise<DriverDashboardStats> {
@@ -679,13 +680,15 @@ export async function getDriverDashboardStats(): Promise<DriverDashboardStats> {
       { data: activeDispatches },
       { data: completedToday },
       { data: settlementsToday },
-      { data: salesToday }
+      { data: salesToday },
+      { data: inUseVehicles }
     ] = await Promise.all([
       supabase.from('drivers').select('id, status, is_active'),
       supabase.from('driver_load_dispatches').select('id').in('status', ['IN_PROGRESS', 'ISSUED']),
       supabase.from('driver_load_dispatches').select('id').eq('dispatch_date', today).in('status', ['COMPLETED', 'SETTLED']),
       supabase.from('driver_route_settlements').select('cash_collected, upi_collected').eq('settlement_date', today),
-      supabase.from('route_sales').select('total_amount, cash_paid, upi_paid').eq('sale_date', today)
+      supabase.from('route_sales').select('total_amount, cash_paid, upi_paid').eq('sale_date', today),
+      supabase.from('vehicles').select('id').eq('status', 'IN_USE')
     ])
 
     const totalDrivers = (allDrivers || []).length
@@ -693,6 +696,7 @@ export async function getDriverDashboardStats(): Promise<DriverDashboardStats> {
     const driversOnRoute = (allDrivers || []).filter(d => d.status === 'ON_ROUTE').length
     const activeRoutesCount = (activeDispatches || []).length
     const completedRoutesToday = (completedToday || []).length
+    const vehiclesInUse = (inUseVehicles || []).length
 
     // Today's route sales and collections
     const salesAmt = (salesToday || []).reduce((acc, s) => acc + Number(s.total_amount || 0), 0)
@@ -707,7 +711,8 @@ export async function getDriverDashboardStats(): Promise<DriverDashboardStats> {
       completedRoutesToday,
       todayRouteSales: salesAmt,
       todayCollections: collectionsAmt,
-      pendingSettlements: activeRoutesCount
+      pendingSettlements: activeRoutesCount,
+      vehiclesInUse
     }
   } catch {
     return {
@@ -718,7 +723,259 @@ export async function getDriverDashboardStats(): Promise<DriverDashboardStats> {
       completedRoutesToday: 0,
       todayRouteSales: 0,
       todayCollections: 0,
-      pendingSettlements: 0
+      pendingSettlements: 0,
+      vehiclesInUse: 0
     }
+  }
+}
+
+/**
+ * ---------------------------------------------------------------------------
+ * COMPLETE DRIVER 360 PROFILE SERVICE (Part 2 - Module C)
+ * ---------------------------------------------------------------------------
+ */
+
+export interface Driver360Profile {
+  driver: DriverWithStats
+  routes: RouteDispatchRecord[]
+  activeRoute: RouteDispatchRecord | null
+  sales: any[]
+  collections: any[]
+  attendance: any[]
+  salaryPayments: any[]
+  advances: any[]
+  settlements: any[]
+  summary: {
+    totalRoutesCompleted: number
+    routesInProgress: number
+    totalSales: number
+    totalCollections: number
+    creditSales: number
+    goodReturns: number
+    totalLeakage: number
+    attendanceThisMonth: number
+    salaryStatus: string
+    outstandingAdvances: number
+  }
+}
+
+export async function getDriverComplete360(driverId: string): Promise<Driver360Profile | null> {
+  const supabase = createClient()
+  try {
+    const { data: driver, error: dErr } = await supabase
+      .from('drivers')
+      .select('*')
+      .eq('id', driverId)
+      .single()
+
+    if (dErr || !driver) return null
+
+    // Parallel fetch related operational and financial records
+    const [
+      { data: routes },
+      { data: sales },
+      { data: bills },
+      { data: settlements },
+      { data: items }
+    ] = await Promise.all([
+      supabase.from('driver_load_dispatches').select('*').eq('driver_id', driverId).order('created_at', { ascending: false }),
+      supabase.from('route_sales').select('*').eq('driver_id', driverId).order('created_at', { ascending: false }),
+      supabase.from('bills').select('*').eq('driver_id', driverId).order('created_at', { ascending: false }),
+      supabase.from('driver_route_settlements').select('*, driver_route_settlement_items(*)').eq('driver_id', driverId).order('settlement_date', { ascending: false }),
+      supabase.from('driver_load_items').select('*')
+    ])
+
+    const allRoutes = (routes || []) as RouteDispatchRecord[]
+    const activeRoute = allRoutes.find(r => r.status === 'IN_PROGRESS' || r.status === 'ISSUED') || null
+
+    // Fetch HR attendance and advances if employee_id is linked
+    let attendanceRecords: any[] = []
+    let salaryPayments: any[] = []
+    let employeeAdvances: any[] = []
+    let outstandingAdvances = 0
+
+    if (driver.employee_id) {
+      const [
+        { data: att },
+        { data: sal },
+        { data: adv }
+      ] = await Promise.all([
+        supabase.from('attendance').select('*').eq('employee_id', driver.employee_id).order('date', { ascending: false }),
+        supabase.from('salary_payments').select('*').eq('employee_id', driver.employee_id).order('year', { ascending: false }).order('month', { ascending: false }),
+        supabase.from('employee_advances').select('*').eq('employee_id', driver.employee_id).order('advance_date', { ascending: false })
+      ])
+      attendanceRecords = att || []
+      salaryPayments = sal || []
+      employeeAdvances = adv || []
+      outstandingAdvances = employeeAdvances
+        .filter(a => a.status === 'OUTSTANDING' || a.status === 'PARTIALLY_RECOVERED')
+        .reduce((sum, a) => sum + Number(a.remaining_amount || 0), 0)
+    }
+
+    const curMonthPrefix = new Date().toISOString().slice(0, 7)
+    const attendanceThisMonth = attendanceRecords.filter(a => a.date?.startsWith(curMonthPrefix) && (a.status === 'present' || a.status === 'half_day')).length
+
+    const totalSales = (settlements || []).reduce((acc, st) => acc + (Number(st.cash_collected || 0) + Number(st.upi_collected || 0) + Number(st.credit_sales_amount || 0)), 0) ||
+      allRoutes.reduce((acc, r) => acc + Number(r.total_sales_amount || 0), 0)
+
+    const totalCollections = (settlements || []).reduce((acc, st) => acc + (Number(st.cash_collected || 0) + Number(st.upi_collected || 0)), 0) ||
+      allRoutes.reduce((acc, r) => acc + (Number(r.cash_collected || 0) + Number(r.upi_collected || 0)), 0)
+
+    const creditSales = (settlements || []).reduce((acc, st) => acc + Number(st.credit_sales_amount || 0), 0) ||
+      allRoutes.reduce((acc, r) => acc + Number(r.credit_amount || 0), 0)
+
+    const goodReturns = (settlements || []).reduce((acc, st) => acc + Number(st.total_returned_qty || 0), 0)
+    const totalLeakage = (settlements || []).reduce((acc, st) => acc + Number(st.total_leaked_qty || 0), 0)
+
+    const latestSal = salaryPayments[0]
+    const salaryStatus = latestSal ? (latestSal.status === 'paid' ? 'PAID' : 'PENDING') : 'PENDING'
+
+    return {
+      driver: {
+        ...driver,
+        total_completed_routes: allRoutes.filter(r => r.status === 'COMPLETED' || r.status === 'SETTLED').length,
+        total_sales: totalSales,
+        total_collections: totalCollections
+      },
+      routes: allRoutes,
+      activeRoute,
+      sales: sales || [],
+      collections: bills?.filter(b => Number(b.paid_amount || 0) > 0) || [],
+      attendance: attendanceRecords,
+      salaryPayments,
+      advances: employeeAdvances,
+      settlements: settlements || [],
+      summary: {
+        totalRoutesCompleted: allRoutes.filter(r => r.status === 'COMPLETED' || r.status === 'SETTLED').length,
+        routesInProgress: activeRoute ? 1 : 0,
+        totalSales,
+        totalCollections,
+        creditSales,
+        goodReturns,
+        totalLeakage,
+        attendanceThisMonth,
+        salaryStatus,
+        outstandingAdvances
+      }
+    }
+  } catch (err) {
+    console.error('Error fetching driver 360 profile:', err)
+    return null
+  }
+}
+
+/**
+ * MODULE 10: Dedicated Route Details
+ */
+export interface RouteCompleteDetails {
+  dispatch: RouteDispatchRecord
+  driver?: any
+  vehicle?: any
+  items: RouteLoadItem[]
+  sales: RouteCustomerSale[]
+  expenses: RouteExpenseRecord[]
+  settlement?: any
+  settlementItems?: any[]
+  generatedBills: any[]
+}
+
+export async function getRouteCompleteDetails(routeId: string): Promise<RouteCompleteDetails | null> {
+  const supabase = createClient()
+  try {
+    // Check by id or dispatch_number
+    let query = supabase.from('driver_load_dispatches').select('*, driver_load_items(*)')
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(routeId)
+    if (isUuid) {
+      query = query.eq('id', routeId)
+    } else {
+      query = query.eq('dispatch_number', routeId)
+    }
+
+    const { data: dispatch, error } = await query.maybeSingle()
+    if (error || !dispatch) return null
+
+    const dispatchId = dispatch.id
+    const driverId = dispatch.driver_id
+    const vehicleNum = dispatch.vehicle_number
+
+    const [
+      { data: driver },
+      { data: vehicle },
+      { data: sales },
+      { data: expenses },
+      { data: settlement },
+      { data: bills }
+    ] = await Promise.all([
+      driverId ? supabase.from('drivers').select('*').eq('id', driverId).maybeSingle() : Promise.resolve({ data: null }),
+      vehicleNum ? supabase.from('vehicles').select('*').eq('registration_number', vehicleNum).maybeSingle() : Promise.resolve({ data: null }),
+      supabase.from('route_sales').select('*').eq('dispatch_id', dispatchId).order('created_at', { ascending: true }),
+      supabase.from('route_expenses').select('*').eq('dispatch_id', dispatchId).order('created_at', { ascending: true }),
+      supabase.from('driver_route_settlements').select('*, driver_route_settlement_items(*)').eq('load_dispatch_id', dispatchId).maybeSingle(),
+      supabase.from('bills').select('id, invoice_number, date, customer_name, customer_phone, grand_total, paid_amount, due_amount, payment_mode, payment_status, bill_items(*)').eq('dispatch_id', dispatchId).order('created_at', { ascending: true })
+    ])
+
+    const items = (dispatch.driver_load_items || []) as RouteLoadItem[]
+    const loadedSales = (sales || []) as RouteCustomerSale[]
+    const loadedExpenses = (expenses || []) as RouteExpenseRecord[]
+
+    const totalSoldQty = loadedSales.reduce((acc, s) => acc + (Number(s.quantity) || 0), 0)
+    const totalSalesAmt = loadedSales.reduce((acc, s) => acc + (Number(s.total_amount) || 0), 0)
+    const cashCollected = loadedSales.reduce((acc, s) => acc + (Number(s.cash_paid) || 0), 0)
+    const upiCollected = loadedSales.reduce((acc, s) => acc + (Number(s.upi_paid) || 0), 0)
+    const creditAmt = loadedSales.reduce((acc, s) => acc + (Number(s.due_amount) || 0), 0)
+    const expensesAmt = loadedExpenses.reduce((acc, e) => acc + (Number(e.fuel_charges || 0) + Number(e.driver_bata || 0) + Number(e.other_expenses || 0)), 0)
+
+    const fullDispatch: RouteDispatchRecord = {
+      ...dispatch,
+      items,
+      sales: loadedSales,
+      expenses: loadedExpenses,
+      total_loaded_qty: Number(dispatch.total_loaded_qty || 0),
+      total_load_value: Number(dispatch.total_load_value || 0),
+      total_sold_qty: totalSoldQty,
+      total_sales_amount: totalSalesAmt,
+      cash_collected: cashCollected,
+      upi_collected: upiCollected,
+      credit_amount: creditAmt,
+      expenses_amount: expensesAmt,
+      settlement: settlement || null,
+      generated_bills: bills || [],
+      bills_count: (bills || []).length
+    }
+
+    return {
+      dispatch: fullDispatch,
+      driver: driver || null,
+      vehicle: vehicle || null,
+      items,
+      sales: loadedSales,
+      expenses: loadedExpenses,
+      settlement: settlement || null,
+      settlementItems: settlement?.driver_route_settlement_items || [],
+      generatedBills: bills || []
+    }
+  } catch (err) {
+    console.error('Error fetching route complete details:', err)
+    return null
+  }
+}
+
+/**
+ * MODULE 11: Route Settlements Directory
+ */
+export async function getRouteSettlements(): Promise<any[]> {
+  const supabase = createClient()
+  try {
+    const { data, error } = await supabase
+      .from('driver_route_settlements')
+      .select('*, driver_route_settlement_items(*), driver_load_dispatches(*), drivers(name, phone, vehicle_reg_no)')
+      .order('settlement_date', { ascending: false })
+      .order('created_at', { ascending: false })
+
+    if (error || !data) return []
+    return data
+  } catch (err) {
+    console.error('Error fetching settlements:', err)
+    return []
   }
 }

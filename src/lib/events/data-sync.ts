@@ -14,6 +14,7 @@ export type DataModuleKey =
   | 'dealers'
   | 'drivers'
   | 'routes'
+  | 'vehicles'
   | 'collections'
   | 'dues'
   | 'employees'

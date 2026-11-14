@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { emitDataChange, useDataSyncListener } from '@/lib/events/data-sync'
 import {
@@ -535,7 +536,13 @@ export default function EmployeesPage() {
                     return (
                       <tr key={emp.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 700, color: '#f4f4f5' }}>{emp.name}</div>
+                          <Link
+                            href={`/employees/${emp.id}`}
+                            style={{ fontWeight: 700, color: '#f4f4f5', textDecoration: 'none' }}
+                            className="hover:text-emerald-400 transition-colors"
+                          >
+                            {emp.name}
+                          </Link>
                           <div style={{ fontSize: '0.72rem', color: '#71717a' }}>{emp.employee_code || `EMP-${emp.id.slice(0, 4)}`}</div>
                         </td>
 

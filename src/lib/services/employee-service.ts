@@ -297,7 +297,16 @@ export async function settleEmployeeSalary(
  */
 
 export interface EmployeeProfileData {
-  employee: Employee
+  employee: Employee & {
+    driver_id?: string | null
+    department?: string | null
+    emergency_contact?: string | null
+    bank_account?: string | null
+    bank_name?: string | null
+    ifsc_code?: string | null
+    aadhar_number?: string | null
+    employee_code?: string | null
+  }
   attendanceSummary: {
     totalRecordedDays: number
     presentDays: number
@@ -307,10 +316,14 @@ export interface EmployeeProfileData {
     weeklyOffDays: number
   }
   monthlyAttendance: AttendanceRecord[]
+  allAttendance?: AttendanceRecord[]
   advances: EmployeeAdvance[]
   totalAdvancesOutstanding: number
   salaryPayments: SalaryPaymentRecord[]
   remainingPayableSalary: number
+  linkedDriver?: any | null
+  driverRoutes?: any[]
+  driverActiveRoute?: any | null
 }
 
 export async function getEmployee360Profile(
@@ -337,6 +350,33 @@ export async function getEmployee360Profile(
 
     if (!emp) return null
 
+    // Check for linked driver record
+    let linkedDriver: any = null
+    let driverRoutes: any[] = []
+    let driverActiveRoute: any = null
+
+    try {
+      let dQuery = supabase.from('drivers').select('*')
+      if (emp.driver_id) {
+        dQuery = dQuery.eq('id', emp.driver_id)
+      } else {
+        dQuery = dQuery.eq('name', emp.name)
+      }
+      const { data: dData } = await dQuery.maybeSingle()
+
+      if (dData) {
+        linkedDriver = dData
+        const [{ data: rList }, { data: actR }] = await Promise.all([
+          supabase.from('driver_load_dispatches').select('*').eq('driver_id', dData.id).order('created_at', { ascending: false }).limit(10),
+          supabase.from('driver_load_dispatches').select('*').eq('driver_id', dData.id).in('status', ['IN_PROGRESS', 'ISSUED']).maybeSingle()
+        ])
+        driverRoutes = rList || []
+        driverActiveRoute = actR || null
+      }
+    } catch {
+      // Driver link query non-fatal
+    }
+
     const allAtt = (attList || []) as AttendanceRecord[]
     const currentMonthPrefix = `${targetYear}-${String(targetMonth).padStart(2, '0')}`
     const monthlyAtt = allAtt.filter(a => a.date.startsWith(currentMonthPrefix))
@@ -359,13 +399,17 @@ export async function getEmployee360Profile(
     const remainingPayable = Math.max(0, baseSalary - totalAdvOutstanding)
 
     return {
-      employee: emp as Employee,
+      employee: emp as any,
       attendanceSummary: summary,
       monthlyAttendance: monthlyAtt,
+      allAttendance: allAtt,
       advances,
       totalAdvancesOutstanding: totalAdvOutstanding,
       salaryPayments: (payList || []) as SalaryPaymentRecord[],
-      remainingPayableSalary: remainingPayable
+      remainingPayableSalary: remainingPayable,
+      linkedDriver,
+      driverRoutes,
+      driverActiveRoute
     }
   } catch {
     return null

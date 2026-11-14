@@ -52,9 +52,10 @@ const navGroups = [
   {
     group: 'Operations',
     items: [
+      { href: '/drivers',    label: 'Drivers',          icon: Truck },
+      { href: '/routes',     label: 'Routes',           icon: MapPin },
+      { href: '/vehicles',   label: 'Vehicles',         icon: Truck },
       { href: '/dealers',    label: 'Dealers',          icon: Store },
-      { href: '/drivers',    label: 'Drivers & Routes', icon: Truck },
-      { href: '/deliveries', label: 'Deliveries',       icon: MapPin },
     ],
   },
   {
@@ -75,11 +76,11 @@ const navGroups = [
     ],
   },
   {
-    group: 'HR & Payroll',
+    group: 'Employees',
     items: [
-      { href: '/employees',  label: 'Employees',  icon: UserCheck },
-      { href: '/attendance', label: 'Attendance', icon: CalendarCheck },
-      { href: '/salary',     label: 'Salary',     icon: Wallet },
+      { href: '/employees',  label: 'Employee Directory', icon: UserCheck },
+      { href: '/attendance', label: 'Attendance',         icon: CalendarCheck },
+      { href: '/salary',     label: 'Salary Management',  icon: Wallet },
     ],
   },
   {

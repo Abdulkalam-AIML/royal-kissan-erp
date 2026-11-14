@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import Link from 'next/link'
 import {
   Truck,
   Plus,
@@ -70,7 +71,8 @@ export default function DriversAndRoutesPage() {
     completedRoutesToday: 0,
     todayRouteSales: 0,
     todayCollections: 0,
-    pendingSettlements: 0
+    pendingSettlements: 0,
+    vehiclesInUse: 0
   })
   const [drivers, setDrivers] = useState<DriverWithStats[]>([])
   const [activeRoutes, setActiveRoutes] = useState<RouteDispatchRecord[]>([])
@@ -858,12 +860,20 @@ export default function DriversAndRoutesPage() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '1rem' }}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                        <span style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>
+                        <Link
+                          href={`/routes/${route.id}`}
+                          style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff', textDecoration: 'none' }}
+                          className="hover:text-emerald-400 transition-colors"
+                        >
                           {route.route_name || 'Daily Route'}
-                        </span>
-                        <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', backgroundColor: 'rgba(251, 191, 36, 0.12)', color: '#fbbf24', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid rgba(251, 191, 36, 0.25)' }}>
+                        </Link>
+                        <Link
+                          href={`/routes/${route.id}`}
+                          style={{ fontFamily: 'monospace', fontSize: '0.75rem', backgroundColor: 'rgba(251, 191, 36, 0.12)', color: '#fbbf24', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid rgba(251, 191, 36, 0.25)', textDecoration: 'none' }}
+                          className="hover:bg-amber-500/20"
+                        >
                           {route.dispatch_number}
-                        </span>
+                        </Link>
                         <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontSize: '0.72rem', fontWeight: 800, padding: '0.2rem 0.5rem', borderRadius: '999px', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                           <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#34d399' }} />
                           IN_PROGRESS
@@ -976,6 +986,15 @@ export default function DriversAndRoutesPage() {
                     >
                       View Live Breakdown ({route.sales?.length || 0} Sales)
                     </Button>
+
+                    <Link href={`/routes/${route.id}`}>
+                      <Button
+                        variant="secondary"
+                        icon={<Eye style={{ width: '13px', height: '13px', color: '#34d399' }} />}
+                      >
+                        Route Details Page
+                      </Button>
+                    </Link>
                   </div>
                 </Card>
               ))}
@@ -1183,9 +1202,13 @@ export default function DriversAndRoutesPage() {
                 title: 'Route Reference',
                 render: r => (
                   <div>
-                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#fbbf24', fontSize: '0.85rem' }}>
+                    <Link
+                      href={`/routes/${r.id}`}
+                      style={{ fontFamily: 'monospace', fontWeight: 700, color: '#fbbf24', fontSize: '0.85rem', textDecoration: 'none' }}
+                      className="hover:underline"
+                    >
                       {r.dispatch_number}
-                    </span>
+                    </Link>
                     <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>{r.route_name || 'Daily Route'}</div>
                   </div>
                 )
@@ -1241,14 +1264,25 @@ export default function DriversAndRoutesPage() {
                 key: 'actions',
                 title: 'Invoices & Reports',
                 render: r => (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setViewRouteRecord(r)}
-                    icon={<FileText style={{ width: '13px', height: '13px', color: '#fbbf24' }} />}
-                  >
-                    View Settlement ({r.bills_count || (r.generated_bills?.length || 0)} Bills)
-                  </Button>
+                  <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
+                    <Link href={`/routes/${r.id}`}>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={<Eye style={{ width: '13px', height: '13px', color: '#34d399' }} />}
+                      >
+                        Details
+                      </Button>
+                    </Link>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewRouteRecord(r)}
+                      icon={<FileText style={{ width: '13px', height: '13px', color: '#fbbf24' }} />}
+                    >
+                      Settlement ({r.bills_count || (r.generated_bills?.length || 0)} Bills)
+                    </Button>
+                  </div>
                 )
               }
             ]}
@@ -1428,6 +1462,7 @@ export default function DriversAndRoutesPage() {
       {activeTab === 'dashboard' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+            {/* Metric 1 & 2: Total & Available Drivers */}
             <Card style={{ backgroundColor: '#18181b', padding: '1.25rem', border: '1px solid rgba(255,255,255,0.06)' }}>
               <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>Total Registered Drivers</span>
               <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#f4f4f5', margin: '0.35rem 0' }}>
@@ -1438,6 +1473,7 @@ export default function DriversAndRoutesPage() {
               </span>
             </Card>
 
+            {/* Metric 3 & 4: Drivers On Route & Active Runs */}
             <Card style={{ backgroundColor: '#18181b', padding: '1.25rem', border: '1px solid rgba(251, 191, 36, 0.25)' }}>
               <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>Drivers Currently On Route</span>
               <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fbbf24', margin: '0.35rem 0' }}>
@@ -1448,24 +1484,70 @@ export default function DriversAndRoutesPage() {
               </span>
             </Card>
 
+            {/* Metric 5: Active Routes Count */}
+            <Card style={{ backgroundColor: '#18181b', padding: '1.25rem', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+              <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>Active Route Dispatches</span>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#34d399', margin: '0.35rem 0' }}>
+                {dashboardStats.activeRoutesCount}
+              </div>
+              <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>
+                Live dispatches in transit
+              </span>
+            </Card>
+
+            {/* Metric 6: Completed Routes Today */}
+            <Card style={{ backgroundColor: '#18181b', padding: '1.25rem', border: '1px solid rgba(96, 165, 250, 0.25)' }}>
+              <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>Completed Routes Today</span>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#60a5fa', margin: '0.35rem 0' }}>
+                {dashboardStats.completedRoutesToday}
+              </div>
+              <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>
+                Closed and reconciled
+              </span>
+            </Card>
+
+            {/* Metric 7: Today Route Sales */}
             <Card style={{ backgroundColor: '#18181b', padding: '1.25rem', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
               <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>Today's Route Sales</span>
               <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#10b981', margin: '0.35rem 0' }}>
                 ₹{dashboardStats.todayRouteSales.toLocaleString('en-IN')}
               </div>
               <span style={{ fontSize: '0.75rem', color: '#34d399' }}>
-                ₹{dashboardStats.todayCollections.toLocaleString('en-IN')} Collections Collected
+                Gross customer billings
               </span>
             </Card>
 
-            <Card style={{ backgroundColor: '#18181b', padding: '1.25rem', border: '1px solid rgba(255,255,255,0.06)' }}>
-              <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>Completed Routes Today</span>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#60a5fa', margin: '0.35rem 0' }}>
-                {dashboardStats.completedRoutesToday}
+            {/* Metric 8: Today Collections */}
+            <Card style={{ backgroundColor: '#18181b', padding: '1.25rem', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+              <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>Collections Collected</span>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#10b981', margin: '0.35rem 0' }}>
+                ₹{dashboardStats.todayCollections.toLocaleString('en-IN')}
               </div>
-              <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>
-                {dashboardStats.pendingSettlements} Pending Reconciliation
+              <span style={{ fontSize: '0.75rem', color: '#34d399' }}>
+                Cash + UPI handed over
               </span>
+            </Card>
+
+            {/* Metric 9: Pending Settlements */}
+            <Card style={{ backgroundColor: '#18181b', padding: '1.25rem', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+              <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>Pending Settlements</span>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#f59e0b', margin: '0.35rem 0' }}>
+                {dashboardStats.pendingSettlements}
+              </div>
+              <span style={{ fontSize: '0.75rem', color: '#fbbf24' }}>
+                Awaiting physical reconciliation
+              </span>
+            </Card>
+
+            {/* Metric 10: Vehicles In Use */}
+            <Card style={{ backgroundColor: '#18181b', padding: '1.25rem', border: '1px solid rgba(139, 92, 246, 0.25)' }}>
+              <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>Fleet Vehicles In Use</span>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#a78bfa', margin: '0.35rem 0' }}>
+                {dashboardStats.vehiclesInUse}
+              </div>
+              <Link href="/vehicles" style={{ fontSize: '0.75rem', color: '#c4b5fd', textDecoration: 'none' }} className="hover:underline">
+                View Fleet Directory →
+              </Link>
             </Card>
           </div>
         </div>
