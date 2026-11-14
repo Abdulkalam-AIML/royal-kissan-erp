@@ -136,6 +136,7 @@ export default function UnifiedBillingForm({
   const [saving, setSaving] = useState(false)
   const [lastSavedBill, setLastSavedBill] = useState<any | null>(null)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [draftBillForPreview, setDraftBillForPreview] = useState<BillData | null>(null)
   const [savedBillForPrint, setSavedBillForPrint] = useState<BillData | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -1103,6 +1104,29 @@ export default function UnifiedBillingForm({
                       alert('Please add items first to preview bill receipt.')
                       return
                     }
+                    const draftObj: BillData = {
+                      invoice_number: invoiceNumber,
+                      bill_type: billType,
+                      customer_name: billType === 'customer' ? selectedCustomer?.name || 'Customer' : billType === 'dealer' ? selectedDealer?.name || 'Dealer' : walkinName || 'Walk-in Customer',
+                      customer_phone: walkinPhone || selectedCustomer?.phone || selectedDealer?.phone || null,
+                      customer_address: walkinAddress || selectedCustomer?.address || selectedDealer?.address || null,
+                      subtotal: subtotal,
+                      gst_amount: totalGst,
+                      discount_amount: totalDiscount,
+                      total_amount: grandTotal,
+                      paid_amount: paidAmount,
+                      due_amount: dueAmount,
+                      payment_method: paymentMode,
+                      date: date,
+                      items: cartItems.map(i => ({
+                        product_name: i.product_name,
+                        quantity: i.quantity,
+                        rate: i.rate,
+                        amount: i.total,
+                        total: i.total
+                      }))
+                    }
+                    setDraftBillForPreview(draftObj)
                     setIsPreviewOpen(true)
                   }}
                   icon={<FileText style={{ width: '15px', height: '15px' }} />}
@@ -1336,33 +1360,15 @@ export default function UnifiedBillingForm({
       )}
 
       {/* Modal Preview for Draft Bill */}
-      {isPreviewOpen && (
+      {isPreviewOpen && draftBillForPreview && (
         <ReceiptPreviewModal
           isOpen={isPreviewOpen}
-          onClose={() => setIsPreviewOpen(false)}
-          initialFormat="80mm"
-          bill={{
-            invoice_number: invoiceNumber,
-            bill_type: billType,
-            customer_name: billType === 'customer' ? selectedCustomer?.name || 'Customer' : billType === 'dealer' ? selectedDealer?.name || 'Dealer' : walkinName || 'Walk-in Customer',
-            customer_phone: walkinPhone || selectedCustomer?.phone || selectedDealer?.phone || null,
-            customer_address: walkinAddress || selectedCustomer?.address || selectedDealer?.address || null,
-            subtotal: subtotal,
-            gst_amount: totalGst,
-            discount_amount: totalDiscount,
-            total_amount: grandTotal,
-            paid_amount: paidAmount,
-            due_amount: dueAmount,
-            payment_method: paymentMode,
-            date: date,
-            items: cartItems.map(i => ({
-              product_name: i.product_name,
-              quantity: i.quantity,
-              rate: i.rate,
-              amount: i.total,
-              total: i.total
-            }))
+          onClose={() => {
+            setIsPreviewOpen(false)
+            setDraftBillForPreview(null)
           }}
+          initialFormat="80mm"
+          bill={draftBillForPreview}
         />
       )}
     </div>

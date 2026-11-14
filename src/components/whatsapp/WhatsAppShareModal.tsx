@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   X,
   Send,
@@ -46,23 +46,35 @@ export default function WhatsAppShareModal({
     hasAttachment?: boolean
   } | null>(null)
 
-  // Initialize recipient phone on open
+  // Track active bill identity across renders to prevent resetting typed user input
+  const activeBillKeyRef = useRef<string | null>(null)
+
+  // Initialize recipient phone ONLY when modal opens for a new/different bill
   useEffect(() => {
     if (!isOpen || !bill) {
+      activeBillKeyRef.current = null
       setStatusResult(null)
+      setPhoneError(null)
       return
     }
 
-    const defaultPhone =
-      bill.customer_phone ||
-      bill.dealer_phone ||
-      bill.phone ||
-      ''
+    const currentBillKey = String(bill.id || bill.invoice_number || bill.bill_number || 'default')
 
-    setRecipientPhone(defaultPhone)
-    setPhoneError(null)
-    setStatusResult(null)
-  }, [isOpen, bill])
+    // If modal just opened or switched to a distinct bill, initialize the phone
+    if (activeBillKeyRef.current !== currentBillKey) {
+      activeBillKeyRef.current = currentBillKey
+      const defaultPhone = String(
+        bill.customer_phone ||
+        bill.dealer_phone ||
+        bill.phone ||
+        ''
+      ).trim()
+
+      setRecipientPhone(defaultPhone)
+      setPhoneError(null)
+      setStatusResult(null)
+    }
+  }, [isOpen, bill?.id, bill?.invoice_number, bill?.bill_number])
 
   if (!isOpen || !bill) return null
 
@@ -74,27 +86,34 @@ export default function WhatsAppShareModal({
   const paidAmount = Number(bill.paid_amount || 0)
   const dueAmount = Number(bill.due_amount || Math.max(0, grandTotal - paidAmount))
 
-  // Validate phone input live
+  // Direct keystroke handler: updates React state directly without resetting or stripping digits
   const handlePhoneChange = (val: string) => {
     setRecipientPhone(val)
-    if (!val.trim()) {
-      setPhoneError('Recipient phone number is required.')
-    } else {
-      const v = validateAndFormatIndianPhone(val)
-      setPhoneError(v.isValid ? null : v.error || 'Invalid Indian mobile number')
+    // Clear validation error when user types, so they aren't blocked while editing
+    if (phoneError) {
+      setPhoneError(null)
     }
   }
 
   // Handle direct send via Meta WhatsApp Cloud API with PDF document
+  // Validates the completed phone number when the user presses Send
   const handleSendBill = async (force: boolean = false) => {
-    const validation = validateAndFormatIndianPhone(recipientPhone)
+    const trimmed = recipientPhone.trim()
+    if (!trimmed) {
+      setPhoneError('Recipient WhatsApp mobile number is required.')
+      return
+    }
+
+    const validation = validateAndFormatIndianPhone(trimmed)
     if (!validation.isValid) {
+      // PRESERVE the entered number in state! Do not clear it.
       setPhoneError(validation.error || 'Please enter a valid 10-digit Indian mobile number.')
       return
     }
 
     setSending(true)
     setStatusResult(null)
+    setPhoneError(null)
 
     try {
       // 1. Generate actual PDF Document Blob and Base64
@@ -347,10 +366,15 @@ export default function WhatsAppShareModal({
             </label>
             <div style={{ position: 'relative' }}>
               <input
-                type="text"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
                 value={recipientPhone}
                 onChange={(e) => handlePhoneChange(e.target.value)}
-                placeholder="e.g. 9347662554 or +919347662554"
+                placeholder="e.g. 9391234567 or +919391234567"
                 style={{
                   width: '100%',
                   padding: '0.65rem 0.85rem 0.65rem 2.25rem',
@@ -558,7 +582,7 @@ export default function WhatsAppShareModal({
           {/* Primary Action Button: [ SEND BILL ON WHATSAPP ] */}
           <button
             type="button"
-            disabled={sending || !!phoneError}
+            disabled={sending}
             onClick={() => handleSendBill(false)}
             style={{
               backgroundColor: '#25D366',
@@ -568,8 +592,8 @@ export default function WhatsAppShareModal({
               borderRadius: '6px',
               padding: '0.65rem 1.25rem',
               fontSize: '0.9rem',
-              cursor: sending || phoneError ? 'not-allowed' : 'pointer',
-              opacity: sending || phoneError ? 0.6 : 1,
+              cursor: sending ? 'not-allowed' : 'pointer',
+              opacity: sending ? 0.6 : 1,
               display: 'flex',
               alignItems: 'center',
               gap: '0.55rem',
