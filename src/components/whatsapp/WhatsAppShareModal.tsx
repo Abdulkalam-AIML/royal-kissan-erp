@@ -46,35 +46,31 @@ export default function WhatsAppShareModal({
     hasAttachment?: boolean
   } | null>(null)
 
-  // Track active bill identity across renders to prevent resetting typed user input
-  const activeBillKeyRef = useRef<string | null>(null)
+  // Track modal open lifecycle to initialize recipient phone ONCE per open session
+  const prevIsOpenRef = useRef(false)
+  const phoneInputRef = useRef<HTMLInputElement>(null)
 
-  // Initialize recipient phone ONLY when modal opens for a new/different bill
+  // Initialize recipient phone ONLY when modal opens
   useEffect(() => {
-    if (!isOpen || !bill) {
-      activeBillKeyRef.current = null
-      setStatusResult(null)
-      setPhoneError(null)
-      return
-    }
-
-    const currentBillKey = String(bill.id || bill.invoice_number || bill.bill_number || 'default')
-
-    // If modal just opened or switched to a distinct bill, initialize the phone
-    if (activeBillKeyRef.current !== currentBillKey) {
-      activeBillKeyRef.current = currentBillKey
+    // Only initialize when modal transitions from closed to open
+    if (isOpen && !prevIsOpenRef.current) {
+      prevIsOpenRef.current = true
       const defaultPhone = String(
-        bill.customer_phone ||
-        bill.dealer_phone ||
-        bill.phone ||
+        bill?.customer_phone ||
+        bill?.dealer_phone ||
+        bill?.phone ||
         ''
       ).trim()
 
       setRecipientPhone(defaultPhone)
       setPhoneError(null)
       setStatusResult(null)
+    } else if (!isOpen && prevIsOpenRef.current) {
+      prevIsOpenRef.current = false
+      setPhoneError(null)
+      setStatusResult(null)
     }
-  }, [isOpen, bill?.id, bill?.invoice_number, bill?.bill_number])
+  }, [isOpen, bill?.customer_phone, bill?.dealer_phone, bill?.phone])
 
   if (!isOpen || !bill) return null
 
@@ -86,6 +82,15 @@ export default function WhatsAppShareModal({
   const paidAmount = Number(bill.paid_amount || 0)
   const dueAmount = Number(bill.due_amount || Math.max(0, grandTotal - paidAmount))
 
+  // Detect walk-in customer without registered phone
+  const isWalkin = !bill.dealer_name && (
+    !bill.customer_name ||
+    bill.customer_name.toLowerCase().includes('walk-in') ||
+    bill.customer_name.toLowerCase().includes('walk in') ||
+    bill.customer_name.toLowerCase().includes('counter') ||
+    !bill.customer_phone
+  )
+
   // Direct keystroke handler: updates React state directly without resetting or stripping digits
   const handlePhoneChange = (val: string) => {
     setRecipientPhone(val)
@@ -96,9 +101,11 @@ export default function WhatsAppShareModal({
   }
 
   // Handle direct send via Meta WhatsApp Cloud API with PDF document
-  // Validates the completed phone number when the user presses Send
+  // Validates the completed phone number ONLY when the user presses Send
   const handleSendBill = async (force: boolean = false) => {
-    const trimmed = recipientPhone.trim()
+    const currentInputVal = phoneInputRef.current?.value ?? recipientPhone
+    const trimmed = (currentInputVal || recipientPhone || '').trim()
+
     if (!trimmed) {
       setPhoneError('Recipient WhatsApp mobile number is required.')
       return
@@ -107,10 +114,13 @@ export default function WhatsAppShareModal({
     const validation = validateAndFormatIndianPhone(trimmed)
     if (!validation.isValid) {
       // PRESERVE the entered number in state! Do not clear it.
+      setRecipientPhone(currentInputVal)
       setPhoneError(validation.error || 'Please enter a valid 10-digit Indian mobile number.')
       return
     }
 
+    // Keep state in sync with valid value
+    setRecipientPhone(currentInputVal)
     setSending(true)
     setStatusResult(null)
     setPhoneError(null)
@@ -179,8 +189,14 @@ export default function WhatsAppShareModal({
       } else {
         // Fallback: download PDF and open WhatsApp Web
         generateBillPDF(bill)
-        const validation = validateAndFormatIndianPhone(recipientPhone)
-        const digits = validation.isValid ? validation.e164Digits : '919347662554'
+        const currentInputVal = phoneInputRef.current?.value ?? recipientPhone
+        const trimmed = (currentInputVal || recipientPhone || '').trim()
+        const validation = validateAndFormatIndianPhone(trimmed)
+        if (!validation.isValid) {
+          setPhoneError(validation.error || 'Please enter a valid 10-digit Indian mobile number.')
+          return
+        }
+        const digits = validation.e164Digits
         const link = `https://wa.me/${digits}?text=${encodeURIComponent(messageText)}`
         window.open(link, '_blank')
       }
@@ -191,8 +207,14 @@ export default function WhatsAppShareModal({
 
   // Quick WhatsApp Web / Direct Chat link fallback
   const handleOpenWhatsAppWeb = () => {
-    const validation = validateAndFormatIndianPhone(recipientPhone)
-    const digits = validation.isValid ? validation.e164Digits : '919347662554'
+    const currentInputVal = phoneInputRef.current?.value ?? recipientPhone
+    const trimmed = (currentInputVal || recipientPhone || '').trim()
+    const validation = validateAndFormatIndianPhone(trimmed)
+    if (!validation.isValid) {
+      setPhoneError(validation.error || 'Please enter a valid 10-digit Indian mobile number.')
+      return
+    }
+    const digits = validation.e164Digits
     const messageText = formatInvoiceWhatsAppMessage(bill)
     // Download PDF for the operator to drag into WhatsApp chat if needed
     generateBillPDF(bill)
@@ -353,19 +375,29 @@ export default function WhatsAppShareModal({
 
           {/* Recipient WhatsApp Phone Input */}
           <div>
-            <label
-              style={{
-                display: 'block',
-                fontSize: '0.82rem',
-                fontWeight: 700,
-                color: '#d4d4d8',
-                marginBottom: '0.4rem'
-              }}
-            >
-              Recipient WhatsApp Mobile (+91)
-            </label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+              <label
+                htmlFor="whatsapp-recipient-phone"
+                style={{
+                  display: 'block',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  color: '#d4d4d8'
+                }}
+              >
+                {isWalkin ? 'Walk-in Customer WhatsApp Mobile (+91)' : 'Recipient WhatsApp Mobile (+91)'}
+              </label>
+              {isWalkin && (
+                <span style={{ fontSize: '0.72rem', color: '#fbbf24', fontWeight: 600 }}>
+                  Manual Entry Supported
+                </span>
+              )}
+            </div>
             <div style={{ position: 'relative' }}>
               <input
+                ref={phoneInputRef}
+                id="whatsapp-recipient-phone"
+                name="recipient_phone"
                 type="tel"
                 inputMode="tel"
                 autoComplete="tel"
@@ -374,7 +406,30 @@ export default function WhatsAppShareModal({
                 spellCheck={false}
                 value={recipientPhone}
                 onChange={(e) => handlePhoneChange(e.target.value)}
-                placeholder="e.g. 9391234567 or +919391234567"
+                onInput={(e) => {
+                  // Capture Chrome native autofill without dropping digits
+                  const target = e.target as HTMLInputElement
+                  if (target && target.value !== recipientPhone) {
+                    handlePhoneChange(target.value)
+                  }
+                }}
+                onBlur={(e) => {
+                  // Guarantee any autofilled or edited DOM value is retained in state
+                  const target = e.target as HTMLInputElement
+                  if (target && target.value && target.value !== recipientPhone) {
+                    handlePhoneChange(target.value)
+                  }
+                }}
+                onAnimationStart={(e) => {
+                  // Chrome fires animationstart when :-webkit-autofill is applied
+                  if (e.animationName && (e.animationName.includes('autofill') || e.animationName.includes('auto-fill'))) {
+                    const target = e.target as HTMLInputElement
+                    if (target && target.value && target.value !== recipientPhone) {
+                      handlePhoneChange(target.value)
+                    }
+                  }
+                }}
+                placeholder={isWalkin ? "Enter 10-digit mobile number (e.g. 9391234567)" : "e.g. 9391234567 or +919391234567"}
                 style={{
                   width: '100%',
                   padding: '0.65rem 0.85rem 0.65rem 2.25rem',
@@ -401,12 +456,15 @@ export default function WhatsAppShareModal({
               />
             </div>
             {phoneError && (
-              <p style={{ color: '#f87171', fontSize: '0.75rem', margin: '0.3rem 0 0 0' }}>
-                {phoneError}
+              <p style={{ color: '#f87171', fontSize: '0.75rem', margin: '0.3rem 0 0 0', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <AlertCircle style={{ width: '13px', height: '13px', flexShrink: 0 }} />
+                <span>{phoneError}</span>
               </p>
             )}
             <p style={{ color: '#71717a', fontSize: '0.72rem', margin: '0.3rem 0 0 0' }}>
-              Format: 10-digit Indian mobile number. You can edit the number before sending.
+              {isWalkin 
+                ? 'Enter the customer mobile number (10-digit Indian mobile, +91, or 91 prefix). No registered customer account needed.'
+                : 'Format: 10-digit Indian mobile number (+91). You can edit the number before sending.'}
             </p>
           </div>
 

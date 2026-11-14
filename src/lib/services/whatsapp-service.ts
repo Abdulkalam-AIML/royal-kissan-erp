@@ -24,11 +24,21 @@ export function validateAndFormatIndianPhone(phoneInput: string): PhoneValidatio
       formattedPhone: '',
       e164Digits: '',
       raw: phoneInput || '',
-      error: 'Phone number is required.'
+      error: 'Recipient WhatsApp mobile number is required.'
     }
   }
 
   const raw = phoneInput.trim()
+  if (!raw) {
+    return {
+      isValid: false,
+      formattedPhone: '',
+      e164Digits: '',
+      raw: '',
+      error: 'Recipient WhatsApp mobile number is required.'
+    }
+  }
+
   // Remove all non-digit characters except leading plus
   let cleaned = raw.replace(/[^\d+]/g, '')
 
@@ -36,7 +46,17 @@ export function validateAndFormatIndianPhone(phoneInput: string): PhoneValidatio
     cleaned = cleaned.substring(1)
   }
 
-  // Handle leading 0
+  // Handle leading 00 (international prefix e.g. 0091)
+  if (cleaned.startsWith('0091') && cleaned.length === 14) {
+    cleaned = cleaned.substring(2)
+  }
+
+  // Handle country code 91 with a leading 0 (e.g. +91 09391234567 or 9109391234567)
+  if (cleaned.startsWith('910') && cleaned.length === 13) {
+    cleaned = '91' + cleaned.substring(3)
+  }
+
+  // Handle leading 0 (STD mobile dialing within India, e.g. 09391234567)
   if (cleaned.startsWith('0') && cleaned.length === 11) {
     cleaned = cleaned.substring(1)
   }
@@ -61,7 +81,7 @@ export function validateAndFormatIndianPhone(phoneInput: string): PhoneValidatio
     }
   }
 
-  // If 12 digits starting with 91
+  // If 12 digits starting with 91 (with or without + prefix originally)
   if (cleaned.length === 12 && cleaned.startsWith('91')) {
     const subscriber = cleaned.substring(2)
     if (!/^[6-9]\d{9}$/.test(subscriber)) {
@@ -70,7 +90,7 @@ export function validateAndFormatIndianPhone(phoneInput: string): PhoneValidatio
         formattedPhone: `+${cleaned}`,
         e164Digits: cleaned,
         raw,
-        error: 'Invalid Indian mobile number format after country code 91.'
+        error: 'Indian mobile numbers must begin with 6, 7, 8, or 9.'
       }
     }
     return {
@@ -81,12 +101,23 @@ export function validateAndFormatIndianPhone(phoneInput: string): PhoneValidatio
     }
   }
 
+  // Incomplete number check
+  if (cleaned.length < 10) {
+    return {
+      isValid: false,
+      formattedPhone: raw,
+      e164Digits: cleaned,
+      raw,
+      error: 'Please enter a complete 10-digit Indian mobile number.'
+    }
+  }
+
   return {
     isValid: false,
     formattedPhone: raw,
     e164Digits: cleaned,
     raw,
-    error: 'Invalid phone number. Please enter a 10-digit Indian mobile number (e.g. 93476 62554 or +919347662554).'
+    error: 'Invalid phone number. Please enter a 10-digit Indian mobile number (e.g. 9391234567 or +919391234567).'
   }
 }
 
