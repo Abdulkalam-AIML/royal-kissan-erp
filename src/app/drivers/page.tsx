@@ -8,6 +8,7 @@ import { resolveProductRate, RateSource, round2 } from '@/lib/pricing/pricing-en
 import { fetchPricingRules } from '@/lib/services/pricing-service'
 import type { PricingRule } from '@/lib/pricing/pricing-engine'
 import ReceiptPreviewModal from '@/components/printer/ReceiptPreviewModal'
+import WhatsAppShareModal from '@/components/whatsapp/WhatsAppShareModal'
 import { BillData } from '@/lib/printer/receipt'
 import {
   issueDriverLoad,
@@ -161,6 +162,7 @@ export default function DriversPage() {
   const [driverLoadsList, setDriverLoadsList] = useState<DriverLoadDispatchWithItems[]>([])
   const [driverSettlementsList, setDriverSettlementsList] = useState<DriverRouteSettlementWithItems[]>([])
   const [previewBill, setPreviewBill] = useState<BillData | null>(null)
+  const [whatsAppBill, setWhatsAppBill] = useState<any | null>(null)
 
   // Load Issue Form State
   const [showIssueModal, setShowIssueModal] = useState<boolean>(false)
@@ -1229,7 +1231,7 @@ export default function DriversPage() {
                 </p>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '2rem' }}>
+            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <div>
                 <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Today Sales</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff' }}>₹{(driverStats[selectedDriver.id]?.sales || 0).toLocaleString('en-IN')}</div>
@@ -1246,6 +1248,61 @@ export default function DriversPage() {
                 <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Settlements</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#34d399' }}>{driverSettlementsList.length}</div>
               </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.3)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                onClick={() => {
+                  if (driverLoadsList.length > 0) {
+                    const latestLoad = driverLoadsList[0]
+                    setWhatsAppBill({
+                      id: latestLoad.id,
+                      invoice_number: latestLoad.dispatch_number,
+                      dealer_name: selectedDriver.name,
+                      customer_name: `Driver: ${selectedDriver.name} (${latestLoad.vehicle_number || 'AP 16 AB 1234'})`,
+                      dealer_phone: selectedDriver.phone,
+                      customer_phone: selectedDriver.phone,
+                      date: latestLoad.dispatch_date,
+                      bill_type: 'LOAD DISPATCH NOTE',
+                      total_quantity: latestLoad.total_loaded_qty,
+                      total_amount: latestLoad.total_load_value,
+                      grand_total: latestLoad.total_load_value,
+                      paid_amount: 0,
+                      due_amount: 0,
+                      items: (latestLoad.items || []).map(it => ({
+                        product_name: it.product_name,
+                        quantity: it.loaded_quantity,
+                        rate: it.rate,
+                        amount: it.loaded_quantity * it.rate
+                      }))
+                    })
+                  } else {
+                    setWhatsAppBill({
+                      id: `RUN-${selectedDriver.id}`,
+                      invoice_number: `RUN-${new Date().toISOString().split('T')[0]}`,
+                      dealer_name: selectedDriver.name,
+                      customer_name: `Driver: ${selectedDriver.name}`,
+                      dealer_phone: selectedDriver.phone,
+                      customer_phone: selectedDriver.phone,
+                      date: new Date().toISOString().split('T')[0],
+                      bill_type: 'ROUTE SUMMARY',
+                      total_amount: driverStats[selectedDriver.id]?.sales || 0,
+                      grand_total: driverStats[selectedDriver.id]?.sales || 0,
+                      paid_amount: driverStats[selectedDriver.id]?.collection || 0,
+                      due_amount: Math.max(0, (driverStats[selectedDriver.id]?.sales || 0) - (driverStats[selectedDriver.id]?.collection || 0)),
+                      items: [
+                        { product_name: 'Today Sales Completed', quantity: 1, rate: driverStats[selectedDriver.id]?.sales || 0, amount: driverStats[selectedDriver.id]?.sales || 0 },
+                        { product_name: 'Today Collections Received', quantity: 1, rate: driverStats[selectedDriver.id]?.collection || 0, amount: driverStats[selectedDriver.id]?.collection || 0 }
+                      ]
+                    })
+                  }
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="#25D366">
+                  <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.694.075-2.223-.559-1.848-.767-3.037-2.656-3.129-2.78-.093-.123-.746-.991-.746-1.888 0-.898.469-1.339.636-1.52.167-.182.366-.228.487-.228.121 0 .243.002.348.006.111.005.26-.042.407.311.152.365.518 1.265.564 1.357.045.092.076.2.015.322-.061.122-.092.199-.183.307-.091.107-.191.24-.273.322-.091.091-.186.19-.08.373.106.183.473.78 1.016 1.263.699.623 1.288.816 1.472.907.183.092.29.077.397-.046.107-.123.456-.533.578-.716.121-.183.243-.153.407-.092.164.061 1.042.492 1.22.583.178.091.297.137.34.213.045.076.045.441-.099.846z"/>
+                </svg>
+                <span>WhatsApp</span>
+              </button>
             </div>
           </div>
 
@@ -1347,13 +1404,43 @@ export default function DriversPage() {
                             </span>
                           </td>
                           <td style={{ textAlign: 'center' }}>
-                            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                            <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
                               <button
                                 className="btn btn-secondary btn-xs"
                                 onClick={() => printLoadDispatchNote(load)}
                                 title="Print Load Dispatch Note"
                               >
                                 🖨️ Note
+                              </button>
+                              <button
+                                className="btn btn-secondary btn-xs"
+                                style={{ color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.3)' }}
+                                onClick={() => {
+                                  setWhatsAppBill({
+                                    id: load.id,
+                                    invoice_number: load.dispatch_number,
+                                    dealer_name: selectedDriver.name,
+                                    customer_name: `Driver: ${selectedDriver.name} (${load.vehicle_number || 'AP 16 AB 1234'})`,
+                                    dealer_phone: selectedDriver.phone,
+                                    customer_phone: selectedDriver.phone,
+                                    date: load.dispatch_date,
+                                    bill_type: 'LOAD DISPATCH NOTE',
+                                    total_quantity: load.total_loaded_qty,
+                                    total_amount: load.total_load_value,
+                                    grand_total: load.total_load_value,
+                                    paid_amount: 0,
+                                    due_amount: 0,
+                                    items: (load.items || []).map(it => ({
+                                      product_name: it.product_name,
+                                      quantity: it.loaded_quantity,
+                                      rate: it.rate,
+                                      amount: it.loaded_quantity * it.rate
+                                    }))
+                                  })
+                                }}
+                                title="Send Load Dispatch to Driver on WhatsApp"
+                              >
+                                📱 WhatsApp
                               </button>
                               {load.status === 'ISSUED' && (
                                 <button
@@ -1675,7 +1762,7 @@ export default function DriversPage() {
                         onClick={handleConfirmRouteSettlement}
                         disabled={settlingRoute}
                       >
-                        {settlingRoute ? 'Processing Settlement...' : '🏁 Confirm & Finalize Route Settlement'}
+                        {settlingRoute ? 'Processing Settlement...' : '🏁 FINALIZE ROUTE & GENERATE BILLS'}
                       </button>
                     </div>
 
@@ -1735,12 +1822,44 @@ export default function DriversPage() {
                         <td style={{ textAlign: 'center', color: s.unaccounted_qty > 0 ? '#fbbf24' : 'inherit' }}>{s.unaccounted_qty}</td>
                         <td style={{ textAlign: 'right', fontWeight: '800', color: '#34d399' }}>₹{s.actual_collection.toLocaleString('en-IN')}</td>
                         <td style={{ textAlign: 'center' }}>
-                          <button
-                            className="btn btn-secondary btn-xs"
-                            onClick={() => printSettlementSummary(s)}
-                          >
-                            🖨️ Summary
-                          </button>
+                          <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
+                            <button
+                              className="btn btn-secondary btn-xs"
+                              onClick={() => printSettlementSummary(s)}
+                            >
+                              🖨️ Summary
+                            </button>
+                            <button
+                              className="btn btn-secondary btn-xs"
+                              style={{ color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.3)' }}
+                              onClick={() => {
+                                setWhatsAppBill({
+                                  id: s.id,
+                                  invoice_number: s.settlement_number,
+                                  dealer_name: selectedDriver.name,
+                                  customer_name: `Driver: ${selectedDriver.name}`,
+                                  dealer_phone: selectedDriver.phone,
+                                  customer_phone: selectedDriver.phone,
+                                  date: s.settlement_date,
+                                  bill_type: 'ROUTE SETTLEMENT SUMMARY',
+                                  subtotal: s.total_sold_qty,
+                                  total_amount: s.actual_collection,
+                                  grand_total: s.actual_collection,
+                                  paid_amount: s.actual_collection,
+                                  due_amount: s.unaccounted_qty,
+                                  items: [
+                                    { product_name: `Sold Products (${s.total_sold_qty} units)`, quantity: s.total_sold_qty, rate: 0, amount: s.actual_collection },
+                                    { product_name: `Returned Good Stock (${s.total_returned_qty} units)`, quantity: s.total_returned_qty, rate: 0, amount: 0 },
+                                    { product_name: `Leaked / Damaged (${s.total_leaked_qty} units)`, quantity: s.total_leaked_qty, rate: 0, amount: 0 },
+                                    { product_name: `Net Cash Handed Over`, quantity: 1, rate: s.actual_collection, amount: s.actual_collection }
+                                  ]
+                                })
+                              }}
+                              title="Send Route Settlement Summary to Driver on WhatsApp"
+                            >
+                              📱 WhatsApp
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -2490,6 +2609,13 @@ export default function DriversPage() {
         onClose={() => setPreviewBill(null)}
         bill={previewBill}
         initialFormat="80mm"
+      />
+
+      {/* WHATSAPP SHARING MODAL FOR DRIVER DISPATCH & SETTLEMENT */}
+      <WhatsAppShareModal
+        isOpen={!!whatsAppBill}
+        onClose={() => setWhatsAppBill(null)}
+        bill={whatsAppBill}
       />
 
     </div>

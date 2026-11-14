@@ -59,6 +59,8 @@ import {
   getDealerReturns,
   calculateDealerDailySettlement,
   confirmDealerDailySettlement,
+  getDealerUnappliedCredits,
+  applyDealerCreditsToBill,
   ROYAL_KISSAN_STATE_CODE
 } from '@/lib/services/dealer-service'
 import {
@@ -241,6 +243,21 @@ export default function DealersPage() {
   const [dealerBills, setDealerBills] = useState<any[]>([])
   const [dealerLedger, setDealerLedger] = useState<any[]>([])
   const [savingBill, setSavingBill] = useState(false)
+  const [unappliedCredits, setUnappliedCredits] = useState<{
+    dealerId: string
+    returnCreditTotal: number
+    leakageCreditTotal: number
+    otherCreditTotal: number
+    totalAvailableCredit: number
+    adjustments: any[]
+  }>({
+    dealerId: '',
+    returnCreditTotal: 0,
+    leakageCreditTotal: 0,
+    otherCreditTotal: 0,
+    totalAvailableCredit: 0,
+    adjustments: []
+  })
 
   const supabase = createClient()
 
@@ -287,14 +304,16 @@ export default function DealersPage() {
 
   async function loadDispatchesAndReturns(dealerId: string) {
     try {
-      const [dispatches, returns] = await Promise.all([
+      const [dispatches, returns, credits] = await Promise.all([
         getDealerDispatches(dealerId),
-        getDealerReturns(dealerId)
+        getDealerReturns(dealerId),
+        getDealerUnappliedCredits(dealerId)
       ])
       setDispatchesList(dispatches)
       setReturnsList(returns)
+      setUnappliedCredits(credits)
     } catch (e) {
-      console.warn('Failed to load dealer dispatches/returns:', e)
+      console.warn('Failed to load dealer dispatches/returns/credits:', e)
     }
   }
 
@@ -437,7 +456,9 @@ export default function DealersPage() {
     isGstEnabled: applyGstOnMatrix
   })
 
-  const netBillAmount = gstBreakdown.grandTotal
+  const subtotalWithGst = applyGstOnMatrix ? gstBreakdown.grandTotal : netTaxableAmount
+  const creditDeduction = Math.min(unappliedCredits.totalAvailableCredit, subtotalWithGst)
+  const netBillAmount = Math.max(0, round2(subtotalWithGst - creditDeduction))
   const totalPaid = Number(payments.cash || 0) + Number(payments.upi || 0) + Number(payments.bank || 0) + Number(payments.advance || 0)
   const pendingDue = Math.max(0, netBillAmount - totalPaid)
   const previousDue = selectedDealer?.outstanding_amount || 0
@@ -446,7 +467,7 @@ export default function DealersPage() {
 
   // Save Dealer GST Invoice
   async function handleSaveBill(shouldPrint = false) {
-    if (netBillAmount <= 0) {
+    if (netBillAmount <= 0 && grossTotal <= 0) {
       alert('Please add at least one product quantity to generate bill')
       return
     }
@@ -474,6 +495,9 @@ export default function DealersPage() {
         cgst_amount: gstBreakdown.cgstAmount,
         sgst_amount: gstBreakdown.sgstAmount,
         igst_amount: gstBreakdown.igstAmount,
+        return_credit: unappliedCredits.returnCreditTotal,
+        leakage_credit: unappliedCredits.leakageCreditTotal,
+        credit_adjusted: creditDeduction,
         total_amount: netBillAmount,
         grand_total: netBillAmount,
         paid_amount: totalPaid,
@@ -485,7 +509,7 @@ export default function DealersPage() {
         payment_mode: totalPaid >= netBillAmount ? 'cash' : totalPaid > 0 ? 'mixed' : 'due',
         payment_status: totalPaid >= netBillAmount ? 'paid' : totalPaid > 0 ? 'partial' : 'due',
         items_count: activeRows.length,
-        notes: `Dealer Invoice for ${selectedDealer.name} ${applyGstOnMatrix ? '(GST Applicable)' : ''}`,
+        notes: `Dealer Invoice for ${selectedDealer.name}${creditDeduction > 0 ? ` (Deducted ₹${creditDeduction} Prev. Return/Leakage Credits)` : ''}`,
         created_by: 'Dealer Workspace'
       }
 
@@ -505,6 +529,17 @@ export default function DealersPage() {
       if (!dErr && dData) {
         const childItems = itemsPayload.map(i => ({ ...i, bill_id: dData.id }))
         await supabase.from('bill_items').insert(childItems)
+
+        // Apply unapplied return & leakage credits to link them permanently to this invoice
+        if (unappliedCredits.adjustments && unappliedCredits.adjustments.length > 0) {
+          await applyDealerCreditsToBill({
+            dealerId: selectedDealer.id,
+            billId: dData.id,
+            invoiceNumber: invNo,
+            creditAdjustmentIds: unappliedCredits.adjustments.map(a => a.id)
+          })
+          loadDispatchesAndReturns(selectedDealer.id)
+        }
       }
 
       // Update dealer balance
@@ -532,6 +567,10 @@ export default function DealersPage() {
           dealer_address: selectedDealer.address,
           date: saleDate,
           subtotal: grossTotal,
+          today_dispatch: grossTotal,
+          return_credit: unappliedCredits.returnCreditTotal,
+          leakage_credit: unappliedCredits.leakageCreditTotal,
+          credit_adjusted: creditDeduction,
           taxable_amount: gstBreakdown.taxableAmount,
           gst_amount: gstBreakdown.gstAmount,
           cgst_amount: gstBreakdown.cgstAmount,
@@ -805,9 +844,53 @@ export default function DealersPage() {
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.8rem' }}>
                       <span style={{ color: '#71717a' }}>Balance Due:</span>
-                      <span style={{ fontWeight: 800, color: isDue ? '#f87171' : '#34d399' }}>
-                        ₹{Number(d.outstanding_amount || 0).toLocaleString('en-IN')}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontWeight: 800, color: isDue ? '#f87171' : '#34d399' }}>
+                          ₹{Number(d.outstanding_amount || 0).toLocaleString('en-IN')}
+                        </span>
+                        <button
+                          type="button"
+                          title="WhatsApp Bill / Statement"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedDealer(d)
+                            setWhatsAppBill({
+                              id: `STMT-${d.id}`,
+                              invoice_number: `STMT-${d.id.slice(0, 8).toUpperCase()}`,
+                              dealer_name: d.name,
+                              dealer_phone: d.phone,
+                              dealer_gstin: d.gst_number,
+                              dealer_address: d.address,
+                              date: new Date().toISOString().split('T')[0],
+                              bill_type: 'ACCOUNT STATEMENT',
+                              subtotal: Number(d.total_purchases || 0),
+                              total_amount: Number(d.outstanding_amount || 0),
+                              grand_total: Number(d.outstanding_amount || 0),
+                              paid_amount: 0,
+                              due_amount: Number(d.outstanding_amount || 0),
+                              previous_balance: Number(d.outstanding_amount || 0),
+                              items: [
+                                { product_name: 'Current Outstanding Balance', quantity: 1, rate: Number(d.outstanding_amount || 0), amount: Number(d.outstanding_amount || 0) }
+                              ]
+                            })
+                          }}
+                          style={{
+                            background: 'rgba(37, 211, 102, 0.12)',
+                            border: '1px solid rgba(37, 211, 102, 0.3)',
+                            borderRadius: '50%',
+                            width: '24px',
+                            height: '24px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="#25D366">
+                            <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.694.075-2.223-.559-1.848-.767-3.037-2.656-3.129-2.78-.093-.123-.746-.991-.746-1.888 0-.898.469-1.339.636-1.52.167-.182.366-.228.487-.228.121 0 .243.002.348.006.111.005.26-.042.407.311.152.365.518 1.265.564 1.357.045.092.076.2.015.322-.061.122-.092.199-.183.307-.091.107-.191.24-.273.322-.091.091-.186.19-.08.373.106.183.473.78 1.016 1.263.699.623 1.288.816 1.472.907.183.092.29.077.397-.046.107-.123.456-.533.578-.716.121-.183.243-.153.407-.092.164.061 1.042.492 1.22.583.178.091.297.137.34.213.045.076.045.441-.099.846z"/>
+                          </svg>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )
@@ -843,7 +926,55 @@ export default function DealersPage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    style={{ color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.3)' }}
+                    icon={
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="#25D366">
+                        <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.694.075-2.223-.559-1.848-.767-3.037-2.656-3.129-2.78-.093-.123-.746-.991-.746-1.888 0-.898.469-1.339.636-1.52.167-.182.366-.228.487-.228.121 0 .243.002.348.006.111.005.26-.042.407.311.152.365.518 1.265.564 1.357.045.092.076.2.015.322-.061.122-.092.199-.183.307-.091.107-.191.24-.273.322-.091.091-.186.19-.08.373.106.183.473.78 1.016 1.263.699.623 1.288.816 1.472.907.183.092.29.077.397-.046.107-.123.456-.533.578-.716.121-.183.243-.153.407-.092.164.061 1.042.492 1.22.583.178.091.297.137.34.213.045.076.045.441-.099.846z"/>
+                      </svg>
+                    }
+                    onClick={() => {
+                      if (dealerBills.length > 0) {
+                        const latestBill = dealerBills[0]
+                        setWhatsAppBill({
+                          ...latestBill,
+                          dealer_name: selectedDealer.name,
+                          dealer_phone: selectedDealer.phone,
+                          dealer_gstin: selectedDealer.gst_number,
+                          dealer_address: selectedDealer.address,
+                          previous_balance: selectedDealer.outstanding_amount || 0,
+                          items: latestBill.items || [
+                            { product_name: 'Water Can (20L)', quantity: 1, rate: Number(latestBill.total_amount) || 0, amount: Number(latestBill.total_amount) || 0 }
+                          ]
+                        })
+                      } else {
+                        setWhatsAppBill({
+                          id: `STMT-${selectedDealer.id}`,
+                          invoice_number: `STMT-${selectedDealer.id.slice(0, 8).toUpperCase()}`,
+                          dealer_name: selectedDealer.name,
+                          dealer_phone: selectedDealer.phone,
+                          dealer_gstin: selectedDealer.gst_number,
+                          dealer_address: selectedDealer.address,
+                          date: new Date().toISOString().split('T')[0],
+                          bill_type: 'ACCOUNT STATEMENT',
+                          subtotal: Number(selectedDealer.total_purchases || 0),
+                          total_amount: Number(selectedDealer.outstanding_amount || 0),
+                          grand_total: Number(selectedDealer.outstanding_amount || 0),
+                          paid_amount: 0,
+                          due_amount: Number(selectedDealer.outstanding_amount || 0),
+                          previous_balance: Number(selectedDealer.outstanding_amount || 0),
+                          items: [
+                            { product_name: 'Current Outstanding Balance', quantity: 1, rate: Number(selectedDealer.outstanding_amount || 0), amount: Number(selectedDealer.outstanding_amount || 0) }
+                          ]
+                        })
+                      }
+                    }}
+                  >
+                    WhatsApp Bill / Statement
+                  </Button>
                   <Button variant="secondary" size="sm" onClick={() => setShowCollectModal(true)} icon={<CreditCard style={{ width: 14, height: 14 }} />}>
                     Collect Payment
                   </Button>
@@ -982,11 +1113,11 @@ export default function DealersPage() {
                   </table>
                 </div>
 
-                {/* GST Financial Breakdown Summary Box */}
+                {/* GST & Next-Day Credit Financial Breakdown Summary Box */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginTop: '1.25rem', padding: '1.25rem', backgroundColor: '#09090b', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
                   <div>
-                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Taxable Subtotal</span>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>₹{netTaxableAmount.toFixed(2)}</div>
+                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Today&apos;s New Dispatch</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>₹{grossTotal.toFixed(2)}</div>
                   </div>
 
                   {applyGstOnMatrix && (
@@ -1011,8 +1142,22 @@ export default function DealersPage() {
                     </>
                   )}
 
+                  {unappliedCredits.returnCreditTotal > 0 && (
+                    <div>
+                      <span style={{ fontSize: '0.7rem', color: '#34d399', textTransform: 'uppercase' }}>Prev. Dispatch Returns</span>
+                      <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#34d399' }}>-₹{unappliedCredits.returnCreditTotal.toFixed(2)}</div>
+                    </div>
+                  )}
+
+                  {unappliedCredits.leakageCreditTotal > 0 && (
+                    <div>
+                      <span style={{ fontSize: '0.7rem', color: '#f87171', textTransform: 'uppercase' }}>Prev. Dispatch Leakage</span>
+                      <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#f87171' }}>-₹{unappliedCredits.leakageCreditTotal.toFixed(2)}</div>
+                    </div>
+                  )}
+
                   <div>
-                    <span style={{ fontSize: '0.7rem', color: '#fbbf24', textTransform: 'uppercase' }}>Grand Total (Inc. GST)</span>
+                    <span style={{ fontSize: '0.7rem', color: '#fbbf24', textTransform: 'uppercase' }}>Net Payable (After Credits)</span>
                     <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#fbbf24' }}>₹{netBillAmount.toFixed(2)}</div>
                   </div>
 
@@ -1114,7 +1259,7 @@ export default function DealersPage() {
             {/* TAB 3: DEALER RETURNS & LEAKAGE LOG */}
             {activeTab === 'returns_leakages' && (
               <Card style={{ padding: '1.5rem', backgroundColor: '#121215' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
                   <div>
                     <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <RotateCcw style={{ color: '#60a5fa', width: '18px', height: '18px' }} />
@@ -1124,6 +1269,21 @@ export default function DealersPage() {
                       Credits are applied to the reporting day&apos;s account at original dispatch rates, leaving historical dispatches unchanged.
                     </p>
                   </div>
+
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={<Plus style={{ width: 14, height: 14 }} />}
+                    onClick={() => {
+                      if (dispatchesList.length === 0) {
+                        alert('No load dispatches recorded for this dealer yet. Please issue a load dispatch first.')
+                        return
+                      }
+                      openReturnEntryModal(dispatchesList[0])
+                    }}
+                  >
+                    + Log Previous Dispatch Return &amp; Leakage
+                  </Button>
                 </div>
 
                 {returnsList.length === 0 ? (
@@ -1521,6 +1681,28 @@ export default function DealersPage() {
             </div>
 
             <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '75vh', overflowY: 'auto' }}>
+              {dispatchesList.length > 1 && (
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: '#a1a1aa', display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>
+                    Select Load Dispatch Reference:
+                  </label>
+                  <select
+                    value={selectedDispatchForReturn.id}
+                    onChange={e => {
+                      const d = dispatchesList.find(x => x.id === e.target.value)
+                      if (d) openReturnEntryModal(d)
+                    }}
+                    style={{ width: '100%', padding: '0.5rem', backgroundColor: '#09090b', border: '1px solid #3f3f46', borderRadius: '6px', color: '#fff', fontSize: '0.85rem' }}
+                  >
+                    {dispatchesList.map(disp => (
+                      <option key={disp.id} value={disp.id}>
+                        {disp.dispatch_number} ({disp.dispatch_date}) — {disp.total_quantity} units (₹{Number(disp.total_value).toLocaleString('en-IN')})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <Input label="Return Reporting Date *" type="date" value={returnReportingDate} onChange={e => setReturnReportingDate(e.target.value)} helperText="The day returns are reported (e.g. 14-11-2026)" />
                 <Select

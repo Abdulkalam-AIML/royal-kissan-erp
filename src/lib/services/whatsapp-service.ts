@@ -243,16 +243,57 @@ export async function saveWhatsAppSettings(
  */
 export function formatInvoiceWhatsAppMessage(bill: any): string {
   const isDispatchNote = String(bill.bill_type || '').toUpperCase().includes('DISPATCH NOTE')
+  const isSettlementSummary = String(bill.bill_type || '').toUpperCase().includes('SETTLEMENT')
+  const isAccountStatement = String(bill.bill_type || '').toUpperCase().includes('STATEMENT')
   const recipientName = bill.dealer_name || bill.customer_name || 'Valued Customer'
   const invoiceNumber = bill.invoice_number || bill.bill_number || `INV-${bill.id ? String(bill.id).slice(0, 8).toUpperCase() : 'NEW'}`
   const invoiceDate = bill.date || bill.dispatch_date || new Date().toISOString().split('T')[0]
   
   const subtotal = Number(bill.subtotal || bill.taxable_amount || bill.total_amount || 0)
   const gst = Number(bill.gst_amount || 0)
-  const grandTotal = Number(bill.grand_total || bill.total_amount || (subtotal + gst))
+  const returnCredit = Number(bill.return_credit || 0)
+  const leakageCredit = Number(bill.leakage_credit || 0)
+  const grandTotal = Number(bill.grand_total || bill.total_amount || (subtotal + gst - returnCredit - leakageCredit))
   const paid = Number(bill.paid_amount || 0)
   const due = Number(bill.due_amount || Math.max(0, grandTotal - paid))
   const previousBalance = Number(bill.previous_balance || bill.opening_balance || bill.outstanding_balance || 0)
+
+  if (isSettlementSummary) {
+    return `*ROYAL KISSAN — ROUTE SETTLEMENT SUMMARY*
+
+Hello ${recipientName},
+
+Your route settlement record has been confirmed.
+
+*Settlement Details:*
+Settlement Ref: ${invoiceNumber}
+Date: ${invoiceDate}
+Net Collections: ₹${grandTotal.toFixed(2)}
+Cash Handed Over: ₹${paid.toFixed(2)}
+
+*Reconciliation Summary:*
+${(bill.items || []).map((it: any, idx: number) => `${idx + 1}. ${it.product_name}: ${it.quantity} units (₹${Number(it.amount || 0).toFixed(2)})`).join('\n') || 'Route inventory successfully reconciled.'}
+
+Thank you.
+*ROYAL KISSAN ERP*`
+  }
+
+  if (isAccountStatement) {
+    return `*ROYAL KISSAN — ACCOUNT LEDGER STATEMENT*
+
+Hello ${recipientName},
+
+Here is your current Royal Kissan account statement:
+
+*Statement Details:*
+Account: ${recipientName}
+Date: ${invoiceDate}
+Current Closing Due: ₹${due.toFixed(2)}
+Lifetime Purchases: ₹${subtotal.toFixed(2)}
+
+Thank you for your valued partnership.
+*ROYAL KISSAN ERP*`
+  }
 
   if (isDispatchNote) {
     const totalQty = bill.total_quantity || (bill.items || []).reduce((acc: number, i: any) => acc + (Number(i.quantity) || 0), 0)
@@ -278,13 +319,22 @@ Thank you.
 
   let financialSummary = `Invoice Number: ${invoiceNumber}
 Invoice Date: ${invoiceDate}
-Total Amount: ₹${grandTotal.toFixed(2)}`
+Subtotal: ₹${subtotal.toFixed(2)}`
 
   if (gst > 0) {
     financialSummary += `\nGST Included: ₹${gst.toFixed(2)}`
   }
 
-  financialSummary += `\nAmount Paid: ₹${paid.toFixed(2)}
+  if (returnCredit > 0) {
+    financialSummary += `\nPrevious Returns Credit: -₹${returnCredit.toFixed(2)}`
+  }
+
+  if (leakageCredit > 0) {
+    financialSummary += `\nPrevious Leakage Credit: -₹${leakageCredit.toFixed(2)}`
+  }
+
+  financialSummary += `\nGrand Total: ₹${grandTotal.toFixed(2)}
+Amount Paid: ₹${paid.toFixed(2)}
 Remaining Due: ₹${due.toFixed(2)}`
 
   if (previousBalance > 0) {

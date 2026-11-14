@@ -548,3 +548,79 @@ export interface DriverRouteSettlement {
 export interface DriverRouteSettlementWithItems extends DriverRouteSettlement {
   items: DriverRouteSettlementItem[]
 }
+
+export interface Employee {
+  id: string
+  name: string
+  role: string
+  phone?: string | null
+  address?: string | null
+  salary: number
+  join_date?: string
+  date_joined?: string
+  is_active: boolean
+  bank_account?: string | null
+  bank_name?: string | null
+  ifsc_code?: string | null
+  aadhar_number?: string | null
+  employee_code?: string | null
+  advance_amount?: number
+  bonus_amount?: number
+  created_at?: string
+  updated_at?: string
+}
+
+export type AttendanceStatus = 'present' | 'absent' | 'half_day' | 'leave' | 'weekly_off'
+
+export interface AttendanceRecord {
+  id?: string
+  employee_id: string
+  date: string
+  status: AttendanceStatus
+  check_in_time?: string | null
+  check_out_time?: string | null
+  working_hours?: number | null
+  remarks?: string | null
+  notes?: string | null
+  created_at?: string
+}
+
+export interface EmployeeAdvance {
+  id: string
+  employee_id: string
+  advance_date: string
+  advance_amount: number
+  payment_method: 'cash' | 'upi' | 'bank_transfer' | 'cheque'
+  reference_number?: string | null
+  remarks?: string | null
+  recorded_by?: string
+  status: 'OUTSTANDING' | 'RECOVERED' | 'PARTIALLY_RECOVERED' | 'WAIVED'
+  recovered_amount: number
+  remaining_amount: number
+  salary_payment_id?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface SalaryPaymentRecord {
+  id: string
+  employee_id: string
+  month: number
+  year: number
+  base_salary: number
+  present_days?: number
+  absent_days?: number
+  half_days?: number
+  calculated_salary: number
+  advance_paid?: number
+  advance_deducted?: number
+  other_deductions?: number
+  net_salary: number
+  payment_date?: string | null
+  payment_mode?: string
+  status: 'paid' | 'pending' | 'cancelled'
+  notes?: string | null
+  remarks?: string | null
+  advance_ids?: string[]
+  created_at?: string
+}

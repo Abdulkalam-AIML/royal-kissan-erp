@@ -34,6 +34,10 @@ export interface BillData {
   sgst_amount?: number
   igst_amount?: number
   discount_amount?: number
+  return_credit?: number
+  leakage_credit?: number
+  credit_adjusted?: number
+  today_dispatch?: number
   total_amount: number
   payment_method?: string
   cash_amount?: number
@@ -189,6 +193,12 @@ export function generateReceiptBuffer(
   }
   if (bill.discount_amount && bill.discount_amount > 0) {
     builder.twoColumn('Discount:', `-Rs.${Number(bill.discount_amount).toFixed(2)}`)
+  }
+  if (bill.return_credit && bill.return_credit > 0) {
+    builder.twoColumn('Prev. Returns Credit:', `-Rs.${Number(bill.return_credit).toFixed(2)}`)
+  }
+  if (bill.leakage_credit && bill.leakage_credit > 0) {
+    builder.twoColumn('Prev. Leakage Credit:', `-Rs.${Number(bill.leakage_credit).toFixed(2)}`)
   }
 
   builder.divider('=')

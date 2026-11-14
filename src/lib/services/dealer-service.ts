@@ -461,3 +461,109 @@ export async function confirmDealerDailySettlement(
   }
 }
 
+export interface DealerUnappliedCreditsSummary {
+  dealerId: string
+  returnCreditTotal: number
+  leakageCreditTotal: number
+  otherCreditTotal: number
+  totalAvailableCredit: number
+  adjustments: DealerCreditAdjustment[]
+}
+
+/**
+ * Retrieves unapplied return and leakage credits available for a dealer.
+ * These credits reference previous dispatches and are ready to be deducted from tomorrow's new bill.
+ */
+export async function getDealerUnappliedCredits(dealerId: string): Promise<DealerUnappliedCreditsSummary> {
+  const supabase = createClient()
+  try {
+    const { data, error } = await supabase
+      .from('dealer_credit_adjustments')
+      .select('*')
+      .eq('dealer_id', dealerId)
+      .or('is_applied.is.null,is_applied.eq.false')
+      .order('adjustment_date', { ascending: true })
+
+    if (error || !data) {
+      return {
+        dealerId,
+        returnCreditTotal: 0,
+        leakageCreditTotal: 0,
+        otherCreditTotal: 0,
+        totalAvailableCredit: 0,
+        adjustments: []
+      }
+    }
+
+    const items = data as DealerCreditAdjustment[]
+    let returnTot = 0
+    let leakageTot = 0
+    let otherTot = 0
+
+    for (const it of items) {
+      const amt = Number(it.amount || 0)
+      if (it.adjustment_type === 'return_credit') {
+        returnTot += amt
+      } else if (it.adjustment_type === 'leakage_credit') {
+        leakageTot += amt
+      } else {
+        otherTot += amt
+      }
+    }
+
+    return {
+      dealerId,
+      returnCreditTotal: round2(returnTot),
+      leakageCreditTotal: round2(leakageTot),
+      otherCreditTotal: round2(otherTot),
+      totalAvailableCredit: round2(returnTot + leakageTot + otherTot),
+      adjustments: items
+    }
+  } catch {
+    return {
+      dealerId,
+      returnCreditTotal: 0,
+      leakageCreditTotal: 0,
+      otherCreditTotal: 0,
+      totalAvailableCredit: 0,
+      adjustments: []
+    }
+  }
+}
+
+/**
+ * Links and applies return/leakage credit notes to a specific finalized invoice,
+ * ensuring they cannot be applied twice or modify yesterday's dispatch.
+ */
+export async function applyDealerCreditsToBill(params: {
+  dealerId: string
+  billId: string
+  invoiceNumber: string
+  creditAdjustmentIds: string[]
+}): Promise<{ success: boolean; totalApplied: number; message?: string }> {
+  if (!params.creditAdjustmentIds || params.creditAdjustmentIds.length === 0) {
+    return { success: true, totalApplied: 0 }
+  }
+
+  const supabase = createClient()
+  try {
+    const { data, error } = await supabase.rpc('apply_dealer_credits_to_bill', {
+      p_dealer_id: params.dealerId,
+      p_bill_id: params.billId,
+      p_invoice_number: params.invoiceNumber,
+      p_credit_adjustment_ids: params.creditAdjustmentIds
+    })
+
+    if (error) {
+      return { success: false, totalApplied: 0, message: error.message }
+    }
+
+    return {
+      success: true,
+      totalApplied: Number(data?.total_credit_applied || 0)
+    }
+  } catch (err: any) {
+    return { success: false, totalApplied: 0, message: err?.message || err }
+  }
+}
+

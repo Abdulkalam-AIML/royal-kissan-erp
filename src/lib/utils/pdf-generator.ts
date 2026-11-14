@@ -194,6 +194,19 @@ export function buildBillPDFDoc(bill: any): { doc: jsPDF; filename: string } {
     }
   }
 
+  const returnCredit = Number(bill.return_credit || 0)
+  const leakageCredit = Number(bill.leakage_credit || 0)
+  if (returnCredit > 0) {
+    summaryY += 4.5
+    doc.text('Prev. Returns Credit:', 130, summaryY)
+    doc.text(`-₹${returnCredit.toFixed(2)}`, 194, summaryY, { align: 'right' })
+  }
+  if (leakageCredit > 0) {
+    summaryY += 4.5
+    doc.text('Prev. Leakage Credit:', 130, summaryY)
+    doc.text(`-₹${leakageCredit.toFixed(2)}`, 194, summaryY, { align: 'right' })
+  }
+
   summaryY += 5
   doc.setDrawColor(24, 24, 27)
   doc.setLineWidth(0.3)

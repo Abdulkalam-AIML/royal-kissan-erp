@@ -16,6 +16,7 @@ export type DataModuleKey =
   | 'routes'
   | 'collections'
   | 'dues'
+  | 'employees'
   | 'attendance'
   | 'salary'
   | 'pricing_rules'
