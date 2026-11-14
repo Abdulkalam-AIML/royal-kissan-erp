@@ -18,7 +18,8 @@ import {
 import {
   validateAndFormatIndianPhone,
   formatInvoiceWhatsAppMessage,
-  sendInvoiceWhatsApp
+  sendInvoiceWhatsApp,
+  validateInvoiceDataCompleteness
 } from '@/lib/services/whatsapp-service'
 import { generateBillPDFBlob, generateBillPDF } from '@/lib/utils/pdf-generator'
 
@@ -75,12 +76,27 @@ export default function WhatsAppShareModal({
   if (!isOpen || !bill) return null
 
   const isDispatchNote = String(bill.bill_type || '').toUpperCase().includes('DISPATCH NOTE')
+  const isDealer = !!(bill.dealer_name || bill.dealer_id || String(bill.bill_type || '').toLowerCase().includes('dealer'))
   const recipientName = bill.dealer_name || bill.customer_name || 'Valued Customer'
   const invoiceNumber = bill.invoice_number || bill.bill_number || `INV-${bill.id ? String(bill.id).slice(0, 8).toUpperCase() : 'NEW'}`
   const invoiceDate = bill.date || bill.dispatch_date || new Date().toISOString().split('T')[0]
-  const grandTotal = Number(bill.grand_total || bill.total_amount || 0)
+  
+  const rawItems = bill.items || bill.bill_items || []
+  const subtotal = Number(bill.subtotal || bill.taxable_amount || bill.total_amount || 0)
+  const discount = Number(bill.discount_amount || 0)
+  const gst = Number(bill.gst_amount || 0)
+  const returnCredit = Number(bill.return_credit || 0)
+  const leakageCredit = Number(bill.leakage_credit || 0)
+  const totalCredits = returnCredit + leakageCredit
+  const grandTotal = Number(bill.grand_total || bill.total_amount || (subtotal - discount + gst - totalCredits))
+  const previousBalance = Number(bill.previous_balance || bill.opening_balance || bill.outstanding_balance || 0)
+  const finalPayable = grandTotal + previousBalance
   const paidAmount = Number(bill.paid_amount || 0)
-  const dueAmount = Number(bill.due_amount || Math.max(0, grandTotal - paidAmount))
+  const dueAmount = Number(bill.due_amount || Math.max(0, finalPayable - paidAmount))
+  const paymentMethod = String(bill.payment_mode || bill.payment_method || 'CASH').toUpperCase()
+
+  // Validate transaction completeness
+  const completeness = validateInvoiceDataCompleteness(bill)
 
   // Detect walk-in customer without registered phone
   const isWalkin = !bill.dealer_name && (
@@ -101,8 +117,17 @@ export default function WhatsAppShareModal({
   }
 
   // Handle direct send via Meta WhatsApp Cloud API with PDF document
-  // Validates the completed phone number ONLY when the user presses Send
+  // Validates data completeness and the completed phone number ONLY when user presses Send
   const handleSendBill = async (force: boolean = false) => {
+    // 1. Transaction completeness check
+    if (!completeness.isValid) {
+      setStatusResult({
+        type: 'error',
+        message: `Cannot transmit incomplete invoice: ${completeness.errors.join('; ')}`
+      })
+      return
+    }
+
     const currentInputVal = phoneInputRef.current?.value ?? recipientPhone
     const trimmed = (currentInputVal || recipientPhone || '').trim()
 
@@ -309,6 +334,30 @@ export default function WhatsAppShareModal({
         {/* Modal Body */}
         <div style={{ padding: '1.25rem 1.5rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           
+          {/* Data Completeness Alert Banner */}
+          {!completeness.isValid && (
+            <div
+              style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid #ef4444',
+                borderRadius: '8px',
+                padding: '0.75rem 1rem',
+                color: '#fca5a5',
+                fontSize: '0.8rem'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 800 }}>
+                <AlertCircle style={{ width: '15px', height: '15px', color: '#ef4444' }} />
+                <span>Incomplete Transaction Record:</span>
+              </div>
+              <ul style={{ margin: '0.35rem 0 0 1.2rem', padding: 0 }}>
+                {completeness.errors.map((err, i) => (
+                  <li key={i}>{err}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Dispatch Note Warning Notice */}
           {isDispatchNote && (
             <div
@@ -356,20 +405,129 @@ export default function WhatsAppShareModal({
               <span style={{ color: '#d4d4d8', fontSize: '0.85rem' }}>{invoiceDate}</span>
             </div>
 
+            {/* Items Purchased Preview */}
+            {rawItems.length > 0 && (
+              <div
+                style={{
+                  marginTop: '0.25rem',
+                  backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                  borderRadius: '6px',
+                  padding: '0.6rem 0.75rem',
+                  border: '1px solid rgba(255, 255, 255, 0.06)'
+                }}
+              >
+                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#fbbf24', marginBottom: '0.35rem', letterSpacing: '0.5px' }}>
+                  PURCHASED ITEMS ({rawItems.length}):
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', maxHeight: '110px', overflowY: 'auto' }}>
+                  {rawItems.map((it: any, idx: number) => {
+                    const name = it.product_name || it.name || 'Product'
+                    const qty = Number(it.quantity) || 1
+                    const unit = it.unit ? ` ${it.unit}` : ''
+                    const rate = Number(it.rate || it.unit_price) || 0
+                    const amt = Number(it.amount || it.total || (qty * rate))
+                    return (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.76rem', color: '#d4d4d8' }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>
+                          {idx + 1}. {name} <span style={{ color: '#a1a1aa' }}>({qty}{unit} × ₹{rate.toFixed(0)})</span>
+                        </span>
+                        <span style={{ fontWeight: 700, color: '#f4f4f5' }}>₹{amt.toFixed(2)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Dealer Dispatch & Return Reconciliation Box */}
+            {(isDealer || totalCredits > 0 || bill.today_dispatch_quantity) && (
+              <div
+                style={{
+                  marginTop: '0.2rem',
+                  backgroundColor: 'rgba(251, 191, 36, 0.07)',
+                  borderRadius: '6px',
+                  padding: '0.6rem 0.75rem',
+                  border: '1px solid rgba(251, 191, 36, 0.2)'
+                }}
+              >
+                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#fbbf24', marginBottom: '0.3rem' }}>
+                  DEALER DISPATCH &amp; RETURN RECONCILIATION:
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#d4d4d8', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#a1a1aa' }}>Today Dispatch Qty:</span>
+                    <strong>{bill.today_dispatch_quantity || rawItems.reduce((acc: number, it: any) => acc + (Number(it.quantity) || 0), 0)} {rawItems[0]?.unit || 'Units'}</strong>
+                  </div>
+                  {bill.original_dispatch_reference && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#a1a1aa' }}>Original Dispatch Ref:</span>
+                      <strong>{bill.original_dispatch_reference}</strong>
+                    </div>
+                  )}
+                  {(bill.returned_quantity > 0 || returnCredit > 0) && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#34d399' }}>
+                      <span>Prev-Day Returns ({bill.returned_quantity || 0} {rawItems[0]?.unit || 'Units'}):</span>
+                      <strong>-₹{returnCredit.toFixed(2)}</strong>
+                    </div>
+                  )}
+                  {(bill.leaked_quantity > 0 || leakageCredit > 0) && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#34d399' }}>
+                      <span>Prev-Day Leakage ({bill.leaked_quantity || 0} {rawItems[0]?.unit || 'Units'}):</span>
+                      <strong>-₹{leakageCredit.toFixed(2)}</strong>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#fbbf24', marginTop: '0.2rem' }}>
+                    <span>Net Dispatch Payable:</span>
+                    <span>₹{grandTotal.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div style={{ height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.06)', margin: '0.25rem 0' }} />
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.85rem', color: '#a1a1aa', fontWeight: 600 }}>Grand Total</span>
-              <span style={{ fontWeight: 800, color: '#f4f4f5', fontSize: '1.05rem' }}>
-                ₹{grandTotal.toFixed(2)}
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem' }}>
-              <span style={{ color: '#34d399' }}>Amount Paid: ₹{paidAmount.toFixed(2)}</span>
-              <span style={{ color: dueAmount > 0 ? '#f87171' : '#34d399', fontWeight: 700 }}>
-                {dueAmount > 0 ? `Remaining Due: ₹${dueAmount.toFixed(2)}` : 'Full Paid'}
-              </span>
+            {/* Financial Rows */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.8rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#a1a1aa' }}>Subtotal:</span>
+                <span style={{ color: '#d4d4d8' }}>₹{subtotal.toFixed(2)}</span>
+              </div>
+              {discount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#34d399' }}>
+                  <span>Discount:</span>
+                  <span>-₹{discount.toFixed(2)}</span>
+                </div>
+              )}
+              {gst > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#d4d4d8' }}>
+                  <span>GST Included:</span>
+                  <span>₹{gst.toFixed(2)}</span>
+                </div>
+              )}
+              {totalCredits > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#34d399' }}>
+                  <span>Return/Leakage Credits:</span>
+                  <span>-₹{totalCredits.toFixed(2)}</span>
+                </div>
+              )}
+              {previousBalance > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#f59e0b' }}>
+                  <span>Previous Outstanding:</span>
+                  <span>₹{previousBalance.toFixed(2)}</span>
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', fontWeight: 800, color: '#fbbf24', marginTop: '0.2rem' }}>
+                <span>Final Payable Amount:</span>
+                <span>₹{finalPayable.toFixed(2)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#34d399', fontSize: '0.8rem' }}>
+                <span>Amount Paid ({paymentMethod}):</span>
+                <span>₹{paidAmount.toFixed(2)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 700, color: dueAmount > 0 ? '#f87171' : '#34d399' }}>
+                <span>Remaining Due:</span>
+                <span>₹{dueAmount.toFixed(2)}</span>
+              </div>
             </div>
           </div>
 
@@ -640,8 +798,9 @@ export default function WhatsAppShareModal({
           {/* Primary Action Button: [ SEND BILL ON WHATSAPP ] */}
           <button
             type="button"
-            disabled={sending}
+            disabled={sending || !completeness.isValid}
             onClick={() => handleSendBill(false)}
+            title={!completeness.isValid ? `Incomplete transaction: ${completeness.errors.join('; ')}` : 'Send bill document on WhatsApp'}
             style={{
               backgroundColor: '#25D366',
               color: '#000',
@@ -650,8 +809,8 @@ export default function WhatsAppShareModal({
               borderRadius: '6px',
               padding: '0.65rem 1.25rem',
               fontSize: '0.9rem',
-              cursor: sending ? 'not-allowed' : 'pointer',
-              opacity: sending ? 0.6 : 1,
+              cursor: sending || !completeness.isValid ? 'not-allowed' : 'pointer',
+              opacity: sending || !completeness.isValid ? 0.5 : 1,
               display: 'flex',
               alignItems: 'center',
               gap: '0.55rem',

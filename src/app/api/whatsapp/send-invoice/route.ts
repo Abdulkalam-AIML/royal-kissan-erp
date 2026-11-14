@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import {
   formatInvoiceWhatsAppMessage,
-  validateAndFormatIndianPhone
+  validateAndFormatIndianPhone,
+  validateInvoiceDataCompleteness
 } from '@/lib/services/whatsapp-service'
 
 export async function POST(req: NextRequest) {
@@ -57,6 +58,36 @@ export async function POST(req: NextRequest) {
         { success: false, message: `Invoice #${invoiceNumber} details not found.` },
         { status: 404 }
       )
+    }
+
+    // Enrich dealer info from dealers table if needed
+    if (fullBill.dealer_id && (!fullBill.dealer_name || !fullBill.dealer_phone)) {
+      const { data: dData } = await supabase
+        .from('dealers')
+        .select('*')
+        .eq('id', fullBill.dealer_id)
+        .maybeSingle()
+
+      if (dData) {
+        fullBill = {
+          ...fullBill,
+          dealer_name: fullBill.dealer_name || dData.name,
+          dealer_phone: fullBill.dealer_phone || dData.phone,
+          dealer_gstin: fullBill.dealer_gstin || dData.gst_number,
+          dealer_address: fullBill.dealer_address || dData.address,
+          previous_balance: fullBill.previous_balance ?? dData.outstanding_amount
+        }
+      }
+    }
+
+    // Validate transaction data completeness before proceeding
+    const completeness = validateInvoiceDataCompleteness(fullBill)
+    if (!completeness.isValid) {
+      return NextResponse.json({
+        success: false,
+        status: 'INCOMPLETE_DATA',
+        message: `Transaction record is incomplete: ${completeness.errors.join('; ')}`
+      }, { status: 422 })
     }
 
     // Check if this is a load dispatch note

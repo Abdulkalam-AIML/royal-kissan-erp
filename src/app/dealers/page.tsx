@@ -936,9 +936,13 @@ export default function DealersPage() {
                         <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.694.075-2.223-.559-1.848-.767-3.037-2.656-3.129-2.78-.093-.123-.746-.991-.746-1.888 0-.898.469-1.339.636-1.52.167-.182.366-.228.487-.228.121 0 .243.002.348.006.111.005.26-.042.407.311.152.365.518 1.265.564 1.357.045.092.076.2.015.322-.061.122-.092.199-.183.307-.091.107-.191.24-.273.322-.091.091-.186.19-.08.373.106.183.473.78 1.016 1.263.699.623 1.288.816 1.472.907.183.092.29.077.397-.046.107-.123.456-.533.578-.716.121-.183.243-.153.407-.092.164.061 1.042.492 1.22.583.178.091.297.137.34.213.045.076.045.441-.099.846z"/>
                       </svg>
                     }
-                    onClick={() => {
+                    onClick={async () => {
                       if (dealerBills.length > 0) {
                         const latestBill = dealerBills[0]
+                        const { data: itemRows } = await supabase.from('bill_items').select('*').eq('bill_id', latestBill.id)
+                        const items = itemRows && itemRows.length > 0 ? itemRows : (latestBill.items || [
+                          { product_name: 'Water Can (20L)', quantity: 1, rate: Number(latestBill.total_amount) || 0, amount: Number(latestBill.total_amount) || 0 }
+                        ])
                         setWhatsAppBill({
                           ...latestBill,
                           dealer_name: selectedDealer.name,
@@ -946,9 +950,7 @@ export default function DealersPage() {
                           dealer_gstin: selectedDealer.gst_number,
                           dealer_address: selectedDealer.address,
                           previous_balance: selectedDealer.outstanding_amount || 0,
-                          items: latestBill.items || [
-                            { product_name: 'Water Can (20L)', quantity: 1, rate: Number(latestBill.total_amount) || 0, amount: Number(latestBill.total_amount) || 0 }
-                          ]
+                          items
                         })
                       } else {
                         setWhatsAppBill({
