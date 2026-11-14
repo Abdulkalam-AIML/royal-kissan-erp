@@ -1,2623 +1,2074 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
+import {
+  Truck,
+  Plus,
+  Play,
+  CheckCircle,
+  Clock,
+  MapPin,
+  Calendar,
+  AlertTriangle,
+  FileText,
+  DollarSign,
+  TrendingUp,
+  UserCheck,
+  Send,
+  Phone,
+  Edit,
+  Eye,
+  RefreshCw,
+  X,
+  Package,
+  Layers,
+  Search,
+  Check,
+  Fuel,
+  Receipt,
+  Download,
+  Share2
+} from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { emitDataChange, useDataSyncListener } from '@/lib/events/data-sync'
-import { saveUnifiedBill } from '@/lib/services/billing-service'
-import { resolveProductRate, RateSource, round2 } from '@/lib/pricing/pricing-engine'
-import { fetchPricingRules } from '@/lib/services/pricing-service'
-import type { PricingRule } from '@/lib/pricing/pricing-engine'
-import ReceiptPreviewModal from '@/components/printer/ReceiptPreviewModal'
+import { formatCurrency } from '@/lib/utils/formatters'
+import { DataTable, Column } from '@/components/ui/DataTable'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Input, Select } from '@/components/ui/Input'
 import WhatsAppShareModal from '@/components/whatsapp/WhatsAppShareModal'
-import { BillData } from '@/lib/printer/receipt'
+import ReceiptPreviewModal from '@/components/printer/ReceiptPreviewModal'
 import {
-  issueDriverLoad,
-  getDriverLoads,
-  settleDriverRoute,
-  getDriverSettlements
+  getDrivers,
+  saveDriver,
+  startDriverRoute,
+  getActiveRoutes,
+  getCompletedRoutes,
+  recordRouteCustomerSale,
+  updateRouteReturnsAndLeakage,
+  recordRouteExpense,
+  finalizeRouteAndGenerateBills,
+  getDriverDashboardStats,
+  DriverWithStats,
+  RouteDispatchRecord,
+  RouteLoadItem,
+  RouteCustomerSale,
+  DriverDashboardStats
 } from '@/lib/services/driver-service'
-import type {
-  DriverLoadDispatchWithItems,
-  DriverRouteSettlementWithItems
-} from '@/lib/types/database'
+import { generateBillPDF } from '@/lib/utils/pdf-generator'
 
-// Fallback preseeded data for drivers
-const FALLBACK_DRIVERS = [
-  { id: 'b097b6a9-8395-4eb8-a720-3057e07662c1', name: 'Nagaraju', phone: '8184918757', salary: 12000, is_active: true },
-  { id: '70c293e7-bae8-4de2-a505-edccfd35f761', name: 'Driver-2', phone: '9999988888', salary: 14000, is_active: true }
-]
+export default function DriversAndRoutesPage() {
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'active_routes' | 'start_route' | 'completed_routes' | 'drivers'>('active_routes')
 
-const FALLBACK_ROUTES = [
-  { id: 'a1111111-1111-1111-1111-111111111111', name: 'Local Route', driver_id: 'b097b6a9-8395-4eb8-a720-3057e07662c1', area: 'Local Area' },
-  { id: 'a2222222-2222-2222-2222-222222222222', name: 'Raghavapuram Route', driver_id: '70c293e7-bae8-4de2-a505-edccfd35f761', area: 'Raghavapuram' },
-  { id: 'a3333333-3333-3333-3333-333333333333', name: 'Mukkinavarigudem Route', driver_id: '70c293e7-bae8-4de2-a505-edccfd35f761', area: 'Mukkinavarigudem' },
-  { id: 'a4444444-4444-4444-4444-444444444444', name: 'Dammapeta Route', driver_id: '70c293e7-bae8-4de2-a505-edccfd35f761', area: 'Dammapeta' }
-]
+  // Data States
+  const [dashboardStats, setDashboardStats] = useState<DriverDashboardStats>({
+    totalDrivers: 0,
+    availableDrivers: 0,
+    driversOnRoute: 0,
+    activeRoutesCount: 0,
+    completedRoutesToday: 0,
+    todayRouteSales: 0,
+    todayCollections: 0,
+    pendingSettlements: 0
+  })
+  const [drivers, setDrivers] = useState<DriverWithStats[]>([])
+  const [activeRoutes, setActiveRoutes] = useState<RouteDispatchRecord[]>([])
+  const [completedRoutes, setCompletedRoutes] = useState<RouteDispatchRecord[]>([])
+  const [products, setProducts] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
-const FALLBACK_CUSTOMERS: Record<string, Array<{ name: string; section: 'cans' | 'bags' | 'bottles'; default_qty: number; default_rate: number; product_name: string }>> = {
-  // LOCAL ROUTE
-  'a1111111-1111-1111-1111-111111111111': [
-    { name: 'Bismillah Daba', section: 'cans', default_qty: 10, default_rate: 15.00, product_name: 'Water Can (20L)' },
-    { name: 'Vamsi Mess', section: 'cans', default_qty: 10, default_rate: 15.00, product_name: 'Water Can (20L)' },
-    { name: 'Lithu', section: 'cans', default_qty: 5, default_rate: 15.00, product_name: 'Water Can (20L)' },
-    { name: 'Tiffin Center-1', section: 'cans', default_qty: 4, default_rate: 15.00, product_name: 'Water Can (20L)' },
-    { name: 'Tea Stall', section: 'cans', default_qty: 5, default_rate: 15.00, product_name: 'Water Can (20L)' },
-    { name: 'Juice Point', section: 'cans', default_qty: 10, default_rate: 15.00, product_name: 'Water Can (20L)' },
-    { name: 'Surendra Juice Point', section: 'cans', default_qty: 10, default_rate: 20.00, product_name: 'Water Can (20L)' },
-    { name: 'House Point 1', section: 'cans', default_qty: 1, default_rate: 30.00, product_name: 'Water Can (20L)' },
-    { name: 'House Point 2', section: 'cans', default_qty: 1, default_rate: 30.00, product_name: 'Water Can (20L)' },
-    { name: 'House Point 3', section: 'cans', default_qty: 1, default_rate: 30.00, product_name: 'Water Can (20L)' },
-    { name: 'House Point 4', section: 'cans', default_qty: 1, default_rate: 30.00, product_name: 'Water Can (20L)' },
-    { name: 'House Point 5', section: 'cans', default_qty: 1, default_rate: 30.00, product_name: 'Water Can (20L)' },
-    { name: 'SBI', section: 'cans', default_qty: 1, default_rate: 0, product_name: 'Water Can (20L)' },
-    { name: 'Fire Station', section: 'cans', default_qty: 1, default_rate: 0, product_name: 'Water Can (20L)' },
-    { name: 'Amaravati Wines', section: 'bags', default_qty: 5, default_rate: 75.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Balaji Wines', section: 'bags', default_qty: 5, default_rate: 80.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Shop 1', section: 'bags', default_qty: 5, default_rate: 100.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Bala Sundari Shop', section: 'bags', default_qty: 5, default_rate: 95.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Shop 2', section: 'bags', default_qty: 5, default_rate: 90.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Shop 3', section: 'bags', default_qty: 5, default_rate: 90.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Shop 4', section: 'bags', default_qty: 5, default_rate: 90.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Route Sale', section: 'bags', default_qty: 10, default_rate: 100.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Healthy Plate', section: 'bottles', default_qty: 5, default_rate: 140.00, product_name: '500ml Bottle Case' },
-    { name: 'Bismillah Daba', section: 'bottles', default_qty: 5, default_rate: 145.00, product_name: '500ml Bottle Case' },
-    { name: 'Bismillah Daba', section: 'bottles', default_qty: 5, default_rate: 130.00, product_name: '1L Bottle Case' },
-    { name: 'Tiffin Shop', section: 'bottles', default_qty: 5, default_rate: 145.00, product_name: '500ml Bottle Case' },
-    { name: 'Tiffin Shop', section: 'bottles', default_qty: 5, default_rate: 130.00, product_name: '1L Bottle Case' },
-    { name: 'Bottle Shop 1', section: 'bottles', default_qty: 5, default_rate: 140.00, product_name: '500ml Bottle Case' },
-    { name: 'Bottle Shop 4', section: 'bottles', default_qty: 5, default_rate: 150.00, product_name: '500ml Bottle Case' },
-    { name: 'Bottle Shop 4', section: 'bottles', default_qty: 5, default_rate: 135.00, product_name: '1L Bottle Case' }
-  ],
-  // RAGHAVAPURAM ROUTE
-  'a2222222-2222-2222-2222-222222222222': [
-    { name: 'Raghavapuram Wines', section: 'bags', default_qty: 10, default_rate: 80.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Gandicherla', section: 'bags', default_qty: 8, default_rate: 90.00, product_name: 'Bags (100 Pack)' },
-    { name: 'DN Rao Peta', section: 'bags', default_qty: 8, default_rate: 90.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Route Sale-1', section: 'bags', default_qty: 10, default_rate: 100.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Route Sale-2', section: 'bags', default_qty: 10, default_rate: 90.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Raghavapuram Can Customer', section: 'cans', default_qty: 5, default_rate: 30.00, product_name: 'Water Can (20L)' },
-    { name: 'Raghavapuram Bottle', section: 'bottles', default_qty: 5, default_rate: 120.00, product_name: '1L Bottle Case' },
-    { name: 'Raghavapuram Bottle', section: 'bottles', default_qty: 5, default_rate: 140.00, product_name: '500ml Bottle Case' }
-  ],
-  // MAKKINAVARIGUDEM ROUTE
-  'a3333333-3333-3333-3333-333333333333': [
-    { name: 'Wine Shop', section: 'bags', default_qty: 10, default_rate: 75.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Aunty Shop', section: 'bags', default_qty: 10, default_rate: 80.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Wine Shop', section: 'bottles', default_qty: 5, default_rate: 110.00, product_name: '1L Bottle Case' },
-    { name: 'Aunty Shop', section: 'bottles', default_qty: 5, default_rate: 120.00, product_name: '1L Bottle Case' }
-  ],
-  // DAMMAPETA ROUTE
-  'a4444444-4444-4444-4444-444444444444': [
-    { name: 'Wine Shop 1', section: 'bags', default_qty: 10, default_rate: 75.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Wine Shop 2', section: 'bags', default_qty: 10, default_rate: 80.00, product_name: 'Bags (100 Pack)' },
-    { name: 'Wine Shop 3', section: 'bags', default_qty: 10, default_rate: 75.00, product_name: 'Bags (100 Pack)' }
-  ]
-}
+  // Start Route Form State
+  const [startRouteForm, setStartRouteForm] = useState({
+    route_name: '',
+    driver_id: '',
+    vehicle_number: '',
+    dispatch_date: new Date().toISOString().split('T')[0],
+    start_time: '08:30 AM',
+    start_location: 'Main Factory Plant, Guntur',
+    destination_areas: '',
+    notes: '',
+    items: [
+      { product_id: '', product_name: 'Water Can (20L)', unit: 'cans', loaded_quantity: 100, rate: 15, amount: 1500 }
+    ]
+  })
+  const [startingRoute, setStartingRoute] = useState(false)
 
-export default function DriversPage() {
-  const [currentView, setCurrentView] = useState<'drivers' | 'profile' | 'categories' | 'customers'>('drivers')
-  const [drivers, setDrivers] = useState<any[]>(FALLBACK_DRIVERS)
-  const [routes, setRoutes] = useState<any[]>(FALLBACK_ROUTES)
-  const [selectedDriver, setSelectedDriver] = useState<any | null>(null)
+  // Active Route Sub-Modals
+  const [selectedActiveRoute, setSelectedActiveRoute] = useState<RouteDispatchRecord | null>(null)
   
-  // Tabs inside Driver Profile
-  const [activeTab, setActiveTab] = useState<
-    'load_dispatches' | 'route_settlement' | 'local' | 'non-local' | 'settlement_history' | 'collections' | 'dues' | 'daily' | 'monthly' | 'expenses'
-  >('load_dispatches')
-  
-  const [selectedRoute, setSelectedRoute] = useState<any | null>(null)
-  const [selectedCategory, setSelectedCategory] = useState<'cans' | 'bags' | 'bottles' | null>(null)
-  const [customers, setCustomers] = useState<any[]>([])
-  
-  // Billing form state
-  const [billingCustomer, setBillingCustomer] = useState<any | null>(null)
-  const [billingForm, setBillingForm] = useState<{
-    qty: number
-    rate: number
-    cash: number
-    upi: number
-    product_name: string
-    rate_source?: string
-    rate_rule_id?: string | null
-  }>({
-    qty: 0,
-    rate: 0,
-    cash: 0,
-    upi: 0,
+  // 1. Customer Sale Modal State
+  const [showSaleModal, setShowSaleModal] = useState(false)
+  const [saleForm, setSaleForm] = useState({
+    customer_name: '',
+    customer_phone: '',
     product_name: 'Water Can (20L)',
-    rate_source: 'Route Rate',
-    rate_rule_id: null
+    quantity: 10,
+    unit: 'cans',
+    rate: 15,
+    discount: 0,
+    gst_amount: 0,
+    payment_type: 'CASH' as 'CASH' | 'UPI' | 'CREDIT',
+    cash_paid: 150,
+    upi_paid: 0,
+    remarks: ''
   })
-  const [pricingRules, setPricingRules] = useState<PricingRule[]>([])
-  const [billingModalOpen, setBillingModalOpen] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [successData, setSuccessData] = useState<any | null>(null)
+  const [savingSale, setSavingSale] = useState(false)
 
-  // Expense logging form state
+  // 2. Returns & Leakage Modal State
+  const [showReturnsModal, setShowReturnsModal] = useState(false)
+  const [returnsItemsState, setReturnsItemsState] = useState<Array<{ id: string; product_name: string; returned_quantity: number; leaked_quantity: number }>>([])
+  const [savingReturns, setSavingReturns] = useState(false)
+
+  // 3. Add Expense Modal State
+  const [showExpenseModal, setShowExpenseModal] = useState(false)
   const [expenseForm, setExpenseForm] = useState({
-    fuel: 0,
-    bata: 0,
-    other: 0,
-    remarks: '',
-    vehicle: ''
+    fuel_charges: 300,
+    driver_bata: 200,
+    other_expenses: 0,
+    remarks: 'Route transit expenses'
   })
-  const [expenseLoading, setExpenseLoading] = useState(false)
-  
-  // Driver statistics
-  const [driverStats, setDriverStats] = useState<Record<string, { 
-    collection: number, due: number, sales: number, mSales: number, mCollection: number 
-  }>>({
-    'b097b6a9-8395-4eb8-a720-3057e07662c1': { collection: 2500, due: 800, sales: 3300, mSales: 48000, mCollection: 42000 },
-    '70c293e7-bae8-4de2-a505-edccfd35f761': { collection: 0, due: 0, sales: 0, mSales: 0, mCollection: 0 }
+  const [savingExpense, setSavingExpense] = useState(false)
+
+  // 4. End Route Reconciliation Modal State
+  const [showReconciliationModal, setShowReconciliationModal] = useState(false)
+  const [reconciliationItems, setReconciliationItems] = useState<any[]>([])
+  const [discrepancyReason, setDiscrepancyReason] = useState('')
+  const [finalizingRoute, setFinalizingRoute] = useState(false)
+
+  // 5. Driver Profile / Add Modal State
+  const [showDriverModal, setShowDriverModal] = useState(false)
+  const [editingDriver, setEditingDriver] = useState<DriverWithStats | null>(null)
+  const [driverForm, setDriverForm] = useState({
+    name: '',
+    phone: '',
+    address: '',
+    assigned_vehicle: 'Tata Ace 407',
+    vehicle_number: 'AP 16 AB 1234',
+    license_number: '',
+    joining_date: new Date().toISOString().split('T')[0],
+    salary: 18000,
+    employment_status: 'ACTIVE',
+    status: 'AVAILABLE' as 'AVAILABLE' | 'ON_ROUTE' | 'INACTIVE'
   })
+  const [savingDriver, setSavingDriver] = useState(false)
 
-  // History tables
-  const [dailySalesList, setDailySalesList] = useState<any[]>([])
-  const [monthlySalesList, setMonthlySalesList] = useState<any[]>([])
-  const [expensesList, setExpensesList] = useState<any[]>([])
+  // 6. View Route Details / Invoices Modal
+  const [viewRouteRecord, setViewRouteRecord] = useState<RouteDispatchRecord | null>(null)
 
-  // =========================================================================
-  // OFFICIAL DRIVER LOAD DISPATCHES & ROUTE SETTLEMENT STATE (PARTS 5 & 6)
-  // =========================================================================
-  const [driverLoadsList, setDriverLoadsList] = useState<DriverLoadDispatchWithItems[]>([])
-  const [driverSettlementsList, setDriverSettlementsList] = useState<DriverRouteSettlementWithItems[]>([])
-  const [previewBill, setPreviewBill] = useState<BillData | null>(null)
+  // WhatsApp and Receipt Modals
   const [whatsAppBill, setWhatsAppBill] = useState<any | null>(null)
-
-  // Load Issue Form State
-  const [showIssueModal, setShowIssueModal] = useState<boolean>(false)
-  const [loadDispatchDate, setLoadDispatchDate] = useState<string>(new Date().toISOString().split('T')[0])
-  const [loadVehicle, setLoadVehicle] = useState<string>('AP 16 AB 1234')
-  const [loadRouteId, setLoadRouteId] = useState<string>('')
-  const [loadStaff, setLoadStaff] = useState<string>('Operations Admin')
-  const [loadNotes, setLoadNotes] = useState<string>('')
-  const [loadIssuing, setLoadIssuing] = useState<boolean>(false)
-  const [loadItems, setLoadItems] = useState<Array<{
-    product_name: string
-    unit: string
-    loaded_quantity: number
-    rate: number
-    amount: number
-  }>>([
-    { product_name: 'Water Can (20L)', unit: 'cans', loaded_quantity: 50, rate: 30, amount: 1500 },
-    { product_name: 'Bags (100 Pack)', unit: 'bags', loaded_quantity: 30, rate: 80, amount: 2400 },
-    { product_name: '500ml Bottle Case', unit: 'cases', loaded_quantity: 10, rate: 140, amount: 1400 },
-    { product_name: '1L Bottle Case', unit: 'cases', loaded_quantity: 10, rate: 120, amount: 1200 }
-  ])
-
-  // Route Settlement State (4-Way Reconciliation)
-  const [selectedDispatchToSettle, setSelectedDispatchToSettle] = useState<DriverLoadDispatchWithItems | null>(null)
-  const [settlementDate, setSettlementDate] = useState<string>(new Date().toISOString().split('T')[0])
-  const [settlementRows, setSettlementRows] = useState<Array<{
-    product_name: string
-    loaded_qty: number
-    sold_qty: number
-    returned_good_qty: number
-    leaked_damaged_qty: number
-    rate: number
-    condition: string
-  }>>([])
-  const [settlementCash, setSettlementCash] = useState<number>(0)
-  const [settlementUpi, setSettlementUpi] = useState<number>(0)
-  const [settlementCredit, setSettlementCredit] = useState<number>(0)
-  const [settlementFuel, setSettlementFuel] = useState<number>(0)
-  const [settlementBata, setSettlementBata] = useState<number>(0)
-  const [settlementOtherExp, setSettlementOtherExp] = useState<number>(0)
-  const [settlementExpenseNotes, setSettlementExpenseNotes] = useState<string>('')
-  const [settlementActualHandover, setSettlementActualHandover] = useState<number>(0)
-  const [settlementDiscrepancyReason, setSettlementDiscrepancyReason] = useState<string>('')
-  const [settlingRoute, setSettlingRoute] = useState<boolean>(false)
-  const [autoGenerateCustomerBills, setAutoGenerateCustomerBills] = useState<boolean>(true)
-
-  // Legacy state preserved for temporary runs
-  const [dailyAssignment, setDailyAssignment] = useState<any | null>(null)
-  const [assignRouteId, setAssignRouteId] = useState<string>('')
-  const [assignVehicle, setAssignVehicle] = useState<string>('AP 16 AB 1234')
-  const [assigning, setAssigning] = useState<boolean>(false)
-  const [dispatchItems, setDispatchItems] = useState<Record<string, number>>({
-    'Water Can (20L)': 50,
-    'Cooling Can (20L)': 20,
-    'Bags (100 Pack)': 30,
-    '500ml Bottle Case': 15,
-    '1L Bottle Case': 15,
-    '2L Bottle Case': 5
-  })
-  const [activeDispatch, setActiveDispatch] = useState<any | null>(null)
-  const [savingDispatch, setSavingDispatch] = useState<boolean>(false)
-  const [showDispatchForm, setShowDispatchForm] = useState<boolean>(false)
-  const [savingRouteRun, setSavingRouteRun] = useState<boolean>(false)
+  const [previewBill, setPreviewBill] = useState<any | null>(null)
 
   const supabase = createClient()
 
-  useEffect(() => {
-    loadDriversAndRoutes()
-    fetchPricingRules().then(rules => {
-      if (rules && rules.length > 0) setPricingRules(rules)
-    })
-  }, [])
-
-  useDataSyncListener(['drivers', 'bills', 'stock', 'sales'], () => {
-    if (selectedDriver) {
-      loadProfileHistory(selectedDriver.id)
-    }
+  // Live Sync Listeners
+  useDataSyncListener(['drivers', 'routes', 'bills', 'sales', 'stock'], () => {
+    loadAllData()
   })
 
-  async function loadDriversAndRoutes() {
-    try {
-      const today = new Date().toISOString().split('T')[0]
-      const currentMonth = new Date().getMonth() + 1
-      const currentYear = new Date().getFullYear()
-      const firstOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`
+  useEffect(() => {
+    loadAllData()
+  }, [])
 
-      const [driversRes, routesRes, todaySalesRes, monthSalesRes] = await Promise.all([
-        supabase.from('drivers').select('id, name, phone, salary, is_active').order('name'),
-        supabase.from('routes').select('id, name, driver_id, area').order('name'),
-        supabase.from('route_sales').select('driver_id, total_amount, cash_paid, upi_paid, due_amount').eq('sale_date', today),
-        supabase.from('route_sales').select('driver_id, total_amount, cash_paid, upi_paid, due_amount').gte('sale_date', firstOfMonth)
+  async function loadAllData() {
+    setLoading(true)
+    try {
+      const [stats, drvs, actv, cmpl, { data: prods }] = await Promise.all([
+        getDriverDashboardStats(),
+        getDrivers(),
+        getActiveRoutes(),
+        getCompletedRoutes(),
+        supabase.from('products').select('id, name, unit, default_rate, stock_quantity').order('name')
       ])
 
-      const dbDrivers = driversRes.data
-      const dbRoutes = routesRes.data
-      const todaySales = todaySalesRes.data
-      const monthSales = monthSalesRes.data
-      
-      if (dbDrivers && dbDrivers.length > 0) {
-        const filteredDrivers = dbDrivers.filter(d => 
-          d.name.toLowerCase().includes('nagaraju') || d.name.toLowerCase().includes('driver-2')
-        )
-        setDrivers(filteredDrivers)
-      }
-      if (dbRoutes && dbRoutes.length > 0) setRoutes(dbRoutes)
-
-      const statsMap = {
-        'b097b6a9-8395-4eb8-a720-3057e07662c1': { collection: 2500, due: 800, sales: 3300, mSales: 48000, mCollection: 42000 },
-        '70c293e7-bae8-4de2-a505-edccfd35f761': { collection: 0, due: 0, sales: 0, mSales: 0, mCollection: 0 }
-      } as any
-
-      if (todaySales) {
-        todaySales.forEach((s: any) => {
-          const dId = s.driver_id || 'b097b6a9-8395-4eb8-a720-3057e07662c1'
-          if (!statsMap[dId]) statsMap[dId] = { collection: 0, due: 0, sales: 0, mSales: 0, mCollection: 0 }
-          
-          const total = Number(s.total_amount) || 0
-          const due = Number(s.due_amount) || 0
-          const coll = (Number(s.cash_paid) || 0) + (Number(s.upi_paid) || 0)
-
-          statsMap[dId].sales += total
-          statsMap[dId].due += due
-          statsMap[dId].collection += coll
-        })
-      }
-
-      if (monthSales) {
-        monthSales.forEach((s: any) => {
-          const dId = s.driver_id || 'b097b6a9-8395-4eb8-a720-3057e07662c1'
-          if (!statsMap[dId]) statsMap[dId] = { collection: 0, due: 0, sales: 0, mSales: 0, mCollection: 0 }
-          
-          const total = Number(s.total_amount) || 0
-          const coll = (Number(s.cash_paid) || 0) + (Number(s.upi_paid) || 0)
-
-          statsMap[dId].mSales += total
-          statsMap[dId].mCollection += coll
-        })
-      }
-
-      setDriverStats(statsMap)
-    } catch (e) {
-      console.error('Error fetching driver info:', e)
-    }
-  }
-
-  async function loadRouteCustomers(routeId: string) {
-    try {
-      const { data: dbCustomers } = await supabase
-        .from('route_customers')
-        .select('*')
-        .eq('route_id', routeId)
-        .eq('is_active', true)
-        .order('sort_order', { ascending: true })
-
-      if (dbCustomers && dbCustomers.length > 0) {
-        const mapped = dbCustomers.map(c => ({
-          id: c.id,
-          name: c.customer_name,
-          section: c.section || 'cans',
-          default_qty: Number(c.default_quantity) || 1,
-          default_rate: Number(c.default_rate) || 0,
-          product_name: c.default_product || (c.section === 'bags' ? 'Bags (100 Pack)' : c.section === 'bottles' ? '500ml Bottle Case' : 'Water Can (20L)'),
-          qty_entered: Number(c.default_quantity) || 1,
-          rate_entered: Number(c.default_rate) || 0,
-          cash_paid: 0,
-          upi_paid: 0,
-          returned_qty: 0,
-          leaked_qty: 0,
-          due_amount: (Number(c.default_quantity) || 1) * (Number(c.default_rate) || 0)
-        }))
-        setCustomers(mapped)
-      } else {
-        const defaultList = FALLBACK_CUSTOMERS[routeId] || FALLBACK_CUSTOMERS['a1111111-1111-1111-1111-111111111111']
-        const mapped = defaultList.map((c, i) => ({
-          id: `temp-${routeId}-${i}`,
-          name: c.name,
-          section: c.section,
-          default_qty: c.default_qty,
-          default_rate: c.default_rate,
-          product_name: c.product_name,
-          qty_entered: c.default_qty,
-          rate_entered: c.default_rate,
-          due_amount: c.default_qty * c.default_rate,
-          cash_paid: 0,
-          upi_paid: 0,
-          returned_qty: 0,
-          leaked_qty: 0
-        }))
-        setCustomers(mapped)
-      }
-    } catch (e) {
-      console.error('Error loading route customers:', e)
-    }
-  }
-
-  async function loadProfileHistory(driverId: string) {
-    try {
-      const today = new Date().toISOString().split('T')[0]
-      const currentMonth = new Date().getMonth() + 1
-      const currentYear = new Date().getFullYear()
-      const firstOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`
-
-      const [assignRes, dispRes, dSalesRes, mSalesRes, expRes, loads, settlements] = await Promise.all([
-        supabase.from('daily_route_assignments').select('*, routes(id, name, area)').eq('driver_id', driverId).eq('date', today).maybeSingle(),
-        supabase.from('route_dispatches').select('*').eq('driver_id', driverId).eq('date', today).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-        supabase.from('route_sales').select('id, invoice_number, customer_name, product_name, quantity, rate, total_amount, cash_paid, upi_paid, due_amount, payment_status, sale_date').eq('driver_id', driverId).eq('sale_date', today),
-        supabase.from('route_sales').select('id, invoice_number, customer_name, product_name, quantity, rate, total_amount, cash_paid, upi_paid, due_amount, payment_status, sale_date').eq('driver_id', driverId).gte('sale_date', firstOfMonth),
-        supabase.from('route_expenses').select('id, expense_date, fuel_charges, driver_bata, other_expenses, notes, created_at').eq('driver_id', driverId).order('created_at', { ascending: false }),
-        getDriverLoads(driverId),
-        getDriverSettlements(driverId)
-      ])
-
-      setDriverLoadsList(loads)
-      setDriverSettlementsList(settlements)
-
-      // Auto-select latest open dispatch if available
-      const openLoad = loads.find(l => l.status === 'ISSUED')
-      if (openLoad && !selectedDispatchToSettle) {
-        initSettlementForDispatch(openLoad)
-      }
-
-      const assignData = assignRes.data
-      const dispData = dispRes.data
-      const dSales = dSalesRes.data
-      const mSales = mSalesRes.data
-      const expenses = expRes.data
-
-      setDailyAssignment(assignData || null)
-      setActiveDispatch(dispData || null)
-      setDailySalesList(dSales || [])
-      setMonthlySalesList(mSales || [])
-      setExpensesList(expenses || [])
-
-      if (assignData) {
-        setAssignVehicle(assignData.vehicle_number || 'AP 16 AB 1234')
-        setAssignRouteId(assignData.route_id || '')
-        
-        const routeObj = routes.find(r => r.id === assignData.route_id) || assignData.routes
-        setSelectedRoute(routeObj)
-        loadRouteCustomers(assignData.route_id)
-      } else {
-        const firstDriverRoute = routes.find(r => r.driver_id === driverId)
-        if (firstDriverRoute) {
-          setAssignRouteId(firstDriverRoute.id)
-          setSelectedRoute(firstDriverRoute)
-          loadRouteCustomers(firstDriverRoute.id)
-        }
-      }
-    } catch (e) {
-      console.error('Error loading driver profile history:', e)
-    }
-  }
-
-  const handleDriverSelect = (driver: any) => {
-    setSelectedDriver(driver)
-    loadProfileHistory(driver.id)
-    setCurrentView('profile')
-    setActiveTab('load_dispatches')
-  }
-
-  const handleRouteSelect = async (route: any) => {
-    setSelectedRoute(route)
-    setAssignRouteId(route.id)
-    await loadRouteCustomers(route.id)
-    setCurrentView('categories')
-  }
-
-  const handleCategorySelect = (category: 'cans' | 'bags' | 'bottles') => {
-    setSelectedCategory(category)
-    setCurrentView('customers')
-  }
-
-  // -------------------------------------------------------------------------
-  // ACTION: ISSUE DRIVER LOAD (PART 5 — STEP 1)
-  // Deducts stock from warehouse inventory, generates Load Dispatch Note
-  // -------------------------------------------------------------------------
-  const handleIssueDriverLoad = async () => {
-    if (!selectedDriver) return
-    const validItems = loadItems.filter(it => it.loaded_quantity > 0)
-    if (validItems.length === 0) {
-      alert('⚠️ Please specify at least one product with quantity > 0.')
-      return
-    }
-
-    setLoadIssuing(true)
-    const selectedRouteObj = routes.find(r => r.id === loadRouteId)
-
-    const res = await issueDriverLoad({
-      driver_id: selectedDriver.id,
-      driver_name: selectedDriver.name,
-      vehicle_number: loadVehicle || 'AP 16 AB 1234',
-      route_id: loadRouteId || null,
-      route_name: selectedRouteObj?.name || null,
-      dispatch_date: loadDispatchDate,
-      created_by: loadStaff || 'Operations Admin',
-      notes: loadNotes,
-      items: validItems.map(it => ({
-        product_name: it.product_name,
-        unit: it.unit,
-        loaded_quantity: it.loaded_quantity,
-        rate: it.rate,
-        amount: round2(it.loaded_quantity * it.rate)
-      }))
-    })
-
-    setLoadIssuing(false)
-
-    if (res.success && res.dispatch) {
-      alert(`✅ Driver Load Dispatch #${res.dispatch.dispatch_number} Issued!\nWarehouse inventory has been deducted atomically.`)
-      setShowIssueModal(false)
-      loadProfileHistory(selectedDriver.id)
-
-      // Prompt to preview/print Load Dispatch Note
-      printLoadDispatchNote(res.dispatch)
-    } else {
-      alert(`❌ Failed to issue driver load: ${res.message}`)
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // ACTION: INITIALIZE ROUTE SETTLEMENT FOR A DISPATCH
-  // -------------------------------------------------------------------------
-  function initSettlementForDispatch(dispatch: DriverLoadDispatchWithItems) {
-    setSelectedDispatchToSettle(dispatch)
-    const initialRows = (dispatch.items || []).map(it => ({
-      product_name: it.product_name,
-      loaded_qty: Number(it.loaded_quantity) || 0,
-      sold_qty: Number(it.loaded_quantity) || 0,
-      returned_good_qty: 0,
-      leaked_damaged_qty: 0,
-      rate: Number(it.rate) || 0,
-      condition: 'good'
-    }))
-    setSettlementRows(initialRows)
-    
-    // Estimate collection from sold quantity
-    const totalEst = initialRows.reduce((s, r) => s + (r.sold_qty * r.rate), 0)
-    setSettlementCash(totalEst)
-    setSettlementUpi(0)
-    setSettlementCredit(0)
-    setSettlementActualHandover(totalEst)
-    setSettlementDate(new Date().toISOString().split('T')[0])
-  }
-
-  // -------------------------------------------------------------------------
-  // ACTION: CONFIRM ROUTE SETTLEMENT & 4-WAY RECONCILIATION (PART 5 — STEPS 3 & 4)
-  // -------------------------------------------------------------------------
-  const handleConfirmRouteSettlement = async () => {
-    if (!selectedDispatchToSettle || !selectedDriver) return
-
-    // 1. Verify 4-way quantity conservation
-    for (const r of settlementRows) {
-      const accounted = Number(r.sold_qty) + Number(r.returned_good_qty) + Number(r.leaked_damaged_qty)
-      if (accounted > Number(r.loaded_qty)) {
-        alert(`❌ Validation error for ${r.product_name}:\nAccounted quantity (${accounted}) exceeds loaded quantity (${r.loaded_qty})!`)
-        return
-      }
-    }
-
-    const totalLoaded = settlementRows.reduce((s, r) => s + Number(r.loaded_qty), 0)
-    const totalSold = settlementRows.reduce((s, r) => s + Number(r.sold_qty), 0)
-    const totalReturned = settlementRows.reduce((s, r) => s + Number(r.returned_good_qty), 0)
-    const totalLeaked = settlementRows.reduce((s, r) => s + Number(r.leaked_damaged_qty), 0)
-    const totalUnaccounted = totalLoaded - (totalSold + totalReturned + totalLeaked)
-
-    const totalExpenses = round2(Number(settlementFuel) + Number(settlementBata) + Number(settlementOtherExp))
-    const expectedCollection = round2(Number(settlementCash) + Number(settlementUpi))
-    const expectedHandover = round2(Math.max(0, expectedCollection - totalExpenses))
-    const actualHandover = round2(Number(settlementActualHandover))
-    const collectionDiff = round2(actualHandover - expectedHandover)
-
-    if ((totalUnaccounted > 0 || Math.abs(collectionDiff) > 0) && !settlementDiscrepancyReason.trim()) {
-      alert(`⚠️ Discrepancy detected:\n- Unaccounted Stock: ${totalUnaccounted} units\n- Collection Difference: ₹${collectionDiff}\n\nPlease enter an explanation in Discrepancy Reason before confirming.`)
-      return
-    }
-
-    setSettlingRoute(true)
-
-    // Optional customer sales generated at route settlement
-    const customerSalesPayload = autoGenerateCustomerBills ? customers.filter(c => (Number(c.qty_entered) || 0) > 0).map(c => ({
-      customer_name: c.name,
-      product_name: c.product_name,
-      quantity: Number(c.qty_entered) || 1,
-      rate: Number(c.rate_entered) || 0,
-      total_amount: (Number(c.qty_entered) || 1) * (Number(c.rate_entered) || 0),
-      paid_amount: (Number(c.cash_paid) || 0) + (Number(c.upi_paid) || 0),
-      payment_method: (Number(c.cash_paid) || 0) > 0 && (Number(c.upi_paid) || 0) > 0 ? 'cash_upi' : (Number(c.upi_paid) || 0) > 0 ? 'upi' : 'cash',
-      cash_amount: Number(c.cash_paid) || 0,
-      upi_amount: Number(c.upi_paid) || 0
-    })) : []
-
-    const res = await settleDriverRoute({
-      load_dispatch_id: selectedDispatchToSettle.id,
-      driver_id: selectedDriver.id,
-      route_id: selectedDispatchToSettle.route_id,
-      settlement_date: settlementDate,
-      total_loaded_qty: totalLoaded,
-      total_sold_qty: totalSold,
-      total_returned_qty: totalReturned,
-      total_leaked_qty: totalLeaked,
-      unaccounted_qty: totalUnaccounted,
-      cash_collected: Number(settlementCash),
-      upi_collected: Number(settlementUpi),
-      credit_sales_amount: Number(settlementCredit),
-      route_expenses_amount: totalExpenses,
-      expected_collection: expectedCollection,
-      actual_collection: actualHandover,
-      collection_difference: collectionDiff,
-      discrepancy_reason: settlementDiscrepancyReason,
-      confirmed_by: 'Operations Admin',
-      items: settlementRows.map(r => ({
-        product_name: r.product_name,
-        loaded_qty: Number(r.loaded_qty),
-        sold_qty: Number(r.sold_qty),
-        returned_good_qty: Number(r.returned_good_qty),
-        leaked_damaged_qty: Number(r.leaked_damaged_qty),
-        rate: Number(r.rate),
-        condition: r.condition
-      })),
-      customer_sales: customerSalesPayload
-    })
-
-    setSettlingRoute(false)
-
-    if (res.success && res.settlement) {
-      alert(`🎉 Route Settlement #${res.settlement.settlement_number} Confirmed!\n- Returned good stock (${totalReturned}) restored to warehouse.\n- Damaged/leaked stock (${totalLeaked}) quarantined.\n- Final customer bills generated without double-deducting warehouse stock.`)
-      loadProfileHistory(selectedDriver.id)
-      printSettlementSummary(res.settlement)
-      setActiveTab('settlement_history')
-    } else {
-      alert(`❌ Route settlement failed: ${res.message}`)
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // PRINT HELPERS: Load Dispatch Note & Route Settlement Summary
-  // -------------------------------------------------------------------------
-  function printLoadDispatchNote(dispatch: DriverLoadDispatchWithItems) {
-    setPreviewBill({
-      invoice_number: dispatch.dispatch_number,
-      customer_name: `DRIVER LOAD: ${dispatch.driver_name}`,
-      dealer_name: `DRIVER LOAD: ${dispatch.driver_name}`,
-      date: dispatch.dispatch_date,
-      subtotal: dispatch.total_load_value,
-      taxable_amount: dispatch.total_load_value,
-      gst_amount: 0,
-      total_amount: dispatch.total_load_value,
-      paid_amount: 0,
-      due_amount: dispatch.total_load_value,
-      bill_type: 'DRIVER LOAD DISPATCH NOTE (NOT A SALE INVOICE)' as any,
-      notes: `Vehicle: ${dispatch.vehicle_number || 'N/A'} | Route: ${dispatch.route_name || 'N/A'} | Dispatched By: ${dispatch.created_by || 'Operations Admin'}`,
-      items: (dispatch.items || []).map(it => ({
-        product_name: it.product_name,
-        quantity: it.loaded_quantity,
-        rate: it.rate,
-        amount: it.amount
-      }))
-    })
-  }
-
-  function printSettlementSummary(settlement: DriverRouteSettlementWithItems) {
-    setPreviewBill({
-      invoice_number: settlement.settlement_number,
-      customer_name: `ROUTE SETTLEMENT: ${selectedDriver?.name || 'Driver'}`,
-      dealer_name: `ROUTE SETTLEMENT: ${selectedDriver?.name || 'Driver'}`,
-      date: settlement.settlement_date,
-      subtotal: settlement.actual_collection,
-      taxable_amount: settlement.actual_collection,
-      gst_amount: 0,
-      total_amount: settlement.actual_collection,
-      paid_amount: settlement.actual_collection,
-      due_amount: 0,
-      bill_type: 'DRIVER ROUTE SETTLEMENT SUMMARY' as any,
-      notes: `Loaded: ${settlement.total_loaded_qty} | Sold: ${settlement.total_sold_qty} | Ret Good: ${settlement.total_returned_qty} | Leaked: ${settlement.total_leaked_qty} | Shortage: ${settlement.unaccounted_qty} | Net Collection: ₹${settlement.actual_collection} | Expenses: ₹${settlement.route_expenses_amount}`,
-      items: (settlement.items || []).map(it => ({
-        product_name: `${it.product_name} (Sold: ${it.sold_qty}, Ret: ${it.returned_good_qty}, Leak: ${it.leaked_damaged_qty})`,
-        quantity: it.sold_qty,
-        rate: it.rate,
-        amount: it.sold_amount
-      }))
-    })
-  }
-
-  // Create daily route assignment
-  const handleCreateAssignment = async () => {
-    if (!selectedDriver || !assignRouteId) return
-    setAssigning(true)
-    const today = new Date().toISOString().split('T')[0]
-
-    try {
-      const { data, error } = await supabase
-        .from('daily_route_assignments')
-        .insert({
-          driver_id: selectedDriver.id,
-          route_id: assignRouteId,
-          vehicle_number: assignVehicle || 'AP 16 AB 1234',
-          date: today,
-          status: 'assigned'
-        })
-        .select('*, routes(id, name, area)')
-        .single()
-
-      if (!error && data) {
-        setDailyAssignment(data)
-        loadRouteCustomers(assignRouteId)
-        alert('✅ Daily Route Assigned Successfully!')
-      } else {
-        alert('Failed to assign route: ' + (error?.message || 'Error'))
-      }
-    } catch (e) {
-      console.error(e)
+      setDashboardStats(stats)
+      setDrivers(drvs)
+      setActiveRoutes(actv)
+      setCompletedRoutes(cmpl)
+      setProducts(prods || [])
+    } catch (err) {
+      console.warn('Error loading driver & route data:', err)
     } finally {
-      setAssigning(false)
+      setLoading(false)
     }
   }
 
-  // Save truck stock dispatch into route_dispatches
-  const handleSaveDispatch = async () => {
-    if (!selectedDriver || !assignRouteId) return
-    setSavingDispatch(true)
-    const today = new Date().toISOString().split('T')[0]
-
-    const itemsList = Object.entries(dispatchItems)
-      .filter(([_, qty]) => qty > 0)
-      .map(([pName, qty]) => ({ product_name: pName, quantity: qty }))
-
-    try {
-      const dispatchPayload = {
-        route_id: assignRouteId,
-        driver_id: selectedDriver.id,
-        date: today,
-        items: itemsList,
-        issued_by: 'Admin',
-        status: 'dispatched',
-        assignment_id: dailyAssignment?.id || null
-      }
-
-      const { data: savedDisp, error: dispErr } = await supabase
-        .from('route_dispatches')
-        .insert(dispatchPayload)
-        .select()
-        .single()
-
-      if (!dispErr && savedDisp) {
-        setActiveDispatch(savedDisp)
-        
-        if (dailyAssignment) {
-          await supabase
-            .from('daily_route_assignments')
-            .update({
-              products_loaded: itemsList,
-              status: 'in_progress'
-            })
-            .eq('id', dailyAssignment.id)
-
-          setDailyAssignment((prev: any) => prev ? { ...prev, products_loaded: itemsList, status: 'in_progress' } : null)
-        }
-
-        setShowDispatchForm(false)
-        alert('🚚 Truck Dispatch Stock Saved & Route In Progress!')
-      } else {
-        alert('Failed to save dispatch: ' + dispErr?.message)
-      }
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setSavingDispatch(false)
-    }
-  }
-
-  // Save Route Completion & Reconciliation into route_runs
-  const handleCompleteRouteRun = async () => {
-    if (!selectedDriver || !assignRouteId) return
-    setSavingRouteRun(true)
-    const today = new Date().toISOString().split('T')[0]
-
-    const totalSales = customers.reduce((acc, c) => acc + ((Number(c.qty_entered) || 0) * (Number(c.rate_entered) || 0)), 0)
-    const totalReturned = customers.reduce((acc, c) => acc + (Number(c.returned_qty) || 0), 0)
-    const totalLeaked = customers.reduce((acc, c) => acc + (Number(c.leaked_qty) || 0), 0)
-    const totalExpenses = (Number(expenseForm.fuel) || 0) + (Number(expenseForm.bata) || 0) + (Number(expenseForm.other) || 0)
-    const totalCash = customers.reduce((acc, c) => acc + (Number(c.cash_paid) || 0), 0)
-    const totalUpi = customers.reduce((acc, c) => acc + (Number(c.upi_paid) || 0), 0)
-    const netCollection = totalCash + totalUpi - totalExpenses
-
-    const routeRunPayload = {
-      route_id: assignRouteId,
-      driver_id: selectedDriver.id,
-      date: today,
-      dispatch_id: activeDispatch?.id || null,
-      assignment_id: dailyAssignment?.id || null,
-      stops: customers,
-      total_sales: totalSales,
-      total_returned: totalReturned,
-      total_leaked: totalLeaked,
-      total_expenses: totalExpenses,
-      net_collection: netCollection
-    }
-
-    try {
-      const { error: runErr } = await supabase
-        .from('route_runs')
-        .insert(routeRunPayload)
-
-      if (!runErr) {
-        if (totalExpenses > 0) {
-          await supabase.from('route_expenses').insert({
-            route_id: assignRouteId,
-            driver_id: selectedDriver.id,
-            fuel_charges: Number(expenseForm.fuel) || 0,
-            driver_bata: Number(expenseForm.bata) || 0,
-            other_expenses: Number(expenseForm.other) || 0,
-            remarks: expenseForm.remarks || 'Route Completion Expense',
-            vehicle_number: assignVehicle
-          })
-        }
-
-        if (dailyAssignment) {
-          await supabase
-            .from('daily_route_assignments')
-            .update({ status: 'completed' })
-            .eq('id', dailyAssignment.id)
-
-          setDailyAssignment((prev: any) => prev ? { ...prev, status: 'completed' } : null)
-        }
-
-        alert('🎉 Route Run Reconciled & Completed Successfully!')
-        emitDataChange('drivers')
-        emitDataChange('routes')
-        emitDataChange('bills')
-        loadProfileHistory(selectedDriver.id)
-      } else {
-        alert('Failed to save route run: ' + runErr.message)
-      }
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setSavingRouteRun(false)
-    }
-  }
-
-  // Edit Customer stop entry inline
-  const updateCustomerEntry = (id: string, field: string, value: any) => {
-    setCustomers(prev => prev.map(c => {
-      if (c.id === id) {
-        const updated = { ...c, [field]: value }
-        const total = (Number(updated.qty_entered) || 0) * (Number(updated.rate_entered) || 0)
-        const cash = Number(updated.cash_paid) || 0
-        const upi = Number(updated.upi_paid) || 0
-        updated.due_amount = Math.max(0, total - cash - upi)
-        return updated
-      }
-      return c
-    }))
-  }
-
-  const openBillingModal = (customer: any) => {
-    setBillingCustomer(customer)
-    const prodName = customer.product_name || 'Water Can (20L)'
-    const qty = customer.qty_entered || customer.default_qty || 1
-
-    const res = resolveProductRate({
-      productId: customer.product_id || '',
-      productName: prodName,
-      defaultRate: customer.default_rate || 15.00,
-      unit: 'piece',
-      customerId: customer.id,
-      routeId: selectedRoute?.id || null,
-      billDate: new Date().toISOString().split('T')[0],
-      quantity: qty,
-      availableRules: pricingRules
-    })
-
-    setBillingForm({
-      qty,
-      rate: customer.rate_entered || res.resolvedRate,
-      cash: customer.cash_paid || 0,
-      upi: customer.upi_paid || 0,
-      product_name: prodName,
-      rate_source: res.rateSource,
-      rate_rule_id: res.ruleId
-    })
-    setBillingModalOpen(true)
-  }
-
-  const updateBillingForm = (field: string, val: any) => {
-    setBillingForm(prev => {
-      const updated = { ...prev, [field]: val }
-      if (field === 'qty' || field === 'product_name') {
-        const res = resolveProductRate({
-          productId: billingCustomer?.product_id || '',
-          productName: updated.product_name,
-          defaultRate: billingCustomer?.default_rate || 15.00,
-          unit: 'piece',
-          customerId: billingCustomer?.id,
-          routeId: selectedRoute?.id || null,
-          billDate: new Date().toISOString().split('T')[0],
-          quantity: updated.qty,
-          availableRules: pricingRules
-        })
-        if (field === 'product_name' || !updated.rate) {
-          updated.rate = res.resolvedRate
-        }
-        updated.rate_source = res.rateSource
-        updated.rate_rule_id = res.ruleId
-      }
-      return updated
-    })
-  }
-
-  const handleSaveSale = async () => {
-    if (!billingCustomer || !selectedDriver) return
-    setSubmitting(true)
-
-    const today = new Date().toISOString().split('T')[0]
-    const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`
-    const total = billingForm.qty * billingForm.rate
-    const cash = Number(billingForm.cash) || 0
-    const upi = Number(billingForm.upi) || 0
-    const paid = cash + upi
-    const due = Math.max(0, total - paid)
-
-    const payload = {
-      invoice_number: invoiceNumber,
-      customer_name: billingCustomer.name,
-      customer_phone: billingCustomer.phone || null,
-      bill_type: 'route' as const,
-      driver_id: selectedDriver.id,
-      route_id: selectedRoute?.id || null,
-      date: today,
-      subtotal: total,
-      taxable_amount: total,
-      gst_amount: 0,
-      grand_total: total,
-      total_amount: total,
-      paid_amount: paid,
-      due_amount: due,
-      payment_mode: (cash > 0 && upi > 0 ? 'mixed' : upi > 0 ? 'upi' : 'cash') as any,
-      payment_status: (due === 0 ? 'paid' : paid > 0 ? 'partial' : 'pending') as any,
-      cash_amount: cash,
-      upi_amount: upi,
+  // --- START ROUTE ACTIONS ---
+  function handleAddProductRow() {
+    const defaultProd = products[0] || { id: null, name: 'Water Can (20L)', unit: 'cans', default_rate: 15 }
+    setStartRouteForm(prev => ({
+      ...prev,
       items: [
+        ...prev.items,
         {
-          product_name: billingForm.product_name,
-          quantity: billingForm.qty,
-          rate: billingForm.rate,
-          amount: total,
-          rate_source: billingForm.rate_source,
-          rate_rule_id: billingForm.rate_rule_id
+          product_id: defaultProd.id,
+          product_name: defaultProd.name,
+          unit: defaultProd.unit || 'cans',
+          loaded_quantity: 50,
+          rate: Number(defaultProd.default_rate || 15),
+          amount: 50 * Number(defaultProd.default_rate || 15)
         }
       ]
-    }
-
-    try {
-      const res = await saveUnifiedBill(payload)
-      if (res.success) {
-        setSuccessData({
-          invoiceNumber,
-          customerName: billingCustomer.name,
-          productName: billingForm.product_name,
-          qty: billingForm.qty,
-          rate: billingForm.rate,
-          total,
-          cash,
-          upi,
-          due,
-          driverName: selectedDriver.name,
-          routeName: selectedRoute?.name || 'Local Route'
-        })
-
-        setBillingModalOpen(false)
-        emitDataChange('bills')
-        emitDataChange('drivers')
-        loadProfileHistory(selectedDriver.id)
-      } else {
-        alert('Failed to save bill: ' + res.error)
-      }
-    } catch (e: any) {
-      alert('Error saving bill: ' + e?.message)
-    } finally {
-      setSubmitting(false)
-    }
+    }))
   }
 
-  const handleSaveExpense = async () => {
-    if (!selectedDriver) return
-    setExpenseLoading(true)
-    const today = new Date().toISOString().split('T')[0]
+  function handleProductRowChange(index: number, field: string, val: any) {
+    setStartRouteForm(prev => {
+      const updated = [...prev.items]
+      const current = { ...updated[index], [field]: val }
+      if (field === 'loaded_quantity' || field === 'rate') {
+        current.amount = (Number(current.loaded_quantity) || 0) * (Number(current.rate) || 0)
+      }
+      if (field === 'product_name') {
+        const found = products.find(p => p.name === val)
+        if (found) {
+          current.product_id = found.id
+          current.unit = found.unit || 'cans'
+          current.rate = Number(found.default_rate || current.rate)
+          current.amount = current.loaded_quantity * current.rate
+        }
+      }
+      updated[index] = current
+      return { ...prev, items: updated }
+    })
+  }
 
+  function handleRemoveProductRow(index: number) {
+    if (startRouteForm.items.length <= 1) return
+    setStartRouteForm(prev => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index)
+    }))
+  }
+
+  async function handleStartRouteSubmit() {
+    if (!startRouteForm.route_name.trim()) {
+      alert('Route Name is required (e.g. Chintalapudi Route)')
+      return
+    }
+    if (!startRouteForm.driver_id) {
+      alert('Please select an assigned driver')
+      return
+    }
+
+    const selectedDriver = drivers.find(d => d.id === startRouteForm.driver_id)
+    if (!selectedDriver) {
+      alert('Selected driver not found')
+      return
+    }
+
+    setStartingRoute(true)
     try {
-      const payload = {
+      const res = await startDriverRoute({
+        route_name: startRouteForm.route_name,
         driver_id: selectedDriver.id,
-        route_id: selectedRoute?.id || assignRouteId || null,
-        expense_date: today,
-        fuel_charges: Number(expenseForm.fuel) || 0,
-        driver_bata: Number(expenseForm.bata) || 0,
-        other_expenses: Number(expenseForm.other) || 0,
-        vehicle_number: expenseForm.vehicle || assignVehicle,
-        notes: expenseForm.remarks || null
+        driver_name: selectedDriver.name,
+        vehicle_number: startRouteForm.vehicle_number || selectedDriver.vehicle_number || 'AP 16 AB 1234',
+        dispatch_date: startRouteForm.dispatch_date,
+        start_time: startRouteForm.start_time,
+        start_location: startRouteForm.start_location,
+        destination_areas: startRouteForm.destination_areas,
+        notes: startRouteForm.notes,
+        items: startRouteForm.items
+      })
+
+      if (!res.success) {
+        alert(res.message || 'Failed to start route')
+        return
       }
 
-      const { data, error } = await supabase
-        .from('route_expenses')
-        .insert(payload)
-        .select()
-        .single()
-
-      if (!error && data) {
-        alert('✅ Trip expense logged successfully!')
-        setExpenseForm({ fuel: 0, bata: 0, other: 0, remarks: '', vehicle: '' })
-        loadProfileHistory(selectedDriver.id)
-      } else {
-        alert('Failed to log expense: ' + (error?.message || 'Error'))
-      }
+      alert(`✅ ${res.message}`)
+      // Reset form and transition to Active Routes tab
+      setStartRouteForm({
+        route_name: '',
+        driver_id: '',
+        vehicle_number: '',
+        dispatch_date: new Date().toISOString().split('T')[0],
+        start_time: '08:30 AM',
+        start_location: 'Main Factory Plant, Guntur',
+        destination_areas: '',
+        notes: '',
+        items: [
+          { product_id: products[0]?.id || null, product_name: products[0]?.name || 'Water Can (20L)', unit: 'cans', loaded_quantity: 100, rate: 15, amount: 1500 }
+        ]
+      })
+      await loadAllData()
+      setActiveTab('active_routes')
     } catch (e: any) {
-      alert('Error: ' + e.message)
+      alert(`Error starting route: ${e?.message || e}`)
     } finally {
-      setExpenseLoading(false)
+      setStartingRoute(false)
     }
   }
 
-  const handlePrint = () => {
-    window.print()
+  // --- RECORD CUSTOMER SALE ON ACTIVE ROUTE ---
+  function openSaleModal(route: RouteDispatchRecord) {
+    setSelectedActiveRoute(route)
+    const firstItem = route.items?.[0]
+    setSaleForm({
+      customer_name: '',
+      customer_phone: '',
+      product_name: firstItem?.product_name || 'Water Can (20L)',
+      quantity: 5,
+      unit: firstItem?.unit || 'cans',
+      rate: Number(firstItem?.rate || 15),
+      discount: 0,
+      gst_amount: 0,
+      payment_type: 'CASH',
+      cash_paid: 5 * Number(firstItem?.rate || 15),
+      upi_paid: 0,
+      remarks: ''
+    })
+    setShowSaleModal(true)
   }
 
-  const isNagaraju = selectedDriver?.id === 'b097b6a9-8395-4eb8-a720-3057e07662c1'
-  const isDriver2  = selectedDriver?.id === '70c293e7-bae8-4de2-a505-edccfd35f761'
+  async function handleRecordSaleSubmit() {
+    if (!selectedActiveRoute) return
+    if (!saleForm.customer_name.trim()) {
+      alert('Customer Name is required')
+      return
+    }
 
-  const summarySales = customers.reduce((acc, c) => acc + ((Number(c.qty_entered) || 0) * (Number(c.rate_entered) || 0)), 0)
-  const summaryCash = customers.reduce((acc, c) => acc + (Number(c.cash_paid) || 0), 0)
-  const summaryUpi = customers.reduce((acc, c) => acc + (Number(c.upi_paid) || 0), 0)
-  const summaryDue = customers.reduce((acc, c) => acc + (Number(c.due_amount) || 0), 0)
-  const summaryReturned = customers.reduce((acc, c) => acc + (Number(c.returned_qty) || 0), 0)
-  const summaryLeaked = customers.reduce((acc, c) => acc + (Number(c.leaked_qty) || 0), 0)
-  const summaryExpenses = (Number(expenseForm.fuel) || 0) + (Number(expenseForm.bata) || 0) + (Number(expenseForm.other) || 0)
+    const itemTotal = saleForm.quantity * saleForm.rate - (saleForm.discount || 0)
+    let cashPaid = 0
+    let upiPaid = 0
+    let dueAmount = 0
+
+    if (saleForm.payment_type === 'CASH') {
+      cashPaid = itemTotal
+      upiPaid = 0
+      dueAmount = 0
+    } else if (saleForm.payment_type === 'UPI') {
+      cashPaid = 0
+      upiPaid = itemTotal
+      dueAmount = 0
+    } else {
+      // CREDIT
+      cashPaid = 0
+      upiPaid = 0
+      dueAmount = itemTotal
+    }
+
+    setSavingSale(true)
+    try {
+      const res = await recordRouteCustomerSale({
+        dispatch_id: selectedActiveRoute.id,
+        driver_id: selectedActiveRoute.driver_id,
+        route_id: selectedActiveRoute.route_id,
+        customer_name: saleForm.customer_name,
+        customer_phone: saleForm.customer_phone,
+        product_name: saleForm.product_name,
+        quantity: saleForm.quantity,
+        unit: saleForm.unit,
+        rate: saleForm.rate,
+        total_amount: itemTotal,
+        discount: saleForm.discount,
+        gst_amount: saleForm.gst_amount,
+        payment_type: saleForm.payment_type,
+        cash_paid: cashPaid,
+        upi_paid: upiPaid,
+        due_amount: dueAmount,
+        remarks: saleForm.remarks
+      })
+
+      if (!res.success) {
+        alert(res.message || 'Failed to record customer sale')
+        return
+      }
+
+      alert(`✅ Customer sale recorded for ${saleForm.customer_name}!`)
+      setShowSaleModal(false)
+      loadAllData()
+    } catch (e: any) {
+      alert(`Error saving customer sale: ${e?.message || e}`)
+    } finally {
+      setSavingSale(false)
+    }
+  }
+
+  // --- RECORD RETURNS & LEAKAGE ON ACTIVE ROUTE ---
+  function openReturnsModal(route: RouteDispatchRecord) {
+    setSelectedActiveRoute(route)
+    setReturnsItemsState(
+      (route.items || []).map(it => ({
+        id: it.id || '',
+        product_name: it.product_name,
+        returned_quantity: Number(it.returned_quantity || 0),
+        leaked_quantity: Number(it.leaked_quantity || 0)
+      }))
+    )
+    setShowReturnsModal(true)
+  }
+
+  async function handleReturnsSubmit() {
+    if (!selectedActiveRoute) return
+    setSavingReturns(true)
+    try {
+      const res = await updateRouteReturnsAndLeakage(selectedActiveRoute.id, returnsItemsState)
+      if (!res.success) {
+        alert(res.message)
+        return
+      }
+      alert('✅ Route returns and leakage updated successfully!')
+      setShowReturnsModal(false)
+      loadAllData()
+    } catch (e: any) {
+      alert(`Error updating returns: ${e?.message || e}`)
+    } finally {
+      setSavingReturns(false)
+    }
+  }
+
+  // --- RECORD ROUTE EXPENSE ---
+  function openExpenseModal(route: RouteDispatchRecord) {
+    setSelectedActiveRoute(route)
+    setExpenseForm({
+      fuel_charges: 300,
+      driver_bata: 200,
+      other_expenses: 0,
+      remarks: 'Route transit expenses'
+    })
+    setShowExpenseModal(true)
+  }
+
+  async function handleExpenseSubmit() {
+    if (!selectedActiveRoute) return
+    setSavingExpense(true)
+    try {
+      const res = await recordRouteExpense({
+        dispatch_id: selectedActiveRoute.id,
+        driver_id: selectedActiveRoute.driver_id,
+        route_id: selectedActiveRoute.route_id,
+        fuel_charges: Number(expenseForm.fuel_charges || 0),
+        driver_bata: Number(expenseForm.driver_bata || 0),
+        other_expenses: Number(expenseForm.other_expenses || 0),
+        remarks: expenseForm.remarks,
+        vehicle_number: selectedActiveRoute.vehicle_number
+      })
+
+      if (!res.success) {
+        alert(res.message)
+        return
+      }
+
+      alert('✅ Route expense recorded successfully!')
+      setShowExpenseModal(false)
+      loadAllData()
+    } catch (e: any) {
+      alert(`Error recording expense: ${e?.message || e}`)
+    } finally {
+      setSavingExpense(false)
+    }
+  }
+
+  // --- END ROUTE & RECONCILIATION ---
+  function openReconciliationModal(route: RouteDispatchRecord) {
+    setSelectedActiveRoute(route)
+    setDiscrepancyReason('')
+
+    // Prepare reconciliation line items based on loaded items vs sales & returns
+    const items = (route.items || []).map(it => {
+      // Find sold quantity for this product from recorded sales
+      const soldQty = (route.sales || [])
+        .filter(s => s.product_name === it.product_name)
+        .reduce((acc, s) => acc + (Number(s.quantity) || 0), 0)
+
+      const retGood = Number(it.returned_quantity || 0)
+      const leaked = Number(it.leaked_quantity || 0)
+      const loaded = Number(it.loaded_quantity || 0)
+      const accounted = soldQty + retGood + leaked
+      const unaccounted = loaded - accounted
+
+      return {
+        product_id: it.product_id,
+        product_name: it.product_name,
+        loaded_qty: loaded,
+        sold_qty: soldQty,
+        returned_good_qty: retGood,
+        leaked_damaged_qty: leaked,
+        unaccounted_qty: unaccounted,
+        rate: Number(it.rate || 0),
+        condition: 'good'
+      }
+    })
+
+    setReconciliationItems(items)
+    setShowReconciliationModal(true)
+  }
+
+  async function handleFinalizeRouteSubmit() {
+    if (!selectedActiveRoute) return
+
+    // Calculate totals across reconciliation items
+    const totalLoaded = reconciliationItems.reduce((acc, it) => acc + Number(it.loaded_qty), 0)
+    const totalSold = reconciliationItems.reduce((acc, it) => acc + Number(it.sold_qty), 0)
+    const totalReturned = reconciliationItems.reduce((acc, it) => acc + Number(it.returned_good_qty), 0)
+    const totalLeaked = reconciliationItems.reduce((acc, it) => acc + Number(it.leaked_damaged_qty), 0)
+    const totalUnaccounted = totalLoaded - (totalSold + totalReturned + totalLeaked)
+
+    if (totalUnaccounted !== 0 && !discrepancyReason.trim()) {
+      alert(`Discrepancy detected: ${totalUnaccounted} units are unaccounted for. Please provide a discrepancy explanation reason.`)
+      return
+    }
+
+    const cashCollected = Number(selectedActiveRoute.cash_collected || 0)
+    const upiCollected = Number(selectedActiveRoute.upi_collected || 0)
+    const creditSales = Number(selectedActiveRoute.credit_amount || 0)
+    const expensesAmt = Number(selectedActiveRoute.expenses_amount || 0)
+    const totalSalesAmt = Number(selectedActiveRoute.total_sales_amount || 0)
+
+    setFinalizingRoute(true)
+    try {
+      const res = await finalizeRouteAndGenerateBills({
+        load_dispatch_id: selectedActiveRoute.id,
+        driver_id: selectedActiveRoute.driver_id,
+        route_id: selectedActiveRoute.route_id,
+        route_name: selectedActiveRoute.route_name,
+        settlement_date: new Date().toISOString().split('T')[0],
+        end_time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+        total_loaded_qty: totalLoaded,
+        total_sold_qty: totalSold,
+        total_returned_qty: totalReturned,
+        total_leaked_qty: totalLeaked,
+        unaccounted_qty: totalUnaccounted,
+        cash_collected: cashCollected,
+        upi_collected: upiCollected,
+        credit_sales_amount: creditSales,
+        route_expenses_amount: expensesAmt,
+        expected_collection: totalSalesAmt,
+        actual_collection: cashCollected + upiCollected,
+        collection_difference: (cashCollected + upiCollected) - totalSalesAmt,
+        discrepancy_reason: discrepancyReason || null,
+        confirmed_by: 'Operations Supervisor',
+        items: reconciliationItems,
+        customer_sales: selectedActiveRoute.sales || []
+      })
+
+      if (!res.success) {
+        alert(res.message || 'Route finalization failed')
+        return
+      }
+
+      alert(`🎉 ${res.message}`)
+      setShowReconciliationModal(false)
+      await loadAllData()
+      setActiveTab('completed_routes')
+    } catch (e: any) {
+      alert(`Error during route finalization: ${e?.message || e}`)
+    } finally {
+      setFinalizingRoute(false)
+    }
+  }
+
+  // --- DRIVER PROFILE ACTIONS ---
+  function openAddDriverModal() {
+    setEditingDriver(null)
+    setDriverForm({
+      name: '',
+      phone: '',
+      address: '',
+      assigned_vehicle: 'Tata Ace 407',
+      vehicle_number: 'AP 16 AB 1234',
+      license_number: '',
+      joining_date: new Date().toISOString().split('T')[0],
+      salary: 18000,
+      employment_status: 'ACTIVE',
+      status: 'AVAILABLE'
+    })
+    setShowDriverModal(true)
+  }
+
+  function openEditDriverModal(drv: DriverWithStats) {
+    setEditingDriver(drv)
+    setDriverForm({
+      name: drv.name,
+      phone: drv.phone,
+      address: drv.address || '',
+      assigned_vehicle: drv.assigned_vehicle || 'Tata Ace 407',
+      vehicle_number: drv.vehicle_number || '',
+      license_number: drv.license_number || '',
+      joining_date: drv.joining_date || new Date().toISOString().split('T')[0],
+      salary: drv.salary || 18000,
+      employment_status: drv.employment_status || 'ACTIVE',
+      status: drv.status || 'AVAILABLE'
+    })
+    setShowDriverModal(true)
+  }
+
+  async function handleDriverFormSubmit() {
+    if (!driverForm.name.trim() || !driverForm.phone.trim()) {
+      alert('Driver Name and Phone number are required')
+      return
+    }
+
+    setSavingDriver(true)
+    try {
+      const res = await saveDriver({
+        id: editingDriver?.id,
+        ...driverForm
+      })
+
+      if (!res.success) {
+        alert(res.message)
+        return
+      }
+
+      alert(res.message)
+      setShowDriverModal(false)
+      loadAllData()
+    } catch (e: any) {
+      alert(`Error saving driver: ${e?.message || e}`)
+    } finally {
+      setSavingDriver(false)
+    }
+  }
 
   return (
-    <div style={{ padding: '0.25rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '1400px', margin: '0 auto', paddingBottom: '3rem' }}>
       
-      {/* MONOSPACE THERMAL PRINTER RECEIPT OVERLAY */}
-      {successData && (
-        <div id="print-area" style={{ display: 'none', backgroundColor: '#fff', color: '#000', padding: '1rem', fontFamily: 'var(--font-m)', fontSize: '12px' }}>
-          <div style={{ textAlign: 'center', marginBottom: '10px' }}>
-            <h3 style={{ margin: '0 0 4px', fontWeight: 'bold' }}>ROYAL KISSAN DRINKING WATER</h3>
-            <p style={{ margin: '0 0 2px' }}>Guntur Highway Road, Guntur</p>
-            <p style={{ margin: '0 0 8px' }}>Phone: 9876543210</p>
-            <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '3px 0', fontWeight: 'bold' }}>
-              RECEIPT / BILL TICKET
-            </div>
+      {/* Page Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '1rem',
+        borderBottom: '1px solid rgba(255,255,255,0.08)',
+        paddingBottom: '1rem'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+          <div style={{
+            width: '44px',
+            height: '44px',
+            borderRadius: '10px',
+            backgroundColor: 'rgba(251, 191, 36, 0.12)',
+            border: '1px solid rgba(251, 191, 36, 0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#fbbf24'
+          }}>
+            <Truck style={{ width: '24px', height: '24px' }} />
           </div>
-
-          <table style={{ width: '100%', marginBottom: '10px', fontSize: '11px' }}>
-            <tbody>
-              <tr>
-                <td><strong>Invoice:</strong> {successData.invoiceNumber}</td>
-                <td style={{ textAlign: 'right' }}><strong>Date:</strong> {new Date().toLocaleDateString('en-IN')}</td>
-              </tr>
-              <tr>
-                <td><strong>Driver:</strong> {successData.driverName}</td>
-                <td style={{ textAlign: 'right' }}><strong>Route:</strong> {successData.routeName}</td>
-              </tr>
-              <tr>
-                <td colSpan={2}><strong>Customer:</strong> {successData.customerName}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '10px', fontSize: '11px' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #000' }}>
-                <th style={{ textAlign: 'left', padding: '4px 0' }}>Item</th>
-                <th style={{ textAlign: 'center', padding: '4px 0' }}>Qty</th>
-                <th style={{ textAlign: 'right', padding: '4px 0' }}>Rate</th>
-                <th style={{ textAlign: 'right', padding: '4px 0' }}>Amt</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td style={{ padding: '4px 0' }}>{successData.productName}</td>
-                <td style={{ textAlign: 'center', padding: '4px 0' }}>{successData.qty}</td>
-                <td style={{ textAlign: 'right', padding: '4px 0' }}>₹{successData.rate}</td>
-                <td style={{ textAlign: 'right', padding: '4px 0' }}>₹{successData.total}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          <div style={{ borderTop: '1px dashed #000', paddingTop: '6px', fontSize: '11px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-              <span>Total Amount:</span>
-              <strong>₹{successData.total}</strong>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-              <span>Paid (Cash+UPI):</span>
-              <span>₹{successData.cash + successData.upi}</span>
-            </div>
-            {successData.due > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
-                <span>Remaining Due:</span>
-                <span>₹{successData.due}</span>
-              </div>
-            )}
+          <div>
+            <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#f4f4f5', margin: 0 }}>
+              Drivers &amp; Route Management
+            </h1>
+            <p style={{ color: '#a1a1aa', fontSize: '0.82rem', margin: '3px 0 0 0' }}>
+              Real-time route lifecycle, inventory reservation, live sales recording, reconciliation &amp; bill generation
+            </p>
           </div>
         </div>
-      )}
 
-      {/* HEADER BAR & BREADCRUMBS */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
-        {currentView !== 'drivers' && (
-          <button
-            onClick={() => {
-              if (currentView === 'profile') setCurrentView('drivers')
-              else if (currentView === 'categories') setCurrentView('profile')
-              else if (currentView === 'customers') setCurrentView('categories')
-            }}
-            style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '50%',
-              background: 'rgba(255, 255, 255, 0.03)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--text-2)',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
-            }}
+        {/* Quick Top Actions */}
+        <div style={{ display: 'flex', gap: '0.65rem' }}>
+          <Button
+            variant="outline"
+            onClick={loadAllData}
+            icon={<RefreshCw style={{ width: '14px', height: '14px' }} />}
           >
-            ←
-          </button>
-        )}
-        <div>
-          <h2 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0, color: '#fff', letterSpacing: '-0.02em' }}>
-            {currentView === 'drivers' && '🚚 Driver Route Sales & Dispatch Portal'}
-            {currentView === 'profile' && `🚛 Driver Workspace: ${selectedDriver?.name}`}
-            {currentView === 'categories' && `🗺️ Route Category: ${selectedRoute?.name}`}
-            {currentView === 'customers' && `👥 Stop List & Billing: ${selectedCategory?.toUpperCase()}`}
-          </h2>
-          <p style={{ fontSize: '0.8125rem', color: 'var(--text-2)', marginTop: '0.25rem' }}>
-            {currentView === 'drivers' && 'Select active driver to run daily route assignments, dispatches, and reconciliation'}
-            {currentView === 'profile' && 'Issue warehouse truck load dispatches, complete 4-way physical reconciliation, and confirm route settlements.'}
-            {currentView === 'categories' && 'Select product type to log sales'}
-            {currentView === 'customers' && `Record dues and log customer sales for ${selectedRoute?.name}`}
-          </p>
+            Refresh Data
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => setActiveTab('start_route')}
+            icon={<Play style={{ width: '14px', height: '14px' }} />}
+          >
+            Start New Route
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={openAddDriverModal}
+            icon={<Plus style={{ width: '14px', height: '14px' }} />}
+          >
+            Add Driver
+          </Button>
         </div>
       </div>
 
-      {/* VIEW 1: DRIVER SELECTION CARDS */}
-      {currentView === 'drivers' && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
-          gap: '1.5rem',
-          maxWidth: '850px',
-          margin: '0 auto',
-          padding: '1rem 0'
-        }}>
-          {drivers.map(d => {
-            const stats = driverStats[d.id] || { collection: 0, due: 0, sales: 0, mSales: 0, mCollection: 0 }
-            
-            return (
-              <div
-                key={d.id}
-                onClick={() => handleDriverSelect(d)}
-                className="card"
-                style={{
-                  padding: '2rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '1.5rem'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  <div style={{
-                    width: '64px',
-                    height: '64px',
-                    borderRadius: '16px',
-                    background: 'linear-gradient(135deg, hsl(217 91% 60%), hsl(199 89% 48%))',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '1.75rem',
-                    boxShadow: '0 8px 20px rgba(59,130,246,0.3)'
-                  }}>
-                    👤
-                  </div>
-                  <div>
-                    <h3 style={{ fontSize: '1.35rem', fontWeight: '800', color: '#fff', margin: 0 }}>
-                      {d.name}
-                    </h3>
-                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.25rem' }}>
-                      <span className="badge badge-success">Active</span>
-                      {d.phone && <span style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>{d.phone}</span>}
-                    </div>
-                  </div>
-                </div>
+      {/* Primary Navigation Tabs */}
+      <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.5rem', overflowX: 'auto' }}>
+        <button
+          onClick={() => setActiveTab('active_routes')}
+          style={{
+            padding: '0.6rem 1.15rem',
+            borderRadius: '8px',
+            border: 'none',
+            fontSize: '0.88rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            backgroundColor: activeTab === 'active_routes' ? '#fbbf24' : 'rgba(255,255,255,0.05)',
+            color: activeTab === 'active_routes' ? '#000' : '#d4d4d8',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            boxShadow: activeTab === 'active_routes' ? '0 4px 14px rgba(251, 191, 36, 0.3)' : 'none'
+          }}
+        >
+          <Truck style={{ width: '16px', height: '16px' }} />
+          <span>Active Routes</span>
+          {activeRoutes.length > 0 && (
+            <span style={{
+              backgroundColor: activeTab === 'active_routes' ? '#000' : '#10b981',
+              color: activeTab === 'active_routes' ? '#fbbf24' : '#fff',
+              fontSize: '0.72rem',
+              fontWeight: 800,
+              padding: '0.15rem 0.5rem',
+              borderRadius: '999px'
+            }}>
+              {activeRoutes.length} LIVE
+            </span>
+          )}
+        </button>
 
-                {/* Today Stats */}
-                <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)', paddingTop: '1.25rem' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-2)', textTransform: 'uppercase', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>Today's Performance</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', textAlign: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase', fontWeight: '600' }}>Sales</div>
-                      <div style={{ fontSize: '1rem', fontWeight: '800', color: '#fff', marginTop: '0.25rem' }}>
-                        ₹{stats.sales.toLocaleString('en-IN')}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase', fontWeight: '600' }}>Collected</div>
-                      <div style={{ fontSize: '1rem', fontWeight: '800', color: '#34d399', marginTop: '0.25rem' }}>
-                        ₹{stats.collection.toLocaleString('en-IN')}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase', fontWeight: '600' }}>Due</div>
-                      <div style={{ fontSize: '1rem', fontWeight: '800', color: stats.due > 0 ? '#f87171' : 'hsl(215 20% 55%)', marginTop: '0.25rem' }}>
-                        ₹{stats.due.toLocaleString('en-IN')}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+        <button
+          onClick={() => setActiveTab('start_route')}
+          style={{
+            padding: '0.6rem 1.15rem',
+            borderRadius: '8px',
+            border: 'none',
+            fontSize: '0.88rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            backgroundColor: activeTab === 'start_route' ? '#fbbf24' : 'rgba(255,255,255,0.05)',
+            color: activeTab === 'start_route' ? '#000' : '#d4d4d8',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          <Plus style={{ width: '16px', height: '16px' }} />
+          <span>Start New Route</span>
+        </button>
 
-                {/* Monthly Stats */}
-                <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)', paddingTop: '1.25rem' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-2)', textTransform: 'uppercase', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>Monthly Performance</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div>
-                      <div style={{ fontSize: '0.65rem', color: 'var(--text-2)' }}>Month Sales</div>
-                      <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#60a5fa', marginTop: '0.125rem' }}>
-                        ₹{stats.mSales.toLocaleString('en-IN')}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.65rem', color: 'var(--text-2)' }}>Month Collection</div>
-                      <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#34d399', marginTop: '0.125rem' }}>
-                        ₹{stats.mCollection.toLocaleString('en-IN')}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+        <button
+          onClick={() => setActiveTab('completed_routes')}
+          style={{
+            padding: '0.6rem 1.15rem',
+            borderRadius: '8px',
+            border: 'none',
+            fontSize: '0.88rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            backgroundColor: activeTab === 'completed_routes' ? '#fbbf24' : 'rgba(255,255,255,0.05)',
+            color: activeTab === 'completed_routes' ? '#000' : '#d4d4d8',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          <CheckCircle style={{ width: '16px', height: '16px' }} />
+          <span>Completed Routes</span>
+        </button>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--text-2)', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
-                  <span>Salary: ₹{(d.salary || 10000).toLocaleString('en-IN')}/mo</span>
-                  <span style={{ color: '#3b82f6', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                    Open Driver Workspace <span>→</span>
-                  </span>
-                </div>
+        <button
+          onClick={() => setActiveTab('drivers')}
+          style={{
+            padding: '0.6rem 1.15rem',
+            borderRadius: '8px',
+            border: 'none',
+            fontSize: '0.88rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            backgroundColor: activeTab === 'drivers' ? '#fbbf24' : 'rgba(255,255,255,0.05)',
+            color: activeTab === 'drivers' ? '#000' : '#d4d4d8',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          <UserCheck style={{ width: '16px', height: '16px' }} />
+          <span>Driver Directory ({drivers.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('dashboard')}
+          style={{
+            padding: '0.6rem 1.15rem',
+            borderRadius: '8px',
+            border: 'none',
+            fontSize: '0.88rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            backgroundColor: activeTab === 'dashboard' ? '#fbbf24' : 'rgba(255,255,255,0.05)',
+            color: activeTab === 'dashboard' ? '#000' : '#d4d4d8',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          <TrendingUp style={{ width: '16px', height: '16px' }} />
+          <span>Dashboard KPIs</span>
+        </button>
+      </div>
+
+      {/* =========================================================================
+          TAB 1: ACTIVE ROUTES DASHBOARD (Persistent until manually ended!)
+          ========================================================================= */}
+      {activeTab === 'active_routes' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          
+          {/* Active Route Notice Banner */}
+          <div style={{
+            backgroundColor: 'rgba(16, 185, 129, 0.08)',
+            border: '1px solid rgba(16, 185, 129, 0.25)',
+            borderRadius: '8px',
+            padding: '0.85rem 1.25rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '0.75rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+              <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981', boxShadow: '0 0 10px #10b981' }} />
+              <div style={{ fontSize: '0.85rem', color: '#d4d4d8' }}>
+                <strong style={{ color: '#fff' }}>Persistent Route Tracking:</strong> Active routes remain open and visible across browser reloads until an authorized operator clicks <em>END ROUTE</em>.
               </div>
-            )
-          })}
+            </div>
+            <Badge variant="success">
+              {activeRoutes.length} ROUTE{activeRoutes.length !== 1 ? 'S' : ''} IN PROGRESS
+            </Badge>
+          </div>
+
+          {activeRoutes.length === 0 ? (
+            <Card style={{ padding: '3.5rem 1.5rem', textAlign: 'center', backgroundColor: '#141417' }}>
+              <Truck style={{ width: '48px', height: '48px', color: '#52525b', margin: '0 auto 1rem auto' }} />
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#f4f4f5', marginBottom: '0.5rem' }}>
+                No Active Routes Right Now
+              </h3>
+              <p style={{ color: '#a1a1aa', fontSize: '0.85rem', maxWidth: '440px', margin: '0 auto 1.5rem auto' }}>
+                All driver dispatches are currently completed or settled. Click below to load products and start a new delivery run.
+              </p>
+              <Button
+                variant="primary"
+                onClick={() => setActiveTab('start_route')}
+                icon={<Play style={{ width: '15px', height: '15px' }} />}
+              >
+                Start New Route
+              </Button>
+            </Card>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {activeRoutes.map((route) => (
+                <Card key={route.id} style={{ backgroundColor: '#18181b', border: '1px solid rgba(251, 191, 36, 0.3)', padding: '1.25rem' }}>
+                  
+                  {/* Top Header Card */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '1rem' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                        <span style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>
+                          {route.route_name || 'Daily Route'}
+                        </span>
+                        <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', backgroundColor: 'rgba(251, 191, 36, 0.12)', color: '#fbbf24', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid rgba(251, 191, 36, 0.25)' }}>
+                          {route.dispatch_number}
+                        </span>
+                        <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontSize: '0.72rem', fontWeight: 800, padding: '0.2rem 0.5rem', borderRadius: '999px', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#34d399' }} />
+                          IN_PROGRESS
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.45rem', fontSize: '0.8rem', color: '#a1a1aa', flexWrap: 'wrap' }}>
+                        <span>👤 Driver: <strong style={{ color: '#fff' }}>{route.driver_name}</strong></span>
+                        <span>🚚 Vehicle: <strong style={{ color: '#fff' }}>{route.vehicle_number || 'AP 16 AB 1234'}</strong></span>
+                        <span>📅 Date: <strong style={{ color: '#fff' }}>{route.dispatch_date}</strong></span>
+                        <span>⏰ Started: <strong style={{ color: '#fff' }}>{route.start_time || '08:30 AM'}</strong></span>
+                        {route.destination_areas && <span>📍 Destination: <strong style={{ color: '#fff' }}>{route.destination_areas}</strong></span>}
+                      </div>
+                    </div>
+
+                    {/* Prominent Action Button: [ END ROUTE ] */}
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <Button
+                        variant="primary"
+                        onClick={() => openReconciliationModal(route)}
+                        style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', fontWeight: 800, boxShadow: '0 4px 14px rgba(239, 68, 68, 0.35)' }}
+                        icon={<CheckCircle style={{ width: '15px', height: '15px' }} />}
+                      >
+                        END ROUTE
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Metrics Bar */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', margin: '1rem 0' }}>
+                    <div style={{ backgroundColor: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Loaded Qty</span>
+                      <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fbbf24' }}>
+                        {route.total_loaded_qty} units
+                      </div>
+                    </div>
+
+                    <div style={{ backgroundColor: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Sold Qty</span>
+                      <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#34d399' }}>
+                        {route.total_sold_qty || 0} units
+                      </div>
+                    </div>
+
+                    <div style={{ backgroundColor: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Good Returns</span>
+                      <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#60a5fa' }}>
+                        {route.total_returned_qty || 0} units
+                      </div>
+                    </div>
+
+                    <div style={{ backgroundColor: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Damaged / Leaked</span>
+                      <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f87171' }}>
+                        {route.total_leaked_qty || 0} units
+                      </div>
+                    </div>
+
+                    <div style={{ backgroundColor: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Live Sales</span>
+                      <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fff' }}>
+                        ₹{route.total_sales_amount?.toLocaleString('en-IN') || '0'}
+                      </div>
+                    </div>
+
+                    <div style={{ backgroundColor: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Collections (Cash+UPI)</span>
+                      <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#10b981' }}>
+                        ₹{((route.cash_collected || 0) + (route.upi_collected || 0)).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+
+                    <div style={{ backgroundColor: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Route Expenses</span>
+                      <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f59e0b' }}>
+                        ₹{route.expenses_amount?.toLocaleString('en-IN') || '0'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Secondary Route Action Buttons */}
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '0.75rem' }}>
+                    <Button
+                      variant="outline"
+                      onClick={() => openSaleModal(route)}
+                      icon={<Plus style={{ width: '13px', height: '13px', color: '#34d399' }} />}
+                    >
+                      Record Customer Sale
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => openReturnsModal(route)}
+                      icon={<Package style={{ width: '13px', height: '13px', color: '#60a5fa' }} />}
+                    >
+                      Record Returns / Leakage
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => openExpenseModal(route)}
+                      icon={<Fuel style={{ width: '13px', height: '13px', color: '#f59e0b' }} />}
+                    >
+                      Add Expenses
+                    </Button>
+
+                    <Button
+                      variant="secondary"
+                      onClick={() => setViewRouteRecord(route)}
+                      icon={<Eye style={{ width: '13px', height: '13px' }} />}
+                    >
+                      View Live Breakdown ({route.sales?.length || 0} Sales)
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* VIEW 2: DRIVER WORKSPACE & PROFILE */}
-      {currentView === 'profile' && selectedDriver && (
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }} className="animate-fade-in">
-          
-          {/* Driver Stats summary strip */}
-          <div className="card" style={{ padding: '1.25rem 2rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <span style={{ fontSize: '2rem' }}>🚛</span>
-              <div>
-                <h4 style={{ margin: 0, fontWeight: '800', fontSize: '1.1rem', color: '#fff' }}>{selectedDriver.name}</h4>
-                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-2)' }}>
-                  {dailyAssignment ? `Route: ${dailyAssignment.routes?.name || 'Local Route'} (${dailyAssignment.vehicle_number})` : 'Active Route Workspace'}
-                </p>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-              <div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Today Sales</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff' }}>₹{(driverStats[selectedDriver.id]?.sales || 0).toLocaleString('en-IN')}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Today Collection</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#34d399' }}>₹{(driverStats[selectedDriver.id]?.collection || 0).toLocaleString('en-IN')}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Issued Loads</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#60a5fa' }}>{driverLoadsList.length}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Settlements</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#34d399' }}>{driverSettlementsList.length}</div>
-              </div>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                style={{ color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.3)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-                onClick={() => {
-                  if (driverLoadsList.length > 0) {
-                    const latestLoad = driverLoadsList[0]
-                    setWhatsAppBill({
-                      id: latestLoad.id,
-                      invoice_number: latestLoad.dispatch_number,
-                      dealer_name: selectedDriver.name,
-                      customer_name: `Driver: ${selectedDriver.name} (${latestLoad.vehicle_number || 'AP 16 AB 1234'})`,
-                      dealer_phone: selectedDriver.phone,
-                      customer_phone: selectedDriver.phone,
-                      date: latestLoad.dispatch_date,
-                      bill_type: 'LOAD DISPATCH NOTE',
-                      total_quantity: latestLoad.total_loaded_qty,
-                      total_amount: latestLoad.total_load_value,
-                      grand_total: latestLoad.total_load_value,
-                      paid_amount: 0,
-                      due_amount: 0,
-                      items: (latestLoad.items || []).map(it => ({
-                        product_name: it.product_name,
-                        quantity: it.loaded_quantity,
-                        rate: it.rate,
-                        amount: it.loaded_quantity * it.rate
-                      }))
-                    })
-                  } else {
-                    setWhatsAppBill({
-                      id: `RUN-${selectedDriver.id}`,
-                      invoice_number: `RUN-${new Date().toISOString().split('T')[0]}`,
-                      dealer_name: selectedDriver.name,
-                      customer_name: `Driver: ${selectedDriver.name}`,
-                      dealer_phone: selectedDriver.phone,
-                      customer_phone: selectedDriver.phone,
-                      date: new Date().toISOString().split('T')[0],
-                      bill_type: 'ROUTE SUMMARY',
-                      total_amount: driverStats[selectedDriver.id]?.sales || 0,
-                      grand_total: driverStats[selectedDriver.id]?.sales || 0,
-                      paid_amount: driverStats[selectedDriver.id]?.collection || 0,
-                      due_amount: Math.max(0, (driverStats[selectedDriver.id]?.sales || 0) - (driverStats[selectedDriver.id]?.collection || 0)),
-                      items: [
-                        { product_name: 'Today Sales Completed', quantity: 1, rate: driverStats[selectedDriver.id]?.sales || 0, amount: driverStats[selectedDriver.id]?.sales || 0 },
-                        { product_name: 'Today Collections Received', quantity: 1, rate: driverStats[selectedDriver.id]?.collection || 0, amount: driverStats[selectedDriver.id]?.collection || 0 }
-                      ]
-                    })
-                  }
-                }}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="#25D366">
-                  <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.694.075-2.223-.559-1.848-.767-3.037-2.656-3.129-2.78-.093-.123-.746-.991-.746-1.888 0-.898.469-1.339.636-1.52.167-.182.366-.228.487-.228.121 0 .243.002.348.006.111.005.26-.042.407.311.152.365.518 1.265.564 1.357.045.092.076.2.015.322-.061.122-.092.199-.183.307-.091.107-.191.24-.273.322-.091.091-.186.19-.08.373.106.183.473.78 1.016 1.263.699.623 1.288.816 1.472.907.183.092.29.077.397-.046.107-.123.456-.533.578-.716.121-.183.243-.153.407-.092.164.061 1.042.492 1.22.583.178.091.297.137.34.213.045.076.045.441-.099.846z"/>
-                </svg>
-                <span>WhatsApp</span>
-              </button>
-            </div>
+      {/* =========================================================================
+          TAB 2: START NEW ROUTE FORM
+          ========================================================================= */}
+      {activeTab === 'start_route' && (
+        <Card style={{ backgroundColor: '#18181b', padding: '1.75rem', border: '1px solid rgba(251, 191, 36, 0.25)' }}>
+          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#fbbf24', marginBottom: '0.35rem' }}>
+            Start &amp; Assign Delivery Route
+          </h2>
+          <p style={{ color: '#a1a1aa', fontSize: '0.82rem', marginBottom: '1.5rem' }}>
+            Assign a driver, vehicle, and load inventory. Inventory is reserved and deducted once from warehouse stock. Route remains active in dashboard until manually ended.
+          </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+            <Input
+              label="Route Name *"
+              placeholder="e.g. Chintalapudi Route"
+              value={startRouteForm.route_name}
+              onChange={(e) => setStartRouteForm({ ...startRouteForm, route_name: e.target.value })}
+            />
+
+            <Select
+              label="Assigned Driver *"
+              value={startRouteForm.driver_id}
+              onChange={(e) => {
+                const dId = e.target.value
+                const found = drivers.find(d => d.id === dId)
+                setStartRouteForm({
+                  ...startRouteForm,
+                  driver_id: dId,
+                  vehicle_number: found?.vehicle_number || startRouteForm.vehicle_number
+                })
+              }}
+              options={[
+                { value: '', label: '-- Select Driver --' },
+                ...drivers.map(d => ({
+                  value: d.id,
+                  label: `${d.name} (${d.status || 'AVAILABLE'}) - ${d.phone}`
+                }))
+              ]}
+            />
+
+            <Input
+              label="Vehicle Registration Number *"
+              placeholder="e.g. AP 16 AB 1234"
+              value={startRouteForm.vehicle_number}
+              onChange={(e) => setStartRouteForm({ ...startRouteForm, vehicle_number: e.target.value })}
+            />
+
+            <Input
+              type="date"
+              label="Route Date *"
+              value={startRouteForm.dispatch_date}
+              onChange={(e) => setStartRouteForm({ ...startRouteForm, dispatch_date: e.target.value })}
+            />
+
+            <Input
+              label="Starting Time"
+              placeholder="e.g. 08:30 AM"
+              value={startRouteForm.start_time}
+              onChange={(e) => setStartRouteForm({ ...startRouteForm, start_time: e.target.value })}
+            />
+
+            <Input
+              label="Starting Location"
+              placeholder="e.g. Main Plant Warehouse"
+              value={startRouteForm.start_location}
+              onChange={(e) => setStartRouteForm({ ...startRouteForm, start_location: e.target.value })}
+            />
+
+            <Input
+              label="Destination / Route Areas"
+              placeholder="e.g. Chintalapudi, Guntur Rural"
+              value={startRouteForm.destination_areas}
+              onChange={(e) => setStartRouteForm({ ...startRouteForm, destination_areas: e.target.value })}
+            />
           </div>
 
-          {/* Navigation Tabs inside Driver Workspace */}
-          <div style={{ 
-            display: 'flex', 
-            gap: '0.5rem', 
-            overflowX: 'auto', 
-            paddingBottom: '0.75rem', 
-            marginBottom: '1.5rem', 
-            borderBottom: '1px solid var(--border)' 
-          }}>
-            {[
-              { id: 'load_dispatches', label: '🚚 Truck Load Dispatches', icon: '' },
-              { id: 'route_settlement', label: '⚖️ Route Settlement & Reconciliation', icon: '' },
-              ...(isNagaraju ? [{ id: 'local', label: '📋 Customer Stop Sheet', icon: '' }] : []),
-              ...(isDriver2  ? [{ id: 'non-local', label: '📋 Customer Stop Sheet', icon: '' }] : []),
-              { id: 'settlement_history', label: '📜 Settlement Log', icon: '' },
-              { id: 'collections', label: '💰 Collections Log', icon: '' },
-              { id: 'dues', label: '🔴 Route Dues', icon: '' },
-              { id: 'daily', label: '📅 Daily Sales', icon: '' },
-              { id: 'monthly', label: '📈 Monthly Sales', icon: '' },
-              { id: 'expenses', label: '💸 Expenses', icon: '' }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={activeTab === tab.id ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-                style={{ borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.375rem', fontWeight: '700', whiteSpace: 'nowrap' }}
+          {/* Products Loaded Section */}
+          <div style={{ backgroundColor: 'rgba(0,0,0,0.25)', padding: '1.25rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', margin: 0 }}>
+                  Products Loaded on Vehicle
+                </h3>
+                <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>
+                  Specify initial stock loaded onto vehicle before transit
+                </span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleAddProductRow}
+                icon={<Plus style={{ width: '13px', height: '13px' }} />}
               >
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </div>
+                Add Another Product
+              </Button>
+            </div>
 
-          {/* =========================================================================
-              TAB 1: TRUCK LOAD DISPATCHES (PART 5 — STEP 1)
-              ========================================================================= */}
-          {activeTab === 'load_dispatches' && (
-            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              
-              <div className="card" style={{ padding: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {startRouteForm.items.map((row, idx) => (
+                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto', gap: '0.75rem', alignItems: 'flex-end', backgroundColor: 'rgba(255,255,255,0.02)', padding: '0.75rem', borderRadius: '6px' }}>
+                  <Select
+                    label="Product Name"
+                    value={row.product_name}
+                    onChange={(e) => handleProductRowChange(idx, 'product_name', e.target.value)}
+                    options={products.map(p => ({
+                      value: p.name,
+                      label: `${p.name} (Stock: ${p.stock_quantity})`
+                    }))}
+                  />
+
+                  <Input
+                    type="number"
+                    label="Quantity"
+                    value={row.loaded_quantity}
+                    onChange={(e) => handleProductRowChange(idx, 'loaded_quantity', Number(e.target.value))}
+                  />
+
+                  <Input
+                    label="Unit"
+                    value={row.unit}
+                    onChange={(e) => handleProductRowChange(idx, 'unit', e.target.value)}
+                  />
+
+                  <Input
+                    type="number"
+                    label="Rate (₹)"
+                    value={row.rate}
+                    onChange={(e) => handleProductRowChange(idx, 'rate', Number(e.target.value))}
+                  />
+
                   <div>
-                    <h3 style={{ fontSize: '1.15rem', fontWeight: '800', color: '#fff', margin: 0 }}>
-                      🚚 Driver Truck Load Dispatches
-                    </h3>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-2)', margin: '0.25rem 0 0' }}>
-                      Warehouse stock issued for distribution. Deducts stock at dispatch time. Not a sales invoice.
-                    </p>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: '#a1a1aa', marginBottom: '0.25rem' }}>Load Value</label>
+                    <div style={{ padding: '0.55rem', backgroundColor: '#27272a', borderRadius: '4px', color: '#fbbf24', fontWeight: 700, fontSize: '0.88rem' }}>
+                      ₹{row.amount.toLocaleString('en-IN')}
+                    </div>
                   </div>
 
                   <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => setShowIssueModal(true)}
+                    type="button"
+                    onClick={() => handleRemoveProductRow(idx)}
+                    style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', padding: '0.5rem' }}
+                    title="Remove item"
                   >
-                    + Issue New Truck Load
+                    <X style={{ width: '18px', height: '18px' }} />
                   </button>
                 </div>
-
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="erp-table">
-                    <thead>
-                      <tr>
-                        <th>Dispatch Number</th>
-                        <th>Date</th>
-                        <th>Vehicle</th>
-                        <th>Route</th>
-                        <th style={{ textAlign: 'center' }}>Loaded Items</th>
-                        <th style={{ textAlign: 'center' }}>Total Qty</th>
-                        <th style={{ textAlign: 'right' }}>Load Value</th>
-                        <th style={{ textAlign: 'center' }}>Status</th>
-                        <th style={{ textAlign: 'center' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {driverLoadsList.map(load => (
-                        <tr key={load.id}>
-                          <td style={{ fontWeight: '700', color: '#60a5fa', fontFamily: 'var(--font-m)' }}>
-                            {load.dispatch_number}
-                          </td>
-                          <td>{load.dispatch_date}</td>
-                          <td>{load.vehicle_number || 'AP 16 AB 1234'}</td>
-                          <td>{load.route_name || 'Assigned Route'}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>
-                              {(load.items || []).map(it => `${it.product_name} (${it.loaded_quantity})`).join(', ')}
-                            </span>
-                          </td>
-                          <td style={{ textAlign: 'center', fontWeight: '700' }}>
-                            {load.total_loaded_qty}
-                          </td>
-                          <td style={{ textAlign: 'right', fontWeight: '700' }}>
-                            ₹{load.total_load_value.toLocaleString('en-IN')}
-                          </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <span className={`badge ${load.status === 'SETTLED' ? 'badge-success' : 'badge-primary'}`}>
-                              {load.status}
-                            </span>
-                          </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
-                              <button
-                                className="btn btn-secondary btn-xs"
-                                onClick={() => printLoadDispatchNote(load)}
-                                title="Print Load Dispatch Note"
-                              >
-                                🖨️ Note
-                              </button>
-                              <button
-                                className="btn btn-secondary btn-xs"
-                                style={{ color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.3)' }}
-                                onClick={() => {
-                                  setWhatsAppBill({
-                                    id: load.id,
-                                    invoice_number: load.dispatch_number,
-                                    dealer_name: selectedDriver.name,
-                                    customer_name: `Driver: ${selectedDriver.name} (${load.vehicle_number || 'AP 16 AB 1234'})`,
-                                    dealer_phone: selectedDriver.phone,
-                                    customer_phone: selectedDriver.phone,
-                                    date: load.dispatch_date,
-                                    bill_type: 'LOAD DISPATCH NOTE',
-                                    total_quantity: load.total_loaded_qty,
-                                    total_amount: load.total_load_value,
-                                    grand_total: load.total_load_value,
-                                    paid_amount: 0,
-                                    due_amount: 0,
-                                    items: (load.items || []).map(it => ({
-                                      product_name: it.product_name,
-                                      quantity: it.loaded_quantity,
-                                      rate: it.rate,
-                                      amount: it.loaded_quantity * it.rate
-                                    }))
-                                  })
-                                }}
-                                title="Send Load Dispatch to Driver on WhatsApp"
-                              >
-                                📱 WhatsApp
-                              </button>
-                              {load.status === 'ISSUED' && (
-                                <button
-                                  className="btn btn-primary btn-xs"
-                                  onClick={() => {
-                                    initSettlementForDispatch(load)
-                                    setActiveTab('route_settlement')
-                                  }}
-                                  title="Reconcile and settle this route run"
-                                >
-                                  ⚖️ Settle Route
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {driverLoadsList.length === 0 && (
-                        <tr>
-                          <td colSpan={9} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
-                            No truck loads dispatched yet for {selectedDriver.name}. Click "+ Issue New Truck Load" to issue inventory.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
+              ))}
             </div>
-          )}
 
-          {/* =========================================================================
-              TAB 2: ROUTE SETTLEMENT & 4-WAY RECONCILIATION (PART 5 — STEPS 3 & 4)
-              Loaded = Sold + Returned (Good) + Leaked/Damaged + Unaccounted
-              ========================================================================= */}
-          {activeTab === 'route_settlement' && (
-            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              
-              <div className="card" style={{ padding: '1.5rem', borderLeft: '4px solid #3b82f6' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
+            {/* Total Load Summary */}
+            <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '1.5rem', fontSize: '0.9rem', color: '#fff', fontWeight: 700 }}>
+              <span>Total Units Loaded: <span style={{ color: '#fbbf24' }}>{startRouteForm.items.reduce((s, it) => s + (Number(it.loaded_quantity) || 0), 0)} units</span></span>
+              <span>Total Load Value: <span style={{ color: '#10b981' }}>₹{startRouteForm.items.reduce((s, it) => s + (Number(it.amount) || 0), 0).toLocaleString('en-IN')}</span></span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <Button
+              variant="outline"
+              onClick={() => setActiveTab('active_routes')}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={startingRoute}
+              onClick={handleStartRouteSubmit}
+              icon={<Play style={{ width: '15px', height: '15px' }} />}
+            >
+              {startingRoute ? 'Reserving Stock & Starting...' : 'START ROUTE'}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* =========================================================================
+          TAB 3: COMPLETED ROUTES (Settlement History & Customer Invoices)
+          ========================================================================= */}
+      {activeTab === 'completed_routes' && (
+        <Card style={{ backgroundColor: '#18181b', padding: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff', margin: 0 }}>
+                Completed &amp; Settled Routes
+              </h3>
+              <p style={{ color: '#a1a1aa', fontSize: '0.8rem', margin: '2px 0 0 0' }}>
+                Audited route settlements, reconciliations, generated customer bills, collections, and expenses
+              </p>
+            </div>
+          </div>
+
+          <DataTable
+            columns={[
+              {
+                key: 'dispatch_number',
+                title: 'Route Reference',
+                render: r => (
                   <div>
-                    <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#fff', margin: 0 }}>
-                      ⚖️ Driver Route Settlement & Physical Stock Reconciliation
-                    </h3>
-                    <p style={{ fontSize: '0.8125rem', color: 'var(--text-2)', margin: '0.25rem 0 0' }}>
-                      Reconcile loaded products against actual sales, returns, and leakages. Good returns are checked back into warehouse stock.
-                    </p>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#fbbf24', fontSize: '0.85rem' }}>
+                      {r.dispatch_number}
+                    </span>
+                    <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>{r.route_name || 'Daily Route'}</div>
                   </div>
+                )
+              },
+              {
+                key: 'driver_name',
+                title: 'Driver & Vehicle',
+                render: r => (
+                  <div>
+                    <div style={{ fontWeight: 700, color: '#f4f4f5' }}>{r.driver_name}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>{r.vehicle_number || 'AP 16 AB 1234'}</div>
+                  </div>
+                )
+              },
+              {
+                key: 'dispatch_date',
+                title: 'Date & Time',
+                render: r => (
+                  <div style={{ fontSize: '0.82rem' }}>
+                    <div>{r.dispatch_date}</div>
+                    <div style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>{r.start_time || '08:30 AM'} → {r.end_time || 'Ended'}</div>
+                  </div>
+                )
+              },
+              {
+                key: 'total_loaded_qty',
+                title: 'Quantities',
+                render: r => (
+                  <div style={{ fontSize: '0.78rem' }}>
+                    <div>Loaded: <strong>{r.total_loaded_qty}</strong></div>
+                    <div style={{ color: '#34d399' }}>Sold: <strong>{r.total_sold_qty || 0}</strong></div>
+                    <div style={{ color: '#60a5fa' }}>Ret: <strong>{r.total_returned_qty || 0}</strong> | Dmg: <strong>{r.total_leaked_qty || 0}</strong></div>
+                  </div>
+                )
+              },
+              {
+                key: 'total_sales_amount',
+                title: 'Financials',
+                render: r => (
+                  <div style={{ fontSize: '0.8rem' }}>
+                    <div>Sales: <strong style={{ color: '#fff' }}>₹{Number(r.total_sales_amount || 0).toLocaleString('en-IN')}</strong></div>
+                    <div style={{ color: '#10b981' }}>Coll: <strong>₹{((Number(r.cash_collected || 0)) + (Number(r.upi_collected || 0))).toLocaleString('en-IN')}</strong></div>
+                    {Number(r.expenses_amount || 0) > 0 && <div style={{ color: '#f59e0b' }}>Exp: -₹{Number(r.expenses_amount).toFixed(0)}</div>}
+                  </div>
+                )
+              },
+              {
+                key: 'status',
+                title: 'Status',
+                render: r => <Badge variant="success">COMPLETED</Badge>
+              },
+              {
+                key: 'actions',
+                title: 'Invoices & Reports',
+                render: r => (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setViewRouteRecord(r)}
+                    icon={<FileText style={{ width: '13px', height: '13px', color: '#fbbf24' }} />}
+                  >
+                    View Settlement ({r.bills_count || (r.generated_bills?.length || 0)} Bills)
+                  </Button>
+                )
+              }
+            ]}
+            data={completedRoutes}
+          />
+        </Card>
+      )}
 
-                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                    <label style={{ fontSize: '0.8125rem', color: 'var(--text-2)' }}>Select Load Dispatch:</label>
-                    <select
-                      className="form-input"
-                      style={{ width: '260px' }}
-                      value={selectedDispatchToSettle?.id || ''}
-                      onChange={e => {
-                        const target = driverLoadsList.find(l => l.id === e.target.value)
-                        if (target) initSettlementForDispatch(target)
+      {/* =========================================================================
+          TAB 4: DRIVER MANAGEMENT DIRECTORY
+          ========================================================================= */}
+      {activeTab === 'drivers' && (
+        <Card style={{ backgroundColor: '#18181b', padding: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff', margin: 0 }}>
+                Driver Directory &amp; Profiles
+              </h3>
+              <p style={{ color: '#a1a1aa', fontSize: '0.8rem', margin: '2px 0 0 0' }}>
+                Driver profiles, phone contacts, WhatsApp, assigned vehicles, live status and route performance metrics
+              </p>
+            </div>
+            <Button
+              variant="primary"
+              onClick={openAddDriverModal}
+              icon={<Plus style={{ width: '14px', height: '14px' }} />}
+            >
+              Add New Driver
+            </Button>
+          </div>
+
+          <DataTable
+            columns={[
+              {
+                key: 'name',
+                title: 'Driver Name & Phone',
+                render: d => (
+                  <div>
+                    <div style={{ fontWeight: 800, color: '#f4f4f5', fontSize: '0.9rem' }}>{d.name}</div>
+                    <div style={{ fontSize: '0.78rem', color: '#a1a1aa', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <Phone style={{ width: '11px', height: '11px' }} />
+                      <span>{d.phone}</span>
+                    </div>
+                  </div>
+                )
+              },
+              {
+                key: 'assigned_vehicle',
+                title: 'Vehicle & Reg',
+                render: d => (
+                  <div>
+                    <div style={{ fontWeight: 600, color: '#d4d4d8', fontSize: '0.85rem' }}>{d.assigned_vehicle || 'Tata Ace 407'}</div>
+                    <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#fbbf24' }}>{d.vehicle_number || 'AP 16 AB 1234'}</div>
+                  </div>
+                )
+              },
+              {
+                key: 'status',
+                title: 'Route Status',
+                render: d => {
+                  const st = (d.status || 'AVAILABLE').toUpperCase()
+                  if (st === 'ON_ROUTE') {
+                    return <Badge variant="warning">ON_ROUTE</Badge>
+                  }
+                  if (st === 'INACTIVE') {
+                    return <Badge variant="neutral">INACTIVE</Badge>
+                  }
+                  return <Badge variant="success">AVAILABLE</Badge>
+                }
+              },
+              {
+                key: 'salary',
+                title: 'Salary & Joining',
+                render: d => (
+                  <div>
+                    <div style={{ fontWeight: 700, color: '#fff' }}>₹{d.salary?.toLocaleString('en-IN') || '18,000'} /mo</div>
+                    <div style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>Joined: {d.joining_date || '2026-01-15'}</div>
+                  </div>
+                )
+              },
+              {
+                key: 'total_completed_routes',
+                title: 'Lifetime Stats',
+                render: d => (
+                  <div style={{ fontSize: '0.78rem' }}>
+                    <div>Routes: <strong style={{ color: '#fff' }}>{d.total_completed_routes}</strong></div>
+                    <div>Sales: <strong style={{ color: '#34d399' }}>₹{d.total_sales.toLocaleString('en-IN')}</strong></div>
+                    <div>Coll: <strong style={{ color: '#fbbf24' }}>₹{d.total_collections.toLocaleString('en-IN')}</strong></div>
+                  </div>
+                )
+              },
+              {
+                key: 'actions',
+                title: 'Actions',
+                render: d => (
+                  <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                    {/* WhatsApp Action */}
+                    <button
+                      type="button"
+                      title="Chat on WhatsApp"
+                      onClick={() => {
+                        const cleanPhone = String(d.phone || '').replace(/[^\d]/g, '')
+                        const fullPhone = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`
+                        window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(`Hello ${d.name}, message from Royal Kissan Operations desk.`)}`, '_blank')
+                      }}
+                      style={{
+                        backgroundColor: 'rgba(37, 211, 102, 0.12)',
+                        border: '1px solid rgba(37, 211, 102, 0.3)',
+                        borderRadius: '6px',
+                        padding: '0.35rem 0.5rem',
+                        color: '#25D366',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
                       }}
                     >
-                      <option value="">-- Choose Dispatched Load --</option>
-                      {driverLoadsList.map(l => (
-                        <option key={l.id} value={l.id}>
-                          {l.dispatch_number} ({l.dispatch_date}) — {l.status}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {selectedDispatchToSettle ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                    
-                    {/* Header Details */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
-                      <div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Dispatch Number</div>
-                        <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#60a5fa' }}>{selectedDispatchToSettle.dispatch_number}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Dispatch Date</div>
-                        <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#fff' }}>{selectedDispatchToSettle.dispatch_date}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Vehicle</div>
-                        <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#fff' }}>{selectedDispatchToSettle.vehicle_number || 'AP 16 AB 1234'}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Settlement Date</div>
-                        <input
-                          type="date"
-                          className="form-input"
-                          style={{ padding: '0.25rem 0.5rem', height: '32px', fontSize: '0.85rem' }}
-                          value={settlementDate}
-                          onChange={e => setSettlementDate(e.target.value)}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Stock Reconciliation Grid */}
-                    <div style={{ overflowX: 'auto' }}>
-                      <table className="erp-table">
-                        <thead>
-                          <tr>
-                            <th>Product Name</th>
-                            <th style={{ textAlign: 'center', width: '100px' }}>Loaded Qty</th>
-                            <th style={{ textAlign: 'center', width: '110px' }}>Sold Qty</th>
-                            <th style={{ textAlign: 'center', width: '110px' }}>Returned (Good)</th>
-                            <th style={{ textAlign: 'center', width: '110px' }}>Leaked / Damaged</th>
-                            <th style={{ textAlign: 'center', width: '100px' }}>Unaccounted</th>
-                            <th style={{ textAlign: 'right', width: '100px' }}>Rate (₹)</th>
-                            <th style={{ textAlign: 'right', width: '110px' }}>Sold Value</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {settlementRows.map((r, idx) => {
-                            const accounted = Number(r.sold_qty) + Number(r.returned_good_qty) + Number(r.leaked_damaged_qty)
-                            const unaccounted = Number(r.loaded_qty) - accounted
-                            const isOver = accounted > Number(r.loaded_qty)
-
-                            return (
-                              <tr key={idx}>
-                                <td style={{ fontWeight: '700', color: '#fff' }}>{r.product_name}</td>
-                                <td style={{ textAlign: 'center', fontWeight: '700', color: '#60a5fa' }}>{r.loaded_qty}</td>
-                                <td style={{ textAlign: 'center' }}>
-                                  <input
-                                    type="number"
-                                    className="form-input"
-                                    style={{ width: '80px', textAlign: 'center', padding: '0.25rem' }}
-                                    value={r.sold_qty}
-                                    onChange={e => {
-                                      const val = Math.max(0, Number(e.target.value))
-                                      setSettlementRows(prev => prev.map((item, i) => i === idx ? { ...item, sold_qty: val } : item))
-                                    }}
-                                  />
-                                </td>
-                                <td style={{ textAlign: 'center' }}>
-                                  <input
-                                    type="number"
-                                    className="form-input"
-                                    style={{ width: '80px', textAlign: 'center', padding: '0.25rem', color: '#34d399' }}
-                                    value={r.returned_good_qty}
-                                    placeholder="0"
-                                    onChange={e => {
-                                      const val = Math.max(0, Number(e.target.value))
-                                      setSettlementRows(prev => prev.map((item, i) => i === idx ? { ...item, returned_good_qty: val } : item))
-                                    }}
-                                  />
-                                </td>
-                                <td style={{ textAlign: 'center' }}>
-                                  <input
-                                    type="number"
-                                    className="form-input"
-                                    style={{ width: '80px', textAlign: 'center', padding: '0.25rem', color: '#f87171' }}
-                                    value={r.leaked_damaged_qty}
-                                    placeholder="0"
-                                    onChange={e => {
-                                      const val = Math.max(0, Number(e.target.value))
-                                      setSettlementRows(prev => prev.map((item, i) => i === idx ? { ...item, leaked_damaged_qty: val } : item))
-                                    }}
-                                  />
-                                </td>
-                                <td style={{ textAlign: 'center', fontWeight: '800', color: isOver ? '#f87171' : unaccounted > 0 ? '#fbbf24' : '#34d399' }}>
-                                  {isOver ? `Over by ${accounted - r.loaded_qty}` : unaccounted}
-                                </td>
-                                <td style={{ textAlign: 'right' }}>₹{r.rate}</td>
-                                <td style={{ textAlign: 'right', fontWeight: '700' }}>₹{round2(r.sold_qty * r.rate)}</td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Financials & Expenses Grid */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
-                      
-                      {/* Collections Card */}
-                      <div className="card" style={{ padding: '1.25rem', background: 'var(--surface-3)' }}>
-                        <h4 style={{ margin: '0 0 1rem', fontSize: '0.95rem', fontWeight: '800', color: '#fff' }}>
-                          💰 Route Collections
-                        </h4>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <label style={{ fontSize: '0.8125rem' }}>Cash Collected (₹):</label>
-                            <input
-                              type="number"
-                              className="form-input"
-                              style={{ width: '130px', textAlign: 'right', color: '#34d399' }}
-                              value={settlementCash}
-                              onChange={e => setSettlementCash(Math.max(0, Number(e.target.value)))}
-                            />
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <label style={{ fontSize: '0.8125rem' }}>UPI Collected (₹):</label>
-                            <input
-                              type="number"
-                              className="form-input"
-                              style={{ width: '130px', textAlign: 'right', color: '#34d399' }}
-                              value={settlementUpi}
-                              onChange={e => setSettlementUpi(Math.max(0, Number(e.target.value)))}
-                            />
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <label style={{ fontSize: '0.8125rem' }}>Credit Sales (Due) (₹):</label>
-                            <input
-                              type="number"
-                              className="form-input"
-                              style={{ width: '130px', textAlign: 'right', color: '#fbbf24' }}
-                              value={settlementCredit}
-                              onChange={e => setSettlementCredit(Math.max(0, Number(e.target.value)))}
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Route Expenses Card */}
-                      <div className="card" style={{ padding: '1.25rem', background: 'var(--surface-3)' }}>
-                        <h4 style={{ margin: '0 0 1rem', fontSize: '0.95rem', fontWeight: '800', color: '#fff' }}>
-                          💸 Route Trip Expenses
-                        </h4>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <label style={{ fontSize: '0.8125rem' }}>Fuel Charges (₹):</label>
-                            <input
-                              type="number"
-                              className="form-input"
-                              style={{ width: '130px', textAlign: 'right' }}
-                              value={settlementFuel}
-                              onChange={e => setSettlementFuel(Math.max(0, Number(e.target.value)))}
-                            />
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <label style={{ fontSize: '0.8125rem' }}>Driver Bata (₹):</label>
-                            <input
-                              type="number"
-                              className="form-input"
-                              style={{ width: '130px', textAlign: 'right' }}
-                              value={settlementBata}
-                              onChange={e => setSettlementBata(Math.max(0, Number(e.target.value)))}
-                            />
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <label style={{ fontSize: '0.8125rem' }}>Other Expenses (₹):</label>
-                            <input
-                              type="number"
-                              className="form-input"
-                              style={{ width: '130px', textAlign: 'right' }}
-                              value={settlementOtherExp}
-                              onChange={e => setSettlementOtherExp(Math.max(0, Number(e.target.value)))}
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Cashier Handover Reconciliation */}
-                      <div className="card" style={{ padding: '1.25rem', background: 'var(--surface-3)' }}>
-                        <h4 style={{ margin: '0 0 1rem', fontSize: '0.95rem', fontWeight: '800', color: '#fff' }}>
-                          ⚖️ Cashier Handover Reconciliation
-                        </h4>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.85rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ color: 'var(--text-2)' }}>Expected Handover:</span>
-                            <strong>₹{Math.max(0, settlementCash + settlementUpi - (settlementFuel + settlementBata + settlementOtherExp)).toLocaleString('en-IN')}</strong>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
-                            <span style={{ fontWeight: '700', color: '#fff' }}>Actual Handover (₹):</span>
-                            <input
-                              type="number"
-                              className="form-input"
-                              style={{ width: '130px', textAlign: 'right', fontWeight: '800', color: '#34d399' }}
-                              value={settlementActualHandover}
-                              onChange={e => setSettlementActualHandover(Math.max(0, Number(e.target.value)))}
-                            />
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
-                            <span style={{ color: 'var(--text-2)' }}>Difference:</span>
-                            <strong style={{ color: (settlementActualHandover - Math.max(0, settlementCash + settlementUpi - (settlementFuel + settlementBata + settlementOtherExp))) === 0 ? '#34d399' : '#f87171' }}>
-                              ₹{(settlementActualHandover - Math.max(0, settlementCash + settlementUpi - (settlementFuel + settlementBata + settlementOtherExp))).toLocaleString('en-IN')}
-                            </strong>
-                          </div>
-                        </div>
-                      </div>
-
-                    </div>
-
-                    {/* Discrepancy Reason field */}
-                    <div className="form-group">
-                      <label className="form-label" style={{ fontWeight: '700' }}>
-                        Discrepancy Explanation / Notes (Required if shortage or cash mismatch exists):
-                      </label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="e.g. 2 leaked cans reported, ₹50 shortage approved for route toll"
-                        value={settlementDiscrepancyReason}
-                        onChange={e => setSettlementDiscrepancyReason(e.target.value)}
-                      />
-                    </div>
-
-                    {/* Confirmation Button */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <input
-                          type="checkbox"
-                          id="autoGen"
-                          checked={autoGenerateCustomerBills}
-                          onChange={e => setAutoGenerateCustomerBills(e.target.checked)}
-                        />
-                        <label htmlFor="autoGen" style={{ fontSize: '0.8125rem', color: 'var(--text-2)', cursor: 'pointer' }}>
-                          Generate official customer invoices for completed sales (prevents double inventory deduction)
-                        </label>
-                      </div>
-
-                      <button
-                        className="btn btn-primary btn-lg"
-                        style={{ minWidth: '260px' }}
-                        onClick={handleConfirmRouteSettlement}
-                        disabled={settlingRoute}
-                      >
-                        {settlingRoute ? 'Processing Settlement...' : '🏁 FINALIZE ROUTE & GENERATE BILLS'}
-                      </button>
-                    </div>
-
-                  </div>
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
-                    Please select an issued truck load from the dropdown above to begin settlement and reconciliation.
-                  </div>
-                )}
-              </div>
-
-            </div>
-          )}
-
-          {/* =========================================================================
-              TAB 3: SETTLEMENT HISTORY (AUDIT TRAIL)
-              ========================================================================= */}
-          {activeTab === 'settlement_history' && (
-            <div className="card" style={{ padding: '1.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                <div>
-                  <h3 style={{ fontSize: '1.15rem', fontWeight: '800', color: '#fff', margin: 0 }}>
-                    📜 Confirmed Route Settlement Audit Log
-                  </h3>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-2)', margin: '0.25rem 0 0' }}>
-                    Historical log of reconciled routes, physical stock returns, leakages, and cash collections.
-                  </p>
-                </div>
-              </div>
-
-              <div style={{ overflowX: 'auto' }}>
-                <table className="erp-table">
-                  <thead>
-                    <tr>
-                      <th>Settlement #</th>
-                      <th>Date</th>
-                      <th style={{ textAlign: 'center' }}>Loaded</th>
-                      <th style={{ textAlign: 'center' }}>Sold</th>
-                      <th style={{ textAlign: 'center' }}>Good Returns</th>
-                      <th style={{ textAlign: 'center' }}>Leaked / Scrap</th>
-                      <th style={{ textAlign: 'center' }}>Shortage</th>
-                      <th style={{ textAlign: 'right' }}>Net Collections</th>
-                      <th style={{ textAlign: 'center' }}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {driverSettlementsList.map(s => (
-                      <tr key={s.id}>
-                        <td style={{ fontWeight: '700', color: '#60a5fa', fontFamily: 'var(--font-m)' }}>
-                          {s.settlement_number}
-                        </td>
-                        <td>{s.settlement_date}</td>
-                        <td style={{ textAlign: 'center' }}>{s.total_loaded_qty}</td>
-                        <td style={{ textAlign: 'center', fontWeight: '700' }}>{s.total_sold_qty}</td>
-                        <td style={{ textAlign: 'center', color: '#34d399', fontWeight: '700' }}>{s.total_returned_qty}</td>
-                        <td style={{ textAlign: 'center', color: '#f87171', fontWeight: '700' }}>{s.total_leaked_qty}</td>
-                        <td style={{ textAlign: 'center', color: s.unaccounted_qty > 0 ? '#fbbf24' : 'inherit' }}>{s.unaccounted_qty}</td>
-                        <td style={{ textAlign: 'right', fontWeight: '800', color: '#34d399' }}>₹{s.actual_collection.toLocaleString('en-IN')}</td>
-                        <td style={{ textAlign: 'center' }}>
-                          <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
-                            <button
-                              className="btn btn-secondary btn-xs"
-                              onClick={() => printSettlementSummary(s)}
-                            >
-                              🖨️ Summary
-                            </button>
-                            <button
-                              className="btn btn-secondary btn-xs"
-                              style={{ color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.3)' }}
-                              onClick={() => {
-                                setWhatsAppBill({
-                                  id: s.id,
-                                  invoice_number: s.settlement_number,
-                                  dealer_name: selectedDriver.name,
-                                  customer_name: `Driver: ${selectedDriver.name}`,
-                                  dealer_phone: selectedDriver.phone,
-                                  customer_phone: selectedDriver.phone,
-                                  date: s.settlement_date,
-                                  bill_type: 'ROUTE SETTLEMENT SUMMARY',
-                                  subtotal: s.total_sold_qty,
-                                  total_amount: s.actual_collection,
-                                  grand_total: s.actual_collection,
-                                  paid_amount: s.actual_collection,
-                                  due_amount: s.unaccounted_qty,
-                                  items: [
-                                    { product_name: `Sold Products (${s.total_sold_qty} units)`, quantity: s.total_sold_qty, rate: 0, amount: s.actual_collection },
-                                    { product_name: `Returned Good Stock (${s.total_returned_qty} units)`, quantity: s.total_returned_qty, rate: 0, amount: 0 },
-                                    { product_name: `Leaked / Damaged (${s.total_leaked_qty} units)`, quantity: s.total_leaked_qty, rate: 0, amount: 0 },
-                                    { product_name: `Net Cash Handed Over`, quantity: 1, rate: s.actual_collection, amount: s.actual_collection }
-                                  ]
-                                })
-                              }}
-                              title="Send Route Settlement Summary to Driver on WhatsApp"
-                            >
-                              📱 WhatsApp
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {driverSettlementsList.length === 0 && (
-                      <tr>
-                        <td colSpan={9} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
-                          No confirmed route settlements recorded yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* MAIN DRIVER ROUTE COMPLETION & CUSTOMER STOP SHEET */}
-          {(activeTab === 'local' || activeTab === 'non-local') && (
-            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              
-              {/* Route Customer Stop Sheet with Auto/Manual Rates */}
-              <div className="card" style={{ padding: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
-                  <div>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>
-                      📋 Route Customer Stop Registry ({selectedRoute?.name || 'Local Route'})
-                    </h3>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-2)', margin: '0.25rem 0 0' }}>
-                      Rates are pre-filled automatically from route_customers.default_rate with manual override per stop entry.
-                    </p>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button
-                      className={`btn btn-xs ${selectedCategory === null ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setSelectedCategory(null)}
-                    >
-                      All Stops ({customers.length})
+                      <Send style={{ width: '13px', height: '13px' }} />
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700 }}>WA</span>
                     </button>
+
+                    {/* Edit Driver */}
                     <button
-                      className={`btn btn-xs ${selectedCategory === 'cans' ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setSelectedCategory('cans')}
+                      type="button"
+                      title="Edit Driver"
+                      onClick={() => openEditDriverModal(d)}
+                      style={{
+                        backgroundColor: '#27272a',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '6px',
+                        padding: '0.35rem 0.5rem',
+                        color: '#d4d4d8',
+                        cursor: 'pointer'
+                      }}
                     >
-                      Cans ({customers.filter(c => c.section === 'cans').length})
+                      <Edit style={{ width: '13px', height: '13px' }} />
                     </button>
+
+                    {/* Assign Route */}
                     <button
-                      className={`btn btn-xs ${selectedCategory === 'bags' ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setSelectedCategory('bags')}
+                      type="button"
+                      title="Assign New Route"
+                      disabled={d.status === 'ON_ROUTE'}
+                      onClick={() => {
+                        setStartRouteForm(prev => ({
+                          ...prev,
+                          driver_id: d.id,
+                          vehicle_number: d.vehicle_number || prev.vehicle_number
+                        }))
+                        setActiveTab('start_route')
+                      }}
+                      style={{
+                        backgroundColor: d.status === 'ON_ROUTE' ? '#27272a' : '#fbbf24',
+                        color: d.status === 'ON_ROUTE' ? '#71717a' : '#000',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '0.35rem 0.65rem',
+                        fontSize: '0.75rem',
+                        fontWeight: 800,
+                        cursor: d.status === 'ON_ROUTE' ? 'not-allowed' : 'pointer'
+                      }}
                     >
-                      Bags ({customers.filter(c => c.section === 'bags').length})
-                    </button>
-                    <button
-                      className={`btn btn-xs ${selectedCategory === 'bottles' ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setSelectedCategory('bottles')}
-                    >
-                      Bottles ({customers.filter(c => c.section === 'bottles').length})
+                      {d.status === 'ON_ROUTE' ? 'Busy' : 'Assign'}
                     </button>
                   </div>
-                </div>
+                )
+              }
+            ]}
+            data={drivers}
+          />
+        </Card>
+      )}
 
-                {/* Customer Stop Table */}
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="erp-table">
-                    <thead>
-                      <tr>
-                        <th>Stop / Customer Name</th>
-                        <th style={{ width: '80px', textAlign: 'center' }}>Section</th>
-                        <th style={{ width: '90px', textAlign: 'center' }}>Sold Qty</th>
-                        <th style={{ width: '100px', textAlign: 'right' }}>Rate (₹) [Auto/Manual]</th>
-                        <th style={{ width: '100px', textAlign: 'right' }}>Cash Paid</th>
-                        <th style={{ width: '100px', textAlign: 'right' }}>UPI Paid</th>
-                        <th style={{ width: '80px', textAlign: 'center' }}>Return Qty</th>
-                        <th style={{ width: '80px', textAlign: 'center' }}>Leaked</th>
-                        <th style={{ width: '100px', textAlign: 'right' }}>Due Amount</th>
-                        <th style={{ width: '90px', textAlign: 'center' }}>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {customers
-                        .filter(c => selectedCategory === null || c.section === selectedCategory)
-                        .map((c, idx) => {
-                          const total = (Number(c.qty_entered) || 0) * (Number(c.rate_entered) || 0)
-                          const cash = Number(c.cash_paid) || 0
-                          const upi = Number(c.upi_paid) || 0
-                          const calculatedDue = Math.max(0, total - cash - upi)
-
-                          return (
-                            <tr key={c.id || idx}>
-                              <td style={{ fontWeight: '700', color: '#fff' }}>
-                                {c.name}
-                                <div style={{ fontSize: '0.65rem', color: 'hsl(215 20% 50%)', fontWeight: 'normal' }}>
-                                  {c.product_name}
-                                </div>
-                              </td>
-                              <td style={{ textAlign: 'center' }}>
-                                <span className={`badge ${c.section === 'cans' ? 'badge-primary' : c.section === 'bags' ? 'badge-warning' : 'badge-success'}`}>
-                                  {c.section}
-                                </span>
-                              </td>
-                              <td style={{ textAlign: 'center' }}>
-                                <input
-                                  type="number"
-                                  className="form-input"
-                                  style={{ padding: '0.25rem 0.5rem', textAlign: 'center', width: '70px' }}
-                                  value={c.qty_entered}
-                                  onChange={e => updateCustomerEntry(c.id, 'qty_entered', Math.max(0, Number(e.target.value)))}
-                                />
-                              </td>
-                              <td style={{ textAlign: 'right' }}>
-                                <input
-                                  type="number"
-                                  className="form-input"
-                                  style={{ padding: '0.25rem 0.5rem', textAlign: 'right', width: '85px', color: '#60a5fa', fontWeight: 'bold' }}
-                                  value={c.rate_entered}
-                                  onChange={e => updateCustomerEntry(c.id, 'rate_entered', Math.max(0, Number(e.target.value)))}
-                                />
-                              </td>
-                              <td style={{ textAlign: 'right' }}>
-                                <input
-                                  type="number"
-                                  className="form-input"
-                                  style={{ padding: '0.25rem 0.5rem', textAlign: 'right', width: '85px', color: '#34d399' }}
-                                  value={c.cash_paid || ''}
-                                  placeholder="0"
-                                  onChange={e => updateCustomerEntry(c.id, 'cash_paid', Math.max(0, Number(e.target.value)))}
-                                />
-                              </td>
-                              <td style={{ textAlign: 'right' }}>
-                                <input
-                                  type="number"
-                                  className="form-input"
-                                  style={{ padding: '0.25rem 0.5rem', textAlign: 'right', width: '85px', color: '#34d399' }}
-                                  value={c.upi_paid || ''}
-                                  placeholder="0"
-                                  onChange={e => updateCustomerEntry(c.id, 'upi_paid', Math.max(0, Number(e.target.value)))}
-                                />
-                              </td>
-                              <td style={{ textAlign: 'center' }}>
-                                <input
-                                  type="number"
-                                  className="form-input"
-                                  style={{ padding: '0.25rem 0.5rem', textAlign: 'center', width: '65px' }}
-                                  value={c.returned_qty || ''}
-                                  placeholder="0"
-                                  onChange={e => updateCustomerEntry(c.id, 'returned_qty', Math.max(0, Number(e.target.value)))}
-                                />
-                              </td>
-                              <td style={{ textAlign: 'center' }}>
-                                <input
-                                  type="number"
-                                  className="form-input"
-                                  style={{ padding: '0.25rem 0.5rem', textAlign: 'center', width: '65px', color: '#f87171' }}
-                                  value={c.leaked_qty || ''}
-                                  placeholder="0"
-                                  onChange={e => updateCustomerEntry(c.id, 'leaked_qty', Math.max(0, Number(e.target.value)))}
-                                />
-                              </td>
-                              <td style={{ textAlign: 'right', fontWeight: '800', color: calculatedDue > 0 ? '#f87171' : '#34d399' }}>
-                                ₹{calculatedDue}
-                              </td>
-                              <td style={{ textAlign: 'center' }}>
-                                <button
-                                  className="btn btn-ghost btn-xs"
-                                  onClick={() => openBillingModal(c)}
-                                >
-                                  🧾 Receipt
-                                </button>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                    </tbody>
-                  </table>
-                </div>
+      {/* =========================================================================
+          TAB 5: ROUTE & DRIVER DASHBOARD KPIS
+          ========================================================================= */}
+      {activeTab === 'dashboard' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+            <Card style={{ backgroundColor: '#18181b', padding: '1.25rem', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>Total Registered Drivers</span>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#f4f4f5', margin: '0.35rem 0' }}>
+                {dashboardStats.totalDrivers}
               </div>
+              <span style={{ fontSize: '0.75rem', color: '#34d399' }}>
+                {dashboardStats.availableDrivers} Available for Dispatch
+              </span>
+            </Card>
 
-              {/* ROUTE RUN RECONCILIATION SUMMARY & TRIP EXPENSES FORM */}
-              <div className="card" style={{ padding: '2rem' }}>
-                <h3 style={{ fontSize: '1.15rem', fontWeight: '800', color: '#fff', marginBottom: '1.25rem' }}>
-                  📊 Route Run Completion & Reconciliation Summary
-                </h3>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-                  <div style={{ background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>Total Route Sales</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#fff', marginTop: '0.25rem' }}>₹{summarySales.toLocaleString('en-IN')}</div>
-                  </div>
-                  <div style={{ background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>Cash Collected</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#34d399', marginTop: '0.25rem' }}>₹{summaryCash.toLocaleString('en-IN')}</div>
-                  </div>
-                  <div style={{ background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>UPI Collected</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#34d399', marginTop: '0.25rem' }}>₹{summaryUpi.toLocaleString('en-IN')}</div>
-                  </div>
-                  <div style={{ background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>Outstanding Dues</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: '800', color: summaryDue > 0 ? '#f87171' : '#34d399', marginTop: '0.25rem' }}>₹{summaryDue.toLocaleString('en-IN')}</div>
-                  </div>
-                  <div style={{ background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>Returned / Leaked</div>
-                    <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fbbf24', marginTop: '0.25rem' }}>
-                      {summaryReturned} ret / {summaryLeaked} leak
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
-                  <div>
-                    <span style={{ fontSize: '0.8125rem', color: 'var(--text-2)' }}>Net Reconciliation Collection: </span>
-                    <strong style={{ fontSize: '1.35rem', color: '#34d399', marginLeft: '0.5rem' }}>
-                      ₹{(summaryCash + summaryUpi - summaryExpenses).toLocaleString('en-IN')}
-                    </strong>
-                  </div>
-
-                  <button
-                    className="btn btn-primary btn-lg"
-                    style={{ minWidth: '240px' }}
-                    onClick={handleCompleteRouteRun}
-                    disabled={savingRouteRun}
-                  >
-                    {savingRouteRun ? 'Saving Reconciliation...' : '🏁 Save Route Run & Complete Trip'}
-                  </button>
-                </div>
-
+            <Card style={{ backgroundColor: '#18181b', padding: '1.25rem', border: '1px solid rgba(251, 191, 36, 0.25)' }}>
+              <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>Drivers Currently On Route</span>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fbbf24', margin: '0.35rem 0' }}>
+                {dashboardStats.driversOnRoute}
               </div>
+              <span style={{ fontSize: '0.75rem', color: '#fbbf24' }}>
+                {dashboardStats.activeRoutesCount} Active Live Runs
+              </span>
+            </Card>
 
-            </div>
-          )}
-
-          {/* TAB 4: COLLECTIONS */}
-          {activeTab === 'collections' && (
-            <div className="card" style={{ overflow: 'hidden' }}>
-              <div className="card-header"><h3 className="card-title">💰 Today's Collections Log</h3></div>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="erp-table">
-                  <thead>
-                    <tr>
-                      <th>Customer Name</th>
-                      <th>Product</th>
-                      <th style={{ textAlign: 'center' }}>Qty</th>
-                      <th style={{ textAlign: 'right' }}>Cash Received</th>
-                      <th style={{ textAlign: 'right' }}>UPI Received</th>
-                      <th style={{ textAlign: 'right' }}>Outstanding Due</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dailySalesList.filter(s => (s.cash_paid > 0 || s.upi_paid > 0)).map((s, idx) => (
-                      <tr key={idx}>
-                        <td style={{ fontWeight: '600', color: '#fff' }}>{s.customer_name}</td>
-                        <td>{s.product_name}</td>
-                        <td style={{ textAlign: 'center' }}>{s.quantity}</td>
-                        <td style={{ textAlign: 'right', color: '#34d399' }}>₹{s.cash_paid}</td>
-                        <td style={{ textAlign: 'right', color: '#34d399' }}>₹{s.upi_paid}</td>
-                        <td style={{ textAlign: 'right', color: s.due_amount > 0 ? '#f87171' : 'inherit' }}>₹{s.due_amount}</td>
-                      </tr>
-                    ))}
-                    {dailySalesList.filter(s => (s.cash_paid > 0 || s.upi_paid > 0)).length === 0 && (
-                      <tr>
-                        <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
-                          No collections registered today.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+            <Card style={{ backgroundColor: '#18181b', padding: '1.25rem', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+              <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>Today's Route Sales</span>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#10b981', margin: '0.35rem 0' }}>
+                ₹{dashboardStats.todayRouteSales.toLocaleString('en-IN')}
               </div>
-            </div>
-          )}
+              <span style={{ fontSize: '0.75rem', color: '#34d399' }}>
+                ₹{dashboardStats.todayCollections.toLocaleString('en-IN')} Collections Collected
+              </span>
+            </Card>
 
-          {/* TAB 5: DUE REPORTS */}
-          {activeTab === 'dues' && (
-            <div className="card" style={{ overflow: 'hidden' }}>
-              <div className="card-header"><h3 className="card-title">🔴 Pending Route Dues</h3></div>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="erp-table">
-                  <thead>
-                    <tr>
-                      <th>Customer Name</th>
-                      <th>Route Name</th>
-                      <th style={{ textAlign: 'right' }}>Outstanding Balance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {customers.filter(c => c.due_amount > 0).map((c, idx) => (
-                      <tr key={idx}>
-                        <td style={{ fontWeight: '700', color: '#fff' }}>{c.name}</td>
-                        <td>{selectedRoute?.name || 'Local Route'}</td>
-                        <td style={{ textAlign: 'right', color: '#f87171', fontWeight: '800' }}>₹{c.due_amount}</td>
-                      </tr>
-                    ))}
-                    {customers.filter(c => c.due_amount > 0).length === 0 && (
-                      <tr>
-                        <td colSpan={3} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
-                          No outstanding customer dues for active route.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+            <Card style={{ backgroundColor: '#18181b', padding: '1.25rem', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>Completed Routes Today</span>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#60a5fa', margin: '0.35rem 0' }}>
+                {dashboardStats.completedRoutesToday}
               </div>
-            </div>
-          )}
-
-          {/* TAB 6: DAILY SALES */}
-          {activeTab === 'daily' && (
-            <div className="card" style={{ overflow: 'hidden' }}>
-              <div className="card-header"><h3 className="card-title">📅 Today's Sales Activity</h3></div>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="erp-table">
-                  <thead>
-                    <tr>
-                      <th>Invoice No</th>
-                      <th>Customer Name</th>
-                      <th>Product</th>
-                      <th style={{ textAlign: 'center' }}>Qty</th>
-                      <th style={{ textAlign: 'right' }}>Rate</th>
-                      <th style={{ textAlign: 'right' }}>Total Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dailySalesList.map((s, idx) => (
-                      <tr key={idx}>
-                        <td style={{ fontFamily: 'var(--font-m)', color: '#3b82f6', fontWeight: '600' }}>{s.invoice_number}</td>
-                        <td style={{ fontWeight: '600', color: '#fff' }}>{s.customer_name}</td>
-                        <td>{s.product_name}</td>
-                        <td style={{ textAlign: 'center' }}>{s.quantity}</td>
-                        <td style={{ textAlign: 'right' }}>₹{s.rate}</td>
-                        <td style={{ textAlign: 'right', fontWeight: '700' }}>₹{s.total_amount}</td>
-                      </tr>
-                    ))}
-                    {dailySalesList.length === 0 && (
-                      <tr>
-                        <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
-                          No sales registered today.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 7: MONTHLY SALES */}
-          {activeTab === 'monthly' && (
-            <div className="card" style={{ overflow: 'hidden' }}>
-              <div className="card-header"><h3 className="card-title">📈 Current Month Route Sales</h3></div>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="erp-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Invoice No</th>
-                      <th>Customer Name</th>
-                      <th>Product</th>
-                      <th style={{ textAlign: 'center' }}>Qty</th>
-                      <th style={{ textAlign: 'right' }}>Total Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {monthlySalesList.map((s, idx) => (
-                      <tr key={idx}>
-                        <td>{s.sale_date}</td>
-                        <td style={{ fontFamily: 'var(--font-m)', color: '#3b82f6' }}>{s.invoice_number}</td>
-                        <td style={{ fontWeight: '600', color: '#fff' }}>{s.customer_name}</td>
-                        <td>{s.product_name}</td>
-                        <td style={{ textAlign: 'center' }}>{s.quantity}</td>
-                        <td style={{ textAlign: 'right', fontWeight: '700' }}>₹{s.total_amount}</td>
-                      </tr>
-                    ))}
-                    {monthlySalesList.length === 0 && (
-                      <tr>
-                        <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
-                          No sales registered this month.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 8: EXPENSES */}
-          {activeTab === 'expenses' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              
-              <div className="card" style={{ padding: '1.5rem' }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1rem' }}>
-                  💸 Log Trip Expense
-                </h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-                  <div className="form-group">
-                    <label className="form-label">Fuel Charges (₹)</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={expenseForm.fuel || ''}
-                      onChange={e => setExpenseForm({ ...expenseForm, fuel: Math.max(0, Number(e.target.value)) })}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Driver Bata (₹)</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={expenseForm.bata || ''}
-                      onChange={e => setExpenseForm({ ...expenseForm, bata: Math.max(0, Number(e.target.value)) })}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Other Expenses (₹)</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={expenseForm.other || ''}
-                      onChange={e => setExpenseForm({ ...expenseForm, other: Math.max(0, Number(e.target.value)) })}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Vehicle Number</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g. AP 16 AB 1234"
-                      value={expenseForm.vehicle}
-                      onChange={e => setExpenseForm({ ...expenseForm, vehicle: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label className="form-label">Remarks / Description</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Enter trip remarks or expense details..."
-                    value={expenseForm.remarks}
-                    onChange={e => setExpenseForm({ ...expenseForm, remarks: e.target.value })}
-                  />
-                </div>
-
-                <button
-                  className="btn btn-primary"
-                  onClick={handleSaveExpense}
-                  disabled={expenseLoading}
-                >
-                  {expenseLoading ? 'Saving...' : '💾 Log Expense'}
-                </button>
-              </div>
-
-              <div className="card" style={{ overflow: 'hidden' }}>
-                <div className="card-header"><h3 className="card-title">📜 Expense History Log</h3></div>
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="erp-table">
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th style={{ textAlign: 'right' }}>Fuel (₹)</th>
-                        <th style={{ textAlign: 'right' }}>Bata (₹)</th>
-                        <th style={{ textAlign: 'right' }}>Other (₹)</th>
-                        <th style={{ textAlign: 'right' }}>Total (₹)</th>
-                        <th>Remarks</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {expensesList.map((e, idx) => {
-                        const totalExp = (Number(e.fuel_charges) || 0) + (Number(e.driver_bata) || 0) + (Number(e.other_expenses) || 0)
-                        return (
-                          <tr key={idx}>
-                            <td>{e.expense_date || new Date(e.created_at).toLocaleDateString('en-IN')}</td>
-                            <td style={{ textAlign: 'right' }}>₹{e.fuel_charges}</td>
-                            <td style={{ textAlign: 'right' }}>₹{e.driver_bata}</td>
-                            <td style={{ textAlign: 'right' }}>₹{e.other_expenses}</td>
-                            <td style={{ textAlign: 'right', fontWeight: '800', color: '#f87171' }}>₹{totalExp}</td>
-                            <td>{e.notes || '—'}</td>
-                          </tr>
-                        )
-                      })}
-                      {expensesList.length === 0 && (
-                        <tr>
-                          <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
-                            No expenses logged yet.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-            </div>
-          )}
-
+              <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>
+                {dashboardStats.pendingSettlements} Pending Reconciliation
+              </span>
+            </Card>
+          </div>
         </div>
       )}
 
-      {/* MODAL 1: ISSUE NEW TRUCK LOAD DISPATCH */}
-      {showIssueModal && selectedDriver && (
-        <div className="modal-overlay" style={{ display: 'flex', zIndex: 1000 }}>
-          <div className="modal-content" style={{ maxWidth: '640px' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.15rem', fontWeight: '800', color: '#fff', margin: 0 }}>
-                🚚 Issue Truck Load Dispatch to Driver
+      {/* =========================================================================
+          MODAL 1: RECORD CUSTOMER SALE ON ACTIVE ROUTE
+          ========================================================================= */}
+      {showSaleModal && selectedActiveRoute && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div style={{ backgroundColor: '#18181b', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '12px', width: '100%', maxWidth: '520px', padding: '1.5rem', boxShadow: '0 20px 40px rgba(0,0,0,0.7)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fbbf24', margin: 0 }}>
+                Record Customer Sale ({selectedActiveRoute.route_name})
               </h3>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowIssueModal(false)}>✕</button>
+              <button onClick={() => setShowSaleModal(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}>
+                <X style={{ width: '18px', height: '18px' }} />
+              </button>
             </div>
 
-            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Driver Name</label>
-                  <input className="form-input" value={selectedDriver.name} readOnly style={{ background: 'var(--surface-3)', color: 'var(--text-2)' }} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Dispatch Date</label>
-                  <input type="date" className="form-input" value={loadDispatchDate} onChange={e => setLoadDispatchDate(e.target.value)} />
-                </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <Input
+                label="Customer Name *"
+                placeholder="e.g. Swagath Restaurant / Ramu Kirana"
+                value={saleForm.customer_name}
+                onChange={(e) => setSaleForm({ ...saleForm, customer_name: e.target.value })}
+              />
+
+              <Input
+                label="Customer Phone (WhatsApp)"
+                placeholder="e.g. 9391234567"
+                value={saleForm.customer_phone}
+                onChange={(e) => setSaleForm({ ...saleForm, customer_phone: e.target.value })}
+              />
+
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '0.75rem' }}>
+                <Select
+                  label="Product"
+                  value={saleForm.product_name}
+                  onChange={(e) => {
+                    const pName = e.target.value
+                    const found = selectedActiveRoute.items?.find(it => it.product_name === pName)
+                    setSaleForm({
+                      ...saleForm,
+                      product_name: pName,
+                      rate: Number(found?.rate || saleForm.rate),
+                      unit: found?.unit || saleForm.unit
+                    })
+                  }}
+                  options={(selectedActiveRoute.items || []).map(it => ({
+                    value: it.product_name,
+                    label: it.product_name
+                  }))}
+                />
+
+                <Input
+                  type="number"
+                  label="Quantity"
+                  value={saleForm.quantity}
+                  onChange={(e) => setSaleForm({ ...saleForm, quantity: Number(e.target.value) })}
+                />
+
+                <Input
+                  type="number"
+                  label="Rate (₹)"
+                  value={saleForm.rate}
+                  onChange={(e) => setSaleForm({ ...saleForm, rate: Number(e.target.value) })}
+                />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Vehicle Number</label>
-                  <input type="text" className="form-input" placeholder="e.g. AP 16 AB 1234" value={loadVehicle} onChange={e => setLoadVehicle(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Assigned Route</label>
-                  <select className="form-input" value={loadRouteId} onChange={e => setLoadRouteId(e.target.value)}>
-                    <option value="">Select Route...</option>
-                    {routes.map(r => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <Select
+                  label="Payment Mode"
+                  value={saleForm.payment_type}
+                  onChange={(e) => setSaleForm({ ...saleForm, payment_type: e.target.value as any })}
+                  options={[
+                    { value: 'CASH', label: 'Cash Payment' },
+                    { value: 'UPI', label: 'UPI / Online' },
+                    { value: 'CREDIT', label: 'Credit (Due Bill)' }
+                  ]}
+                />
 
-              {/* Line items table */}
-              <div>
-                <label className="form-label" style={{ fontWeight: '700', marginBottom: '0.5rem' }}>Products to Load (Deducts Warehouse Stock):</label>
-                <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: '0.5rem' }}>
-                  <table className="erp-table" style={{ margin: 0 }}>
-                    <thead>
-                      <tr>
-                        <th>Product</th>
-                        <th style={{ width: '90px', textAlign: 'center' }}>Loaded Qty</th>
-                        <th style={{ width: '100px', textAlign: 'right' }}>Rate (₹)</th>
-                        <th style={{ width: '110px', textAlign: 'right' }}>Amount (₹)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loadItems.map((it, idx) => (
-                        <tr key={idx}>
-                          <td style={{ fontWeight: '600', color: '#fff' }}>{it.product_name}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <input
-                              type="number"
-                              className="form-input"
-                              style={{ width: '75px', textAlign: 'center', padding: '0.25rem' }}
-                              value={it.loaded_quantity}
-                              onChange={e => {
-                                const val = Math.max(0, Number(e.target.value))
-                                setLoadItems(prev => prev.map((item, i) => i === idx ? { ...item, loaded_quantity: val, amount: round2(val * item.rate) } : item))
-                              }}
-                            />
-                          </td>
-                          <td style={{ textAlign: 'right' }}>
-                            <input
-                              type="number"
-                              className="form-input"
-                              style={{ width: '85px', textAlign: 'right', padding: '0.25rem' }}
-                              value={it.rate}
-                              onChange={e => {
-                                const val = Math.max(0, Number(e.target.value))
-                                setLoadItems(prev => prev.map((item, i) => i === idx ? { ...item, rate: val, amount: round2(item.loaded_quantity * val) } : item))
-                              }}
-                            />
-                          </td>
-                          <td style={{ textAlign: 'right', fontWeight: '700' }}>
-                            ₹{round2(it.loaded_quantity * it.rate)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: '#a1a1aa', marginBottom: '0.25rem' }}>Final Total</label>
+                  <div style={{ padding: '0.6rem', backgroundColor: '#27272a', borderRadius: '6px', color: '#10b981', fontWeight: 800 }}>
+                    ₹{(saleForm.quantity * saleForm.rate).toFixed(2)}
+                  </div>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--surface-3)', padding: '0.75rem 1rem', borderRadius: '0.5rem', fontWeight: '700' }}>
-                <span>Total Load Quantity: {loadItems.reduce((s, it) => s + Number(it.loaded_quantity), 0)} units</span>
-                <span style={{ color: '#60a5fa' }}>Total Load Value: ₹{loadItems.reduce((s, it) => s + (it.loaded_quantity * it.rate), 0).toLocaleString('en-IN')}</span>
-              </div>
+              <Input
+                label="Remarks"
+                placeholder="Optional notes"
+                value={saleForm.remarks}
+                onChange={(e) => setSaleForm({ ...saleForm, remarks: e.target.value })}
+              />
+            </div>
 
-              <div className="form-group">
-                <label className="form-label">Notes</label>
-                <input type="text" className="form-input" placeholder="Optional dispatch notes..." value={loadNotes} onChange={e => setLoadNotes(e.target.value)} />
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
-                <button className="btn btn-ghost" onClick={() => setShowIssueModal(false)}>Cancel</button>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleIssueDriverLoad}
-                  disabled={loadIssuing || loadItems.reduce((s, it) => s + Number(it.loaded_quantity), 0) <= 0}
-                >
-                  {loadIssuing ? 'Issuing Load...' : '🚚 Confirm & Issue Dispatch'}
-                </button>
-              </div>
-
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
+              <Button variant="outline" onClick={() => setShowSaleModal(false)}>Cancel</Button>
+              <Button variant="primary" disabled={savingSale} onClick={handleRecordSaleSubmit}>
+                {savingSale ? 'Saving...' : 'Save Customer Sale'}
+              </Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL 2: FLOATING BILLING MODAL SHEET */}
-      {billingModalOpen && billingCustomer && (
-        <div className="modal-overlay" style={{ display: 'flex', zIndex: 1000 }}>
-          <div className="modal-content" style={{ maxWidth: '480px' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.125rem', fontWeight: '800', color: '#fff', margin: 0 }}>
-                🧾 Register Route Sale
+      {/* =========================================================================
+          MODAL 2: RECORD RETURNS & LEAKAGE MODAL
+          ========================================================================= */}
+      {showReturnsModal && selectedActiveRoute && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div style={{ backgroundColor: '#18181b', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '12px', width: '100%', maxWidth: '560px', padding: '1.5rem', boxShadow: '0 20px 40px rgba(0,0,0,0.7)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fbbf24', margin: 0 }}>
+                Record Physical Returns &amp; Leakage
               </h3>
-              <button className="btn btn-ghost btn-sm" onClick={() => setBillingModalOpen(false)}>✕</button>
+              <button onClick={() => setShowReturnsModal(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}>
+                <X style={{ width: '18px', height: '18px' }} />
+              </button>
             </div>
+
+            <p style={{ color: '#a1a1aa', fontSize: '0.8rem', marginBottom: '1rem' }}>
+              Good unsold returns are returned to warehouse stock upon route finalization. Leaked or damaged goods are recorded as scrap in the leakages registry.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              {returnsItemsState.map((it, idx) => (
+                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '0.75rem', alignItems: 'flex-end', backgroundColor: 'rgba(255,255,255,0.02)', padding: '0.75rem', borderRadius: '6px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', color: '#a1a1aa' }}>Product</label>
+                    <strong style={{ color: '#fff', fontSize: '0.85rem' }}>{it.product_name}</strong>
+                  </div>
+
+                  <Input
+                    type="number"
+                    label="Good Returns Qty"
+                    value={it.returned_quantity}
+                    onChange={(e) => {
+                      const updated = [...returnsItemsState]
+                      updated[idx].returned_quantity = Number(e.target.value)
+                      setReturnsItemsState(updated)
+                    }}
+                  />
+
+                  <Input
+                    type="number"
+                    label="Leaked / Damaged Qty"
+                    value={it.leaked_quantity}
+                    onChange={(e) => {
+                      const updated = [...returnsItemsState]
+                      updated[idx].leaked_quantity = Number(e.target.value)
+                      setReturnsItemsState(updated)
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
+              <Button variant="outline" onClick={() => setShowReturnsModal(false)}>Cancel</Button>
+              <Button variant="primary" disabled={savingReturns} onClick={handleReturnsSubmit}>
+                {savingReturns ? 'Updating...' : 'Update Returns & Leakage'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL 3: ADD ROUTE EXPENSES MODAL
+          ========================================================================= */}
+      {showExpenseModal && selectedActiveRoute && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div style={{ backgroundColor: '#18181b', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '12px', width: '100%', maxWidth: '480px', padding: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fbbf24', margin: 0 }}>
+                Log Route Transit Expenses
+              </h3>
+              <button onClick={() => setShowExpenseModal(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}>
+                <X style={{ width: '18px', height: '18px' }} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <Input
+                type="number"
+                label="Fuel Charges (Diesel/Petrol) (₹)"
+                value={expenseForm.fuel_charges}
+                onChange={(e) => setExpenseForm({ ...expenseForm, fuel_charges: Number(e.target.value) })}
+              />
+
+              <Input
+                type="number"
+                label="Driver Bata / Food Allowance (₹)"
+                value={expenseForm.driver_bata}
+                onChange={(e) => setExpenseForm({ ...expenseForm, driver_bata: Number(e.target.value) })}
+              />
+
+              <Input
+                type="number"
+                label="Other Expenses / Tolls (₹)"
+                value={expenseForm.other_expenses}
+                onChange={(e) => setExpenseForm({ ...expenseForm, other_expenses: Number(e.target.value) })}
+              />
+
+              <Input
+                label="Remarks"
+                value={expenseForm.remarks}
+                onChange={(e) => setExpenseForm({ ...expenseForm, remarks: e.target.value })}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
+              <Button variant="outline" onClick={() => setShowExpenseModal(false)}>Cancel</Button>
+              <Button variant="primary" disabled={savingExpense} onClick={handleExpenseSubmit}>
+                {savingExpense ? 'Logging...' : 'Save Route Expense'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL 4: ROUTE ENDING RECONCILIATION & BILL GENERATION PREVIEW
+          ========================================================================= */}
+      {showReconciliationModal && selectedActiveRoute && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div style={{ backgroundColor: '#18181b', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '12px', width: '100%', maxWidth: '780px', maxHeight: '90vh', overflowY: 'auto', padding: '1.75rem', boxShadow: '0 20px 40px rgba(0,0,0,0.8)' }}>
             
-            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              
-              <div className="form-group">
-                <label className="form-label">Customer Name</label>
-                <input className="form-input" style={{ background: 'var(--surface-3)', color: 'var(--text-2)' }} value={billingCustomer.name} readOnly />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#ef4444', margin: 0 }}>
+                  Route Reconciliation &amp; Bill Finalization
+                </h3>
+                <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>
+                  {selectedActiveRoute.route_name} • Driver: {selectedActiveRoute.driver_name} • Ref: {selectedActiveRoute.dispatch_number}
+                </span>
               </div>
+              <button onClick={() => setShowReconciliationModal(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}>
+                <X style={{ width: '20px', height: '20px' }} />
+              </button>
+            </div>
 
-              <div className="form-group">
-                <label className="form-label">Product</label>
-                <select
-                  className="form-input"
-                  value={billingForm.product_name}
-                  onChange={e => updateBillingForm('product_name', e.target.value)}
-                >
-                  <option value="Water Can (20L)">Water Can (20L)</option>
-                  <option value="Cooling Can (20L)">Cooling Can (20L)</option>
-                  <option value="Bags (100 Pack)">Bags (100 Pack)</option>
-                  <option value="500ml Bottle Case">500ml Bottle Case</option>
-                  <option value="1L Bottle Case">1L Bottle Case</option>
-                  <option value="2L Bottle Case">2L Bottle Case</option>
-                </select>
+            {/* Reconciliation Equation Rule Callout */}
+            <div style={{ backgroundColor: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.25)', borderRadius: '6px', padding: '0.75rem 1rem', fontSize: '0.8rem', color: '#fef08a', marginBottom: '1.25rem' }}>
+              <strong>Reconciliation Rule:</strong> Loaded Quantity = Sold Quantity + Good Returns + Leakage/Damage + Other Accounted Quantity.
+            </div>
+
+            {/* Physical Inventory Reconciliation Table */}
+            <div style={{ marginBottom: '1.25rem' }}>
+              <h4 style={{ fontSize: '0.92rem', fontWeight: 800, color: '#fff', marginBottom: '0.5rem' }}>
+                1. Physical Inventory Reconciliation
+              </h4>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'rgba(255,255,255,0.05)', color: '#a1a1aa', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                    <th style={{ padding: '0.5rem' }}>Product</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'center' }}>Loaded</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'center' }}>Sold</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'center' }}>Good Returns</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'center' }}>Leaked/Damage</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'center' }}>Unaccounted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reconciliationItems.map((it, idx) => {
+                    const unaccounted = Number(it.loaded_qty) - (Number(it.sold_qty) + Number(it.returned_good_qty) + Number(it.leaked_damaged_qty))
+                    return (
+                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <td style={{ padding: '0.55rem', fontWeight: 700, color: '#fff' }}>{it.product_name}</td>
+                        <td style={{ padding: '0.55rem', textAlign: 'center', color: '#fbbf24', fontWeight: 800 }}>{it.loaded_qty}</td>
+                        <td style={{ padding: '0.55rem', textAlign: 'center', color: '#34d399', fontWeight: 700 }}>{it.sold_qty}</td>
+                        <td style={{ padding: '0.55rem', textAlign: 'center', color: '#60a5fa' }}>{it.returned_good_qty}</td>
+                        <td style={{ padding: '0.55rem', textAlign: 'center', color: '#f87171' }}>{it.leaked_damaged_qty}</td>
+                        <td style={{ padding: '0.55rem', textAlign: 'center', fontWeight: 800, color: unaccounted === 0 ? '#34d399' : '#f87171' }}>
+                          {unaccounted === 0 ? '✓ Balanced' : `${unaccounted} units`}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Discrepancy Note Input if Mismatch */}
+            {reconciliationItems.some(it => (Number(it.loaded_qty) - (Number(it.sold_qty) + Number(it.returned_good_qty) + Number(it.leaked_damaged_qty))) !== 0) && (
+              <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', borderRadius: '6px', padding: '0.85rem', marginBottom: '1.25rem' }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#fca5a5', marginBottom: '0.35rem' }}>
+                  Quantity Discrepancy Explanation (Required for non-zero unaccounted units) *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Broken in transit / Road accident / Driver shortage logged"
+                  value={discrepancyReason}
+                  onChange={(e) => setDiscrepancyReason(e.target.value)}
+                  style={{ width: '100%', padding: '0.5rem', backgroundColor: '#27272a', border: '1px solid #ef4444', borderRadius: '4px', color: '#fff', fontSize: '0.82rem', outline: 'none' }}
+                />
               </div>
+            )}
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Quantity</label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    value={billingForm.qty}
-                    onChange={e => updateBillingForm('qty', Math.max(0, Number(e.target.value)))}
-                  />
+            {/* 2. Customer Bills to be Generated Preview */}
+            <div style={{ marginBottom: '1.25rem' }}>
+              <h4 style={{ fontSize: '0.92rem', fontWeight: 800, color: '#fff', marginBottom: '0.5rem' }}>
+                2. Customer Invoices to be Generated ({(selectedActiveRoute.sales || []).length} Bills)
+              </h4>
+
+              {(selectedActiveRoute.sales || []).length === 0 ? (
+                <div style={{ padding: '1rem', textAlign: 'center', color: '#a1a1aa', fontSize: '0.8rem', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
+                  No customer sales were recorded on this route. If products were sold, record them before finalization.
                 </div>
-                <div className="form-group">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-                    <label className="form-label" style={{ margin: 0 }}>Rate (₹)</label>
-                    <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(251,191,36,0.15)', color: '#fbbf24', fontWeight: 800 }}>
-                      {billingForm.rate_source || 'Route Rate'}
-                    </span>
-                  </div>
-                  <input
-                    type="number"
-                    className="form-input"
-                    value={billingForm.rate}
-                    onChange={e => updateBillingForm('rate', Math.max(0, Number(e.target.value)))}
-                  />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '180px', overflowY: 'auto' }}>
+                  {(selectedActiveRoute.sales || []).map((s, idx) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', padding: '0.6rem 0.85rem', borderRadius: '6px', fontSize: '0.8rem' }}>
+                      <div>
+                        <strong style={{ color: '#fff' }}>{idx + 1}. {s.customer_name}</strong>
+                        <span style={{ color: '#a1a1aa', marginLeft: '0.5rem' }}>
+                          ({s.quantity} {s.unit || 'cans'} × ₹{s.rate})
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                        <span style={{ fontWeight: 800, color: '#fbbf24' }}>₹{Number(s.total_amount).toFixed(2)}</span>
+                        <Badge variant={s.payment_type === 'CREDIT' ? 'danger' : 'success'}>
+                          {s.payment_type}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
                 </div>
+              )}
+            </div>
+
+            {/* 3. Financial Settlement Summary */}
+            <div style={{ backgroundColor: '#27272a', padding: '1rem', borderRadius: '8px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
+              <div>
+                <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>Total Sales</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff' }}>₹{Number(selectedActiveRoute.total_sales_amount || 0).toLocaleString('en-IN')}</div>
               </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Cash Paid (₹)</label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    placeholder="0"
-                    value={billingForm.cash || ''}
-                    onChange={e => updateBillingForm('cash', Math.max(0, Number(e.target.value)))}
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">UPI Paid (₹)</label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    placeholder="0"
-                    value={billingForm.upi || ''}
-                    onChange={e => updateBillingForm('upi', Math.max(0, Number(e.target.value)))}
-                  />
-                </div>
+              <div>
+                <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>Cash Collected</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#10b981' }}>₹{Number(selectedActiveRoute.cash_collected || 0).toLocaleString('en-IN')}</div>
               </div>
-
-              <div style={{
-                background: 'var(--surface-3)',
-                padding: '1rem',
-                borderRadius: '0.75rem',
-                border: '1px solid var(--border)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: '0.875rem'
-              }}>
-                <div>
-                  <span style={{ color: 'var(--text-2)' }}>Total Amount:</span>
-                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#fff', marginTop: '0.25rem' }}>
-                    ₹{billingForm.qty * billingForm.rate}
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <span style={{ color: 'var(--text-2)' }}>Outstanding Due:</span>
-                  <div style={{
-                    fontSize: '1.25rem',
-                    fontWeight: '800',
-                    color: (billingForm.qty * billingForm.rate - billingForm.cash - billingForm.upi) > 0 ? '#f87171' : '#34d399',
-                    marginTop: '0.25rem'
-                  }}>
-                    ₹{Math.max(0, billingForm.qty * billingForm.rate - billingForm.cash - billingForm.upi)}
-                  </div>
-                </div>
+              <div>
+                <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>UPI Collected</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#3b82f6' }}>₹{Number(selectedActiveRoute.upi_collected || 0).toLocaleString('en-IN')}</div>
               </div>
-
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
-                <button className="btn btn-ghost" onClick={() => setBillingModalOpen(false)}>Cancel</button>
-                <button
-                  className="btn btn-primary"
-                  style={{ minWidth: '160px' }}
-                  onClick={handleSaveSale}
-                  disabled={submitting || billingForm.qty <= 0}
-                >
-                  {submitting ? 'Saving...' : '💾 Save & Print'}
-                </button>
+              <div>
+                <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>Credit Sales</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f87171' }}>₹{Number(selectedActiveRoute.credit_amount || 0).toLocaleString('en-IN')}</div>
               </div>
+              <div>
+                <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>Route Expenses</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f59e0b' }}>₹{Number(selectedActiveRoute.expenses_amount || 0).toLocaleString('en-IN')}</div>
+              </div>
+            </div>
 
+            {/* Confirmation & Finalize Button */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <Button variant="outline" onClick={() => setShowReconciliationModal(false)}>
+                Back to Active Route
+              </Button>
+              <Button
+                variant="primary"
+                disabled={finalizingRoute}
+                onClick={handleFinalizeRouteSubmit}
+                style={{ backgroundColor: '#10b981', color: '#000', fontWeight: 800 }}
+                icon={<CheckCircle style={{ width: '15px', height: '15px' }} />}
+              >
+                {finalizingRoute ? 'Finalizing Bills & Inventory...' : 'FINALIZE ROUTE & GENERATE BILLS'}
+              </Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* RECEIPT & SETTLEMENT PREVIEW MODAL */}
-      <ReceiptPreviewModal
-        isOpen={!!previewBill}
-        onClose={() => setPreviewBill(null)}
-        bill={previewBill}
-        initialFormat="80mm"
-      />
+      {/* =========================================================================
+          MODAL 5: ADD / EDIT DRIVER MODAL
+          ========================================================================= */}
+      {showDriverModal && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div style={{ backgroundColor: '#18181b', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '12px', width: '100%', maxWidth: '540px', padding: '1.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fbbf24', margin: 0 }}>
+                {editingDriver ? 'Edit Driver Profile' : 'Add New Driver Profile'}
+              </h3>
+              <button onClick={() => setShowDriverModal(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}>
+                <X style={{ width: '18px', height: '18px' }} />
+              </button>
+            </div>
 
-      {/* WHATSAPP SHARING MODAL FOR DRIVER DISPATCH & SETTLEMENT */}
-      <WhatsAppShareModal
-        isOpen={!!whatsAppBill}
-        onClose={() => setWhatsAppBill(null)}
-        bill={whatsAppBill}
-      />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <Input
+                label="Driver Name *"
+                placeholder="Full name"
+                value={driverForm.name}
+                onChange={(e) => setDriverForm({ ...driverForm, name: e.target.value })}
+              />
 
+              <Input
+                label="Mobile Number (WhatsApp) *"
+                placeholder="10-digit mobile"
+                value={driverForm.phone}
+                onChange={(e) => setDriverForm({ ...driverForm, phone: e.target.value })}
+              />
+
+              <Input
+                label="Assigned Vehicle Model"
+                placeholder="e.g. Tata Ace 407 / Bolero Maxi"
+                value={driverForm.assigned_vehicle}
+                onChange={(e) => setDriverForm({ ...driverForm, assigned_vehicle: e.target.value })}
+              />
+
+              <Input
+                label="Vehicle Registration Number"
+                placeholder="e.g. AP 16 AB 1234"
+                value={driverForm.vehicle_number}
+                onChange={(e) => setDriverForm({ ...driverForm, vehicle_number: e.target.value })}
+              />
+
+              <Input
+                label="Driving License Number"
+                placeholder="DL number"
+                value={driverForm.license_number}
+                onChange={(e) => setDriverForm({ ...driverForm, license_number: e.target.value })}
+              />
+
+              <Input
+                type="date"
+                label="Joining Date"
+                value={driverForm.joining_date}
+                onChange={(e) => setDriverForm({ ...driverForm, joining_date: e.target.value })}
+              />
+
+              <Input
+                type="number"
+                label="Monthly Salary (₹)"
+                value={driverForm.salary}
+                onChange={(e) => setDriverForm({ ...driverForm, salary: Number(e.target.value) })}
+              />
+
+              <Select
+                label="Current Route Status"
+                value={driverForm.status}
+                onChange={(e) => setDriverForm({ ...driverForm, status: e.target.value as any })}
+                options={[
+                  { value: 'AVAILABLE', label: 'AVAILABLE (Ready for Route)' },
+                  { value: 'ON_ROUTE', label: 'ON_ROUTE (Currently Dispatched)' },
+                  { value: 'INACTIVE', label: 'INACTIVE' }
+                ]}
+              />
+
+              <div style={{ gridColumn: 'span 2' }}>
+                <Input
+                  label="Address"
+                  placeholder="Driver residence address"
+                  value={driverForm.address}
+                  onChange={(e) => setDriverForm({ ...driverForm, address: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
+              <Button variant="outline" onClick={() => setShowDriverModal(false)}>Cancel</Button>
+              <Button variant="primary" disabled={savingDriver} onClick={handleDriverFormSubmit}>
+                {savingDriver ? 'Saving...' : 'Save Driver Profile'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL 6: VIEW ROUTE DETAILS & CUSTOMER INVOICES
+          ========================================================================= */}
+      {viewRouteRecord && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div style={{ backgroundColor: '#18181b', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '12px', width: '100%', maxWidth: '780px', maxHeight: '90vh', overflowY: 'auto', padding: '1.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fbbf24', margin: 0 }}>
+                  Route Details &amp; Bills ({viewRouteRecord.dispatch_number})
+                </h3>
+                <span style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>
+                  {viewRouteRecord.route_name} • Driver: {viewRouteRecord.driver_name} • Date: {viewRouteRecord.dispatch_date}
+                </span>
+              </div>
+              <button onClick={() => setViewRouteRecord(null)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}>
+                <X style={{ width: '20px', height: '20px' }} />
+              </button>
+            </div>
+
+            {/* Generated Customer Bills Table */}
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h4 style={{ fontSize: '0.95rem', fontWeight: 800, color: '#fff', marginBottom: '0.5rem' }}>
+                Customer Invoices Generated from this Route ({(viewRouteRecord.generated_bills || []).length})
+              </h4>
+
+              {(viewRouteRecord.generated_bills || []).length === 0 ? (
+                <div style={{ padding: '1.5rem', textAlign: 'center', color: '#a1a1aa', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
+                  No finalized bills recorded yet. Bills are generated upon route settlement.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  {((viewRouteRecord.generated_bills as any[]) || []).map((bill: any, idx: number) => (
+                    <div key={idx} style={{ backgroundColor: '#27272a', padding: '0.85rem 1rem', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#fbbf24', fontSize: '0.88rem' }}>
+                            {bill.invoice_number}
+                          </span>
+                          <span style={{ fontWeight: 700, color: '#fff', fontSize: '0.88rem' }}>
+                            {bill.customer_name}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '0.2rem' }}>
+                          Phone: {bill.customer_phone || 'N/A'} • Paid: ₹{bill.paid_amount || 0} • Due: ₹{bill.due_amount || 0}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontWeight: 800, color: '#34d399', fontSize: '0.95rem', marginRight: '0.5rem' }}>
+                          ₹{Number(bill.grand_total || 0).toFixed(2)}
+                        </span>
+
+                        {/* Download PDF Button */}
+                        <button
+                          type="button"
+                          onClick={() => generateBillPDF(bill)}
+                          style={{
+                            backgroundColor: '#3f3f46',
+                            border: 'none',
+                            color: '#fff',
+                            borderRadius: '4px',
+                            padding: '0.35rem 0.65rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.3rem'
+                          }}
+                        >
+                          <Download style={{ width: '12px', height: '12px' }} />
+                          PDF
+                        </button>
+
+                        {/* WhatsApp Button: [ SEND BILL ON WHATSAPP ] */}
+                        <button
+                          type="button"
+                          onClick={() => setWhatsAppBill(bill)}
+                          style={{
+                            backgroundColor: '#25D366',
+                            border: 'none',
+                            color: '#000',
+                            borderRadius: '4px',
+                            padding: '0.35rem 0.65rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            boxShadow: '0 2px 8px rgba(37, 211, 102, 0.3)'
+                          }}
+                        >
+                          <Send style={{ width: '12px', height: '12px' }} />
+                          SEND ON WHATSAPP
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Button variant="outline" onClick={() => setViewRouteRecord(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WHATSAPP SHARE MODAL */}
+      {whatsAppBill && (
+        <WhatsAppShareModal
+          isOpen={!!whatsAppBill}
+          onClose={() => setWhatsAppBill(null)}
+          bill={whatsAppBill}
+        />
+      )}
+
+      {/* RECEIPT PREVIEW MODAL */}
+      {previewBill && (
+        <ReceiptPreviewModal
+          isOpen={!!previewBill}
+          onClose={() => setPreviewBill(null)}
+          bill={previewBill}
+        />
+      )}
     </div>
   )
 }

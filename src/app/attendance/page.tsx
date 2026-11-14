@@ -48,7 +48,7 @@ interface RowAttendanceState {
 }
 
 export default function AttendancePage() {
-  const [activeTab, setActiveTab] = useState<'daily' | 'monthly_summary'>('daily')
+  const [activeTab, setActiveTab] = useState<'daily' | 'monthly_summary' | 'calendar'>('daily')
   const [employees, setEmployees] = useState<Employee[]>([])
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [attendanceState, setAttendanceState] = useState<Record<string, RowAttendanceState>>({})
@@ -56,18 +56,19 @@ export default function AttendancePage() {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
 
-  // Monthly summary tab states
+  // Monthly summary & Calendar tab states
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [monthlyRecords, setMonthlyRecords] = useState<any[]>([])
   const [loadingMonthly, setLoadingMonthly] = useState(false)
   const [selectedEmployeeForDetail, setSelectedEmployeeForDetail] = useState<Employee | null>(null)
+  const [calendarEmployeeId, setCalendarEmployeeId] = useState<string>('all')
 
   const supabase = createClient()
 
   useDataSyncListener(['employees', 'attendance'], () => {
     loadData()
-    if (activeTab === 'monthly_summary') loadMonthly()
+    if (activeTab === 'monthly_summary' || activeTab === 'calendar') loadMonthly()
   })
 
   useEffect(() => {
@@ -75,7 +76,7 @@ export default function AttendancePage() {
   }, [selectedDate])
 
   useEffect(() => {
-    if (activeTab === 'monthly_summary') {
+    if (activeTab === 'monthly_summary' || activeTab === 'calendar') {
       loadMonthly()
     }
   }, [activeTab, selectedMonth, selectedYear])
@@ -317,6 +318,23 @@ export default function AttendancePage() {
               }}
             >
               Monthly Summary &amp; Roll
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('calendar')}
+              style={{
+                padding: '0.45rem 0.9rem',
+                borderRadius: '6px',
+                border: 'none',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                backgroundColor: activeTab === 'calendar' ? '#fbbf24' : 'transparent',
+                color: activeTab === 'calendar' ? '#000' : '#a1a1aa',
+                transition: 'all 120ms'
+              }}
+            >
+              Calendar View
             </button>
           </div>
 
@@ -846,6 +864,306 @@ export default function AttendancePage() {
               </div>
             </div>
           )}
+        </Card>
+      )}
+
+      {/* TAB 3: MONTHLY ATTENDANCE CALENDAR VIEW */}
+      {activeTab === 'calendar' && (
+        <Card style={{ padding: '1.25rem', backgroundColor: '#121215' }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '1rem',
+            marginBottom: '1.25rem',
+            paddingBottom: '1rem',
+            borderBottom: '1px solid rgba(255,255,255,0.08)'
+          }}>
+            <div>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Calendar style={{ width: '18px', height: '18px', color: '#fbbf24' }} />
+                Monthly Attendance Calendar View
+              </h3>
+              <p style={{ fontSize: '0.78rem', color: '#a1a1aa', margin: '0.2rem 0 0 0' }}>
+                Visual calendar grid showing day-by-day employee attendance and work hours.
+              </p>
+            </div>
+
+            {/* Selectors */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+              <select
+                value={calendarEmployeeId}
+                onChange={e => setCalendarEmployeeId(e.target.value)}
+                style={{
+                  backgroundColor: '#1f1f23',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: '6px',
+                  color: '#fff',
+                  padding: '0.5rem 0.75rem',
+                  fontSize: '0.85rem',
+                  outline: 'none'
+                }}
+              >
+                <option value="all">-- All Staff Overview --</option>
+                {employees.map(emp => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.name} ({emp.role?.toUpperCase() || 'STAFF'})
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={selectedMonth}
+                onChange={e => setSelectedMonth(Number(e.target.value))}
+                style={{
+                  backgroundColor: '#1f1f23',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: '6px',
+                  color: '#fff',
+                  padding: '0.5rem 0.75rem',
+                  fontSize: '0.85rem',
+                  outline: 'none'
+                }}
+              >
+                {MONTH_NAMES.map((name, idx) => (
+                  <option key={idx + 1} value={idx + 1}>{name}</option>
+                ))}
+              </select>
+
+              <select
+                value={selectedYear}
+                onChange={e => setSelectedYear(Number(e.target.value))}
+                style={{
+                  backgroundColor: '#1f1f23',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: '6px',
+                  color: '#fff',
+                  padding: '0.5rem 0.75rem',
+                  fontSize: '0.85rem',
+                  outline: 'none'
+                }}
+              >
+                {[2024, 2025, 2026, 2027].map(yr => (
+                  <option key={yr} value={yr}>{yr}</option>
+                ))}
+              </select>
+
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<RefreshCw style={{ width: '14px', height: '14px' }} />}
+                onClick={loadMonthly}
+              >
+                Refresh
+              </Button>
+            </div>
+          </div>
+
+          {/* Calendar Grid Logic */}
+          {(() => {
+            const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate()
+            const firstDayIndex = new Date(selectedYear, selectedMonth - 1, 1).getDay()
+            const totalSlots = Math.ceil((daysInMonth + firstDayIndex) / 7) * 7
+            const dayHeaders = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+            // Filter records if a specific employee is chosen
+            const filteredRecords = calendarEmployeeId === 'all'
+              ? monthlyRecords
+              : monthlyRecords.filter(r => r.employee_id === calendarEmployeeId)
+
+            // Monthly stats for the view
+            const totalPresent = filteredRecords.filter(r => r.status === 'present').length
+            const totalHalf = filteredRecords.filter(r => r.status === 'half_day').length
+            const totalAbsent = filteredRecords.filter(r => r.status === 'absent').length
+            const totalLeave = filteredRecords.filter(r => r.status === 'leave').length
+            const totalHours = filteredRecords.reduce((s, r) => s + (Number(r.working_hours) || 0), 0)
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {/* Stats Bar */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                  gap: '0.65rem'
+                }}>
+                  <div style={{ padding: '0.6rem 0.85rem', background: '#18181b', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa' }}>Present</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#34d399' }}>{totalPresent}</div>
+                  </div>
+                  <div style={{ padding: '0.6rem 0.85rem', background: '#18181b', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa' }}>Half Days</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fbbf24' }}>{totalHalf}</div>
+                  </div>
+                  <div style={{ padding: '0.6rem 0.85rem', background: '#18181b', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa' }}>Absent</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#f87171' }}>{totalAbsent}</div>
+                  </div>
+                  <div style={{ padding: '0.6rem 0.85rem', background: '#18181b', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.25)' }}>
+                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa' }}>Leave</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#60a5fa' }}>{totalLeave}</div>
+                  </div>
+                  <div style={{ padding: '0.6rem 0.85rem', background: '#18181b', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa' }}>Total Working Hours</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#f4f4f5' }}>{totalHours.toFixed(1)} hrs</div>
+                  </div>
+                </div>
+
+                {/* Calendar Grid */}
+                <div style={{
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '10px',
+                  overflow: 'hidden',
+                  backgroundColor: '#09090b'
+                }}>
+                  {/* Days Header */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(7, 1fr)',
+                    backgroundColor: '#18181b',
+                    borderBottom: '1px solid rgba(255,255,255,0.08)',
+                    textAlign: 'center',
+                    fontWeight: 700,
+                    fontSize: '0.78rem',
+                    color: '#a1a1aa'
+                  }}>
+                    {dayHeaders.map((dh, i) => (
+                      <div key={dh} style={{ padding: '0.6rem', color: i === 0 ? '#f87171' : '#a1a1aa' }}>
+                        {dh}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Day Cells */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(7, 1fr)',
+                    gap: '1px',
+                    backgroundColor: 'rgba(255,255,255,0.06)'
+                  }}>
+                    {Array.from({ length: totalSlots }).map((_, slotIdx) => {
+                      const dayNumber = slotIdx - firstDayIndex + 1
+                      const isCurrentMonth = dayNumber >= 1 && dayNumber <= daysInMonth
+
+                      if (!isCurrentMonth) {
+                        return (
+                          <div
+                            key={slotIdx}
+                            style={{
+                              backgroundColor: '#0c0c0e',
+                              minHeight: '105px',
+                              padding: '0.5rem',
+                              opacity: 0.35
+                            }}
+                          />
+                        )
+                      }
+
+                      const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(dayNumber).padStart(2, '0')}`
+                      const dayRecs = filteredRecords.filter(r => r.date === dateStr)
+                      const isToday = dateStr === new Date().toISOString().split('T')[0]
+
+                      return (
+                        <div
+                          key={slotIdx}
+                          style={{
+                            backgroundColor: isToday ? '#1a1914' : '#121214',
+                            minHeight: '105px',
+                            padding: '0.55rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.35rem',
+                            border: isToday ? '1px solid #fbbf24' : 'none'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{
+                              fontWeight: 800,
+                              fontSize: '0.85rem',
+                              color: isToday ? '#fbbf24' : '#f4f4f5'
+                            }}>
+                              {dayNumber}
+                            </span>
+                            {isToday && (
+                              <span style={{ fontSize: '0.62rem', color: '#fbbf24', fontWeight: 800 }}>TODAY</span>
+                            )}
+                          </div>
+
+                          {/* Day Content */}
+                          {calendarEmployeeId !== 'all' ? (
+                            // Single employee view for this day
+                            dayRecs.length > 0 ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.72rem' }}>
+                                <Badge variant={
+                                  dayRecs[0].status === 'present' ? 'success' :
+                                  dayRecs[0].status === 'half_day' ? 'warning' :
+                                  dayRecs[0].status === 'absent' ? 'danger' : 'info'
+                                }>
+                                  {dayRecs[0].status.toUpperCase()}
+                                </Badge>
+                                <span style={{ color: '#a1a1aa' }}>
+                                  {dayRecs[0].check_in_time ? String(dayRecs[0].check_in_time).slice(0, 5) : '—'} &rarr; {dayRecs[0].check_out_time ? String(dayRecs[0].check_out_time).slice(0, 5) : '—'}
+                                </span>
+                                <span style={{ color: '#34d399', fontWeight: 700 }}>
+                                  {dayRecs[0].working_hours ?? 0} hrs
+                                </span>
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: '0.72rem', color: '#52525b' }}>—</span>
+                            )
+                          ) : (
+                            // All employees summary count for this day
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.7rem' }}>
+                              {dayRecs.length > 0 ? (
+                                <>
+                                  <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                    <span style={{ background: 'rgba(16, 185, 129, 0.18)', color: '#34d399', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
+                                      {dayRecs.filter(r => r.status === 'present').length} P
+                                    </span>
+                                    {dayRecs.filter(r => r.status === 'half_day').length > 0 && (
+                                      <span style={{ background: 'rgba(245, 158, 11, 0.18)', color: '#fbbf24', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
+                                        {dayRecs.filter(r => r.status === 'half_day').length} H
+                                      </span>
+                                    )}
+                                    {dayRecs.filter(r => r.status === 'absent').length > 0 && (
+                                      <span style={{ background: 'rgba(239, 68, 68, 0.18)', color: '#f87171', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
+                                        {dayRecs.filter(r => r.status === 'absent').length} A
+                                      </span>
+                                    )}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedDate(dateStr)
+                                      setActiveTab('daily')
+                                    }}
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      color: '#a1a1aa',
+                                      fontSize: '0.68rem',
+                                      textAlign: 'left',
+                                      cursor: 'pointer',
+                                      padding: '2px 0',
+                                      textDecoration: 'underline'
+                                    }}
+                                  >
+                                    View / Edit
+                                  </button>
+                                </>
+                              ) : (
+                                <span style={{ color: '#52525b' }}>Not marked</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
         </Card>
       )}
     </div>

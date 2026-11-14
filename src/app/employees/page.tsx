@@ -568,7 +568,35 @@ export default function EmployeesPage() {
                         </td>
 
                         <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
-                          <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
+                          <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+                            {/* WhatsApp Button */}
+                            <button
+                              type="button"
+                              title="Message on WhatsApp"
+                              onClick={() => {
+                                const cleanPhone = String(emp.phone || '').replace(/[^\d]/g, '')
+                                const fullPhone = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`
+                                window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(`Hello ${emp.name}, message from Royal Kissan management.`)}`, '_blank')
+                              }}
+                              style={{
+                                backgroundColor: '#25D366',
+                                border: 'none',
+                                color: '#000',
+                                borderRadius: '6px',
+                                padding: '0.35rem 0.65rem',
+                                fontWeight: 800,
+                                fontSize: '0.75rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <svg style={{ width: '13px', height: '13px' }} fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+                              </svg>
+                              WhatsApp
+                            </button>
                             <Button
                               variant="secondary"
                               size="sm"
@@ -958,9 +986,38 @@ export default function EmployeesPage() {
                 </div>
               </div>
 
-              <button onClick={() => setSelectedProfileEmployeeId(null)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}>
-                <X style={{ width: '20px', height: '20px' }} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  title="Message on WhatsApp"
+                  onClick={() => {
+                    const cleanPhone = String(profileData.employee.phone || '').replace(/[^\d]/g, '')
+                    const fullPhone = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`
+                    window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(`Hello ${profileData.employee.name}, message from Royal Kissan HR.`)}`, '_blank')
+                  }}
+                  style={{
+                    backgroundColor: '#25D366',
+                    border: 'none',
+                    color: '#000',
+                    borderRadius: '6px',
+                    padding: '0.4rem 0.75rem',
+                    fontWeight: 800,
+                    fontSize: '0.78rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <svg style={{ width: '13px', height: '13px' }} fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+                  </svg>
+                  WhatsApp
+                </button>
+                <button onClick={() => setSelectedProfileEmployeeId(null)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}>
+                  <X style={{ width: '20px', height: '20px' }} />
+                </button>
+              </div>
             </div>
 
             {/* Profile Body */}
@@ -1012,6 +1069,49 @@ export default function EmployeesPage() {
                     <div style={{ fontSize: '0.7rem', color: '#a1a1aa' }}>Leave Days</div>
                   </div>
                 </div>
+              </div>
+
+              {/* Day-by-Day Attendance History */}
+              <div style={{ padding: '1rem', background: '#121214', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <h4 style={{ margin: '0 0 0.65rem 0', fontSize: '0.92rem', color: '#fff' }}>
+                  Current Month Daily Attendance History
+                </h4>
+                {profileData.monthlyAttendance.length === 0 ? (
+                  <div style={{ padding: '0.85rem', textAlign: 'center', color: '#71717a', fontSize: '0.8rem', background: '#18181b', borderRadius: '6px' }}>
+                    No daily attendance logs recorded for this month.
+                  </div>
+                ) : (
+                  <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                      <thead style={{ position: 'sticky', top: 0, backgroundColor: '#09090b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <tr style={{ color: '#a1a1aa', textAlign: 'left' }}>
+                          <th style={{ padding: '0.45rem 0.65rem' }}>Date</th>
+                          <th style={{ padding: '0.45rem 0.65rem' }}>Status</th>
+                          <th style={{ padding: '0.45rem 0.65rem' }}>Check In</th>
+                          <th style={{ padding: '0.45rem 0.65rem' }}>Check Out</th>
+                          <th style={{ padding: '0.45rem 0.65rem', textAlign: 'right' }}>Hours</th>
+                          <th style={{ padding: '0.45rem 0.65rem' }}>Remarks</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {profileData.monthlyAttendance.map(att => (
+                          <tr key={att.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                            <td style={{ padding: '0.45rem 0.65rem', color: '#f4f4f5', fontWeight: 600 }}>{att.date}</td>
+                            <td style={{ padding: '0.45rem 0.65rem' }}>
+                              <Badge variant={att.status === 'present' ? 'success' : att.status === 'half_day' ? 'warning' : att.status === 'absent' ? 'danger' : 'info'}>
+                                {att.status.toUpperCase()}
+                              </Badge>
+                            </td>
+                            <td style={{ padding: '0.45rem 0.65rem', color: '#a1a1aa' }}>{att.check_in_time ? String(att.check_in_time).slice(0, 5) : '—'}</td>
+                            <td style={{ padding: '0.45rem 0.65rem', color: '#a1a1aa' }}>{att.check_out_time ? String(att.check_out_time).slice(0, 5) : '—'}</td>
+                            <td style={{ padding: '0.45rem 0.65rem', textAlign: 'right', fontWeight: 700, color: '#34d399' }}>{att.working_hours ?? 0} hrs</td>
+                            <td style={{ padding: '0.45rem 0.65rem', color: '#71717a' }}>{att.remarks || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               {/* Advance History */}
