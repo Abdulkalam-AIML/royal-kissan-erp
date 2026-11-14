@@ -33,7 +33,11 @@ import {
   Trash2,
   Layers,
   ShoppingBag,
-  Receipt
+  Receipt,
+  Truck,
+  CheckCircle2,
+  ShieldCheck,
+  Scale
 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { DataTable, Column } from '@/components/ui/DataTable'
@@ -44,6 +48,24 @@ import { Input, Select } from '@/components/ui/Input'
 import { SkeletonTable, SkeletonCard } from '@/components/ui/Skeleton'
 import ReceiptPreviewModal from '@/components/printer/ReceiptPreviewModal'
 import { BillData } from '@/lib/printer/receipt'
+import { round2 } from '@/lib/pricing/pricing-engine'
+import {
+  validateGSTIN,
+  calculateDealerGSTBreakdown,
+  createDealerDispatch,
+  getDealerDispatches,
+  recordDealerReturnAndLeakage,
+  getDealerReturns,
+  calculateDealerDailySettlement,
+  confirmDealerDailySettlement,
+  ROYAL_KISSAN_STATE_CODE
+} from '@/lib/services/dealer-service'
+import {
+  Dealer,
+  DealerDispatchWithItems,
+  DealerReturnEntryWithItems,
+  DealerDailySettlement
+} from '@/lib/types/database'
 
 // Master Products List for Dealer Product-Wise Sales Matrix
 const MASTER_PRODUCTS = [
@@ -58,7 +80,7 @@ const MASTER_PRODUCTS = [
 ]
 
 // Fallback dealers data
-const INITIAL_DEALERS = [
+const INITIAL_DEALERS: any[] = [
   { 
     id: 'd1', 
     dealer_code: 'DLR-1001',
@@ -67,6 +89,9 @@ const INITIAL_DEALERS = [
     route: 'Nuzvid - Eluru Highway',
     phone: '9347662554', 
     gst_number: '37BABS2021G1Z3',
+    is_gst_enabled: true,
+    default_gst_rate: 18,
+    state_code: '37',
     address: 'Main Road, Kamavarapukota, AP',
     outstanding_amount: 14500, 
     credit_limit: 50000, 
@@ -82,6 +107,9 @@ const INITIAL_DEALERS = [
     route: 'Local Town Route',
     phone: '9393064848', 
     gst_number: '37BOBBY9921K1Z2',
+    is_gst_enabled: true,
+    default_gst_rate: 18,
+    state_code: '37',
     address: 'Bus Stand Road, Nuzvid',
     outstanding_amount: 8200, 
     credit_limit: 30000, 
@@ -97,43 +125,16 @@ const INITIAL_DEALERS = [
     route: 'Vissannapeta Route',
     phone: '9849072413', 
     gst_number: '37VISSAN8812L1Z9',
+    is_gst_enabled: false,
+    default_gst_rate: 18,
+    state_code: '37',
     address: 'Market Yard, Vissannapeta',
     outstanding_amount: 0, 
     credit_limit: 25000, 
     is_active: true,
     total_purchases: 62000,
     last_purchase_date: '2026-07-28'
-  },
-  { 
-    id: 'd4', 
-    dealer_code: 'DLR-1004',
-    name: 'Narsayapuram Traders', 
-    area: 'Narsayapuram', 
-    route: 'Dammapeta Route',
-    phone: '9640352593', 
-    gst_number: '37NARSAY7712M1Z0',
-    address: 'Narsayapuram Center',
-    outstanding_amount: 12000, 
-    credit_limit: 40000, 
-    is_active: true,
-    total_purchases: 112000,
-    last_purchase_date: '2026-07-30'
-  },
-  { 
-    id: 'd5', 
-    dealer_code: 'DLR-1005',
-    name: 'Kranthi Cool Drinks', 
-    area: 'Kunavaram', 
-    route: 'Kunavaram Highway',
-    phone: '8464969797', 
-    gst_number: '37KRANTHI6612N1Z4',
-    address: 'Kunavaram Cross Road',
-    outstanding_amount: 15400, 
-    credit_limit: 60000, 
-    is_active: true,
-    total_purchases: 210000,
-    last_purchase_date: '2026-08-03'
-  },
+  }
 ]
 
 interface ProductRow {
@@ -141,10 +142,7 @@ interface ProductRow {
   product_name: string
   unit: string
   qty: number
-  rate: number // manual override
-  return_qty: number
-  leak_qty: number
-  free_qty: number
+  rate: number
   discount: number
   remarks: string
 }
@@ -155,8 +153,20 @@ export default function DealersPage() {
   const [search, setSearch] = useState('')
   const [filterArea, setFilterArea] = useState('all')
   const [selectedDealer, setSelectedDealer] = useState<any | null>(INITIAL_DEALERS[0])
-  const [activeTab, setActiveTab] = useState<'sales_matrix' | 'history' | 'due_ledger' | 'payments' | 'returns_leakages' | 'analytics'>('sales_matrix')
+  
+  // Navigation Tabs inside Dealer Workspace
+  const [activeTab, setActiveTab] = useState<
+    'sales_matrix' | 'load_dispatches' | 'returns_leakages' | 'daily_settlement' | 'history' | 'due_ledger' | 'analytics'
+  >('sales_matrix')
+  
   const [previewBill, setPreviewBill] = useState<BillData | null>(null)
+
+  // Dispatches & Returns Data State
+  const [dispatchesList, setDispatchesList] = useState<DealerDispatchWithItems[]>([])
+  const [returnsList, setReturnsList] = useState<DealerReturnEntryWithItems[]>([])
+  const [settlementData, setSettlementData] = useState<DealerDailySettlement | null>(null)
+  const [settlementDate, setSettlementDate] = useState<string>(new Date().toISOString().split('T')[0])
+  const [confirmingSettlement, setConfirmingSettlement] = useState(false)
 
   // Dealer Creation Modal
   const [showAddModal, setShowAddModal] = useState(false)
@@ -167,6 +177,9 @@ export default function DealersPage() {
     area: '',
     route: '',
     gst_number: '',
+    is_gst_enabled: true,
+    default_gst_rate: 18,
+    state_code: '37',
     credit_limit: 50000
   })
   const [savingDealer, setSavingDealer] = useState(false)
@@ -180,8 +193,28 @@ export default function DealersPage() {
   })
   const [submittingPayment, setSubmittingPayment] = useState(false)
 
+  // ── LOAD DISPATCH MODAL STATE ──
+  const [showDispatchModal, setShowDispatchModal] = useState(false)
+  const [dispatchDate, setDispatchDate] = useState(new Date().toISOString().split('T')[0])
+  const [dispatchStaff, setDispatchStaff] = useState('Operations Staff')
+  const [dispatchNotes, setDispatchNotes] = useState('')
+  const [dispatchItems, setDispatchItems] = useState([
+    { product_id: 'p3', product_name: 'Bags (100 Pack)', unit: 'pkts', quantity: 100, rate: 70, amount: 7000 }
+  ])
+  const [savingDispatch, setSavingDispatch] = useState(false)
+
+  // ── NEXT-DAY RETURNS & LEAKAGE MODAL STATE ──
+  const [showReturnModal, setShowReturnModal] = useState(false)
+  const [selectedDispatchForReturn, setSelectedDispatchForReturn] = useState<DealerDispatchWithItems | null>(null)
+  const [returnReportingDate, setReturnReportingDate] = useState(new Date().toISOString().split('T')[0])
+  const [returnCondition, setReturnCondition] = useState<'good' | 'damaged' | 'leaked' | 'unsellable'>('good')
+  const [returnNotes, setReturnNotes] = useState('')
+  const [returnItemsState, setReturnItemsState] = useState<any[]>([])
+  const [savingReturn, setSavingReturn] = useState(false)
+
   // ── PRODUCT-WISE SALES MATRIX STATE ──
   const [saleDate, setSaleDate] = useState(new Date().toISOString().split('T')[0])
+  const [applyGstOnMatrix, setApplyGstOnMatrix] = useState<boolean>(true)
   const [productRows, setProductRows] = useState<ProductRow[]>(
     MASTER_PRODUCTS.map(p => ({
       product_id: p.id,
@@ -189,9 +222,6 @@ export default function DealersPage() {
       unit: p.unit,
       qty: p.name.includes('Water Can') ? 15 : p.name.includes('Cooling') ? 10 : p.name.includes('Bags') ? 5 : 0,
       rate: p.default_rate,
-      return_qty: 0,
-      leak_qty: 0,
-      free_qty: 0,
       discount: 0,
       remarks: ''
     }))
@@ -208,14 +238,16 @@ export default function DealersPage() {
   // Dealer Invoices & Ledgers History State
   const [dealerBills, setDealerBills] = useState<any[]>([])
   const [dealerLedger, setDealerLedger] = useState<any[]>([])
-  const [dealerReturns, setDealerReturns] = useState<any[]>([])
   const [savingBill, setSavingBill] = useState(false)
 
   const supabase = createClient()
 
-  useDataSyncListener(['dealers', 'bills', 'dues', 'collections', 'all'], () => { 
+  useDataSyncListener(['dealers', 'bills', 'dues', 'collections', 'stock', 'all'], () => { 
     loadDealers() 
-    if (selectedDealer?.id) loadDealerHistory(selectedDealer.id)
+    if (selectedDealer?.id) {
+      loadDealerHistory(selectedDealer.id)
+      loadDispatchesAndReturns(selectedDealer.id)
+    }
   })
 
   useEffect(() => {
@@ -225,33 +257,22 @@ export default function DealersPage() {
   useEffect(() => {
     if (selectedDealer?.id) {
       loadDealerHistory(selectedDealer.id)
+      loadDispatchesAndReturns(selectedDealer.id)
+      setApplyGstOnMatrix(selectedDealer.is_gst_enabled !== false && Boolean(selectedDealer.gst_number))
     }
   }, [selectedDealer?.id])
+
+  useEffect(() => {
+    if (selectedDealer?.id && activeTab === 'daily_settlement') {
+      loadSettlementBreakdown(selectedDealer.id, settlementDate)
+    }
+  }, [selectedDealer?.id, activeTab, settlementDate])
 
   async function loadDealers() {
     setLoading(true)
     try {
       const { data } = await supabase.from('dealers').select('*').order('name')
-      let list = (data && data.length > 0) ? data : INITIAL_DEALERS
-      try {
-        const rawO = localStorage.getItem('rk_dealer_overrides')
-        if (rawO) {
-          const overrides = JSON.parse(rawO)
-          list = list.map(d => {
-            const ov = overrides[d.id]
-            if (ov) {
-              return {
-                ...d,
-                outstanding_amount: (d.outstanding_amount || 0) + (ov.outstanding_amount || 0),
-                total_purchases: (d.total_purchases || 0) + (ov.total_purchases || 0),
-                last_purchase_date: ov.last_purchase_date || d.last_purchase_date
-              }
-            }
-            return d
-          })
-        }
-      } catch (e) {}
-
+      const list = (data && data.length > 0) ? data : INITIAL_DEALERS
       setDealers(list)
       if (!selectedDealer) setSelectedDealer(list[0])
     } catch {
@@ -262,48 +283,44 @@ export default function DealersPage() {
     }
   }
 
-  async function loadDealerHistory(dealerId: string) {
+  async function loadDispatchesAndReturns(dealerId: string) {
     try {
-      const [{ data: bills }, { data: collections }] = await Promise.all([
-        supabase.from('bills').select('*').or(`dealer_id.eq.${dealerId},customer_name.eq.${selectedDealer?.name}`).order('date', { ascending: false }),
-        supabase.from('dealer_collections').select('*').or(`dealer_id.eq.${dealerId},dealer_id.is.null`).order('collected_date', { ascending: false })
+      const [dispatches, returns] = await Promise.all([
+        getDealerDispatches(dealerId),
+        getDealerReturns(dealerId)
       ])
-      
-      let allBills = bills || []
-      try {
-        const rawLocal = localStorage.getItem('rk_local_bills')
-        if (rawLocal) {
-          const localBills = JSON.parse(rawLocal)
-          const dealerLocalBills = localBills.filter((b: any) => 
-            b.dealer_id === dealerId || 
-            (selectedDealer?.name && b.customer_name?.toLowerCase().includes(selectedDealer.name.toLowerCase()))
-          )
-          allBills = [...dealerLocalBills, ...allBills.filter((b: any) => !dealerLocalBills.some((lb: any) => lb.id === b.id))]
-        }
-      } catch (e) {}
-
-      if (allBills.length > 0) {
-        setDealerBills(allBills)
-      } else {
-        setDealerBills([
-          { id: 'b1', invoice_number: 'RK-2026-081', date: '2026-08-02', total_amount: 14500, paid_amount: 0, due_amount: 14500, payment_mode: 'due', payment_status: 'due', items_count: 3 },
-          { id: 'b2', invoice_number: 'RK-2026-072', date: '2026-07-28', total_amount: 8200, paid_amount: 8200, due_amount: 0, payment_mode: 'upi', payment_status: 'paid', items_count: 2 }
-        ])
-      }
-
-      setDealerLedger([
-        { date: '2026-08-02', type: 'Invoice RK-2026-081', debit: 14500, credit: 0, balance: 14500, notes: 'Multi-product billing' },
-        { date: '2026-07-28', type: 'Payment UPI', debit: 0, credit: 8200, balance: 0, notes: 'Full due settlement' },
-      ])
-
-      setDealerReturns([
-        { date: '2026-08-02', product: 'Water Can (20L)', return_qty: 12, leak_qty: 1, reason: 'Broken Cap Seals' },
-        { date: '2026-07-28', product: 'Cooling Can (20L)', return_qty: 8, leak_qty: 0, reason: 'Empty Can Deposit Return' },
-      ])
-    } catch {
-      // Fallback loaded
+      setDispatchesList(dispatches)
+      setReturnsList(returns)
+    } catch (e) {
+      console.warn('Failed to load dealer dispatches/returns:', e)
     }
   }
+
+  async function loadSettlementBreakdown(dealerId: string, date: string) {
+    try {
+      const st = await calculateDealerDailySettlement(dealerId, date)
+      setSettlementData(st)
+    } catch (e) {
+      console.warn('Failed to load settlement:', e)
+    }
+  }
+
+  async function loadDealerHistory(dealerId: string) {
+    try {
+      const [{ data: bills }, { data: ledger }] = await Promise.all([
+        supabase.from('bills').select('*').or(`dealer_id.eq.${dealerId},customer_name.eq.${selectedDealer?.name}`).order('date', { ascending: false }),
+        supabase.from('dealer_ledger').select('*').eq('dealer_id', dealerId).order('created_at', { ascending: false })
+      ])
+      
+      setDealerBills(bills || [])
+      setDealerLedger(ledger || [])
+    } catch {
+      // Fallback
+    }
+  }
+
+  // Handle GSTIN input change in add modal with instant validation
+  const gstValidation = validateGSTIN(newDealerForm.gst_number)
 
   async function handleCreateDealer() {
     if (!newDealerForm.name.trim()) {
@@ -313,14 +330,33 @@ export default function DealersPage() {
     setSavingDealer(true)
     try {
       const dealerCode = `DLR-${Math.floor(1000 + Math.random() * 9000)}`
-      const payload = { ...newDealerForm, dealer_code: dealerCode, outstanding_amount: 0, is_active: true }
+      const stateCode = newDealerForm.gst_number ? newDealerForm.gst_number.slice(0, 2) : '37'
+
+      const payload = { 
+        ...newDealerForm, 
+        dealer_code: dealerCode, 
+        state_code: stateCode,
+        outstanding_amount: 0, 
+        is_active: true 
+      }
       
       const { data, error } = await supabase.from('dealers').insert([payload]).select().single()
       if (error) throw error
       setDealers(prev => [data, ...prev])
       setSelectedDealer(data)
       setShowAddModal(false)
-      setNewDealerForm({ name: '', phone: '', address: '', area: '', route: '', gst_number: '', credit_limit: 50000 })
+      setNewDealerForm({ 
+        name: '', 
+        phone: '', 
+        address: '', 
+        area: '', 
+        route: '', 
+        gst_number: '', 
+        is_gst_enabled: true, 
+        default_gst_rate: 18, 
+        state_code: '37', 
+        credit_limit: 50000 
+      })
       emitDataChange('dealers')
       alert('✅ New Dealer account created successfully!')
     } catch (e: any) {
@@ -338,14 +374,11 @@ export default function DealersPage() {
     setSubmittingPayment(true)
     try {
       const newDue = Math.max(0, (selectedDealer.outstanding_amount || 0) - collectForm.amount)
-      
-      // Update dealer DB
-      const { error: dlrErr } = await supabase.from('dealers').update({ outstanding_amount: newDue, updated_at: new Date().toISOString() }).eq('id', selectedDealer.id)
-      if (dlrErr) throw dlrErr
-      
-      // Log collection
+
+      await supabase.from('dealers').update({ outstanding_amount: newDue }).eq('id', selectedDealer.id)
+
       const todayDate = new Date().toISOString().split('T')[0]
-      const { error: colErr } = await supabase.from('dealer_collections').insert([{
+      await supabase.from('dealer_collections').insert([{
         dealer_id: selectedDealer.id,
         amount: collectForm.amount,
         payment_mode: collectForm.mode,
@@ -354,7 +387,6 @@ export default function DealersPage() {
         notes: collectForm.notes || `Dealer Due Payment for ${selectedDealer.name}`,
         collected_by: 'Dealer Admin'
       }])
-      if (colErr) throw colErr
 
       await supabase.from('collections').insert([{
         customer_name: selectedDealer.name,
@@ -381,7 +413,7 @@ export default function DealersPage() {
     }
   }
 
-  // ── AUTO CALCULATIONS FOR PRODUCT MATRIX ──
+  // ── AUTO CALCULATIONS FOR PRODUCT MATRIX WITH GST BREAKDOWN ──
   const updateProductRow = (index: number, field: keyof ProductRow, value: any) => {
     const next = [...productRows]
     next[index] = { ...next[index], [field]: value }
@@ -390,17 +422,27 @@ export default function DealersPage() {
 
   const grossTotal = productRows.reduce((sum, row) => sum + (row.qty * row.rate), 0)
   const totalDiscount = productRows.reduce((sum, row) => sum + Number(row.discount || 0), 0)
-  const netBillAmount = Math.max(0, grossTotal - totalDiscount)
-  
+  const netTaxableAmount = Math.max(0, grossTotal - totalDiscount)
+
+  // GST Calculation
+  const isDealerGstValid = selectedDealer?.gst_number ? validateGSTIN(selectedDealer.gst_number) : null
+  const isInterstate = isDealerGstValid ? isDealerGstValid.isInterstate : false
+  const dealerGstRate = Number(selectedDealer?.default_gst_rate || 18)
+  const gstBreakdown = calculateDealerGSTBreakdown({
+    taxableAmount: netTaxableAmount,
+    gstRate: applyGstOnMatrix ? dealerGstRate : 0,
+    isInterstate,
+    isGstEnabled: applyGstOnMatrix
+  })
+
+  const netBillAmount = gstBreakdown.grandTotal
   const totalPaid = Number(payments.cash || 0) + Number(payments.upi || 0) + Number(payments.bank || 0) + Number(payments.advance || 0)
   const pendingDue = Math.max(0, netBillAmount - totalPaid)
   const previousDue = selectedDealer?.outstanding_amount || 0
   const grandTotalDue = previousDue + pendingDue
-
   const totalQtySold = productRows.reduce((sum, r) => sum + Number(r.qty || 0), 0)
-  const totalQtyReturned = productRows.reduce((sum, r) => sum + Number(r.return_qty || 0), 0)
-  const totalQtyLeaked = productRows.reduce((sum, r) => sum + Number(r.leak_qty || 0), 0)
 
+  // Save Dealer GST Invoice
   async function handleSaveBill(shouldPrint = false) {
     if (netBillAmount <= 0) {
       alert('Please add at least one product quantity to generate bill')
@@ -412,7 +454,7 @@ export default function DealersPage() {
     }
     setSavingBill(true)
     try {
-      const invNo = `RK-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
+      const invNo = `RK-DLR-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
       const activeRows = productRows.filter(r => r.qty > 0)
       
       const billPayload = {
@@ -425,6 +467,11 @@ export default function DealersPage() {
         date: saleDate,
         subtotal: grossTotal,
         discount_amount: totalDiscount,
+        taxable_amount: gstBreakdown.taxableAmount,
+        gst_amount: gstBreakdown.gstAmount,
+        cgst_amount: gstBreakdown.cgstAmount,
+        sgst_amount: gstBreakdown.sgstAmount,
+        igst_amount: gstBreakdown.igstAmount,
         total_amount: netBillAmount,
         grand_total: netBillAmount,
         paid_amount: totalPaid,
@@ -432,11 +479,11 @@ export default function DealersPage() {
         cash_amount: Number(payments.cash || 0),
         upi_amount: Number(payments.upi || 0),
         bank_amount: Number(payments.bank || 0),
-        bill_type: 'dealer_invoice',
+        bill_type: applyGstOnMatrix && gstBreakdown.gstAmount > 0 ? 'gst_invoice' : 'dealer_invoice',
         payment_mode: totalPaid >= netBillAmount ? 'cash' : totalPaid > 0 ? 'mixed' : 'due',
         payment_status: totalPaid >= netBillAmount ? 'paid' : totalPaid > 0 ? 'partial' : 'due',
         items_count: activeRows.length,
-        notes: `Dealer Invoice for ${selectedDealer.name}`,
+        notes: `Dealer Invoice for ${selectedDealer.name} ${applyGstOnMatrix ? '(GST Applicable)' : ''}`,
         created_by: 'Dealer Workspace'
       }
 
@@ -447,391 +494,402 @@ export default function DealersPage() {
         item_discount: Number(r.discount || 0),
         discount_type: 'flat',
         amount: Math.max(0, (r.qty * r.rate) - Number(r.discount || 0)),
-        total: Math.max(0, (r.qty * r.rate) - Number(r.discount || 0))
+        total: Math.max(0, (r.qty * r.rate) - Number(r.discount || 0)),
+        gst_rate: applyGstOnMatrix ? dealerGstRate : 0,
+        gst_amount: applyGstOnMatrix ? round2(((r.qty * r.rate) * dealerGstRate) / 100) : 0
       }))
 
-      let savedData: any = null
-      try {
-        const { data, error } = await supabase.rpc('process_pos_bill', {
-          p_bill: billPayload,
-          p_items: itemsPayload
-        })
-        if (!error && data) savedData = data
-      } catch (err) {
-        console.warn('Dealer bill RPC failed:', err)
+      const { data: dData, error: dErr } = await supabase.from('bills').insert([billPayload]).select().single()
+      if (!dErr && dData) {
+        const childItems = itemsPayload.map(i => ({ ...i, bill_id: dData.id }))
+        await supabase.from('bill_items').insert(childItems)
       }
 
-      if (!savedData) {
-        try {
-          const { data: dData, error: dErr } = await supabase.from('bills').insert([billPayload]).select().single()
-          if (!dErr && dData) {
-            savedData = dData
-            const childItems = itemsPayload.map(i => ({ ...i, bill_id: dData.id }))
-            await supabase.from('bill_items').insert(childItems)
-          }
-        } catch (err) {
-          console.warn('Dealer bill direct insert failed:', err)
-        }
-      }
-
-      if (!savedData) {
-        savedData = {
-          id: `bill-${Date.now()}`,
-          ...billPayload,
-          items: itemsPayload
-        }
-      }
-
-      // Persist to rk_local_bills
-      try {
-        const rawLocal = localStorage.getItem('rk_local_bills')
-        const currentLocal = rawLocal ? JSON.parse(rawLocal) : []
-        const localEntry = { ...savedData, items: itemsPayload }
-        localStorage.setItem('rk_local_bills', JSON.stringify([localEntry, ...currentLocal].slice(0, 100)))
-
-        const rawD = localStorage.getItem('rk_dealer_overrides')
-        const dOverrides = rawD ? JSON.parse(rawD) : {}
-        const cur = dOverrides[selectedDealer.id] || { outstanding_amount: 0, total_purchases: 0 }
-        dOverrides[selectedDealer.id] = {
-          outstanding_amount: (cur.outstanding_amount || 0) + pendingDue,
-          total_purchases: (cur.total_purchases || 0) + netBillAmount,
-          last_purchase_date: saleDate
-        }
-        localStorage.setItem('rk_dealer_overrides', JSON.stringify(dOverrides))
-      } catch (e) {}
-
-      // Refresh dealer state
-      const updatedDue = (selectedDealer.outstanding_amount || 0) + pendingDue
-      const updatedDealer = {
-        ...selectedDealer,
-        outstanding_amount: updatedDue,
+      // Update dealer balance
+      const newOut = (selectedDealer.outstanding_amount || 0) + pendingDue
+      await supabase.from('dealers').update({
+        outstanding_amount: newOut,
         total_purchases: (selectedDealer.total_purchases || 0) + netBillAmount,
         last_purchase_date: saleDate
-      }
-      setSelectedDealer(updatedDealer)
-      setDealers(prev => prev.map(d => d.id === selectedDealer.id ? updatedDealer : d))
+      }).eq('id', selectedDealer.id)
 
-      // Prepend to dealer bills
-      const newBillEntry = {
-        id: savedData.id,
-        invoice_number: invNo,
-        date: saleDate,
-        total_amount: netBillAmount,
-        paid_amount: totalPaid,
-        due_amount: pendingDue,
-        payment_mode: billPayload.payment_mode,
-        payment_status: billPayload.payment_status,
-        items_count: activeRows.length
-      }
-      setDealerBills(prev => [newBillEntry, ...prev])
-
-      // Prepend to dealer ledger
-      const newLedgerEntry = {
-        date: saleDate,
-        type: `Invoice ${invNo}`,
-        debit: netBillAmount,
-        credit: totalPaid,
-        balance: updatedDue,
-        notes: `Sold ${totalQtySold} items`
-      }
-      setDealerLedger(prev => [newLedgerEntry, ...prev])
-
-      // Log returns or leakages if any
-      const returnsRows = productRows.filter(r => (Number(r.return_qty) > 0 || Number(r.leak_qty) > 0))
-      for (const r of returnsRows) {
-        if (Number(r.return_qty) > 0) {
-          await supabase.from('stock_transactions').insert([{
-            product_name: r.product_name,
-            item_name: r.product_name,
-            transaction_type: 'in',
-            quantity: Number(r.return_qty),
-            reference_type: 'dealer_return',
-            notes: `Dealer ${selectedDealer.name} Empty/Can Return [${r.product_name}]`
-          }])
-        }
-        if (Number(r.leak_qty) > 0) {
-          await supabase.from('stock_transactions').insert([{
-            product_name: r.product_name,
-            item_name: r.product_name,
-            transaction_type: 'out',
-            quantity: Number(r.leak_qty),
-            reference_type: 'dealer_leakage',
-            notes: `Dealer ${selectedDealer.name} Leakage/Damaged [${r.product_name}]`
-          }])
-        }
-      }
-
+      setSelectedDealer({ ...selectedDealer, outstanding_amount: newOut })
       emitDataChange('dealers')
       emitDataChange('bills')
-      emitDataChange('stock')
-      emitDataChange('collections')
       emitDataChange('dues')
 
-      // Reset product rows matrix
-      setProductRows(prev => prev.map(r => ({ ...r, qty: 0, discount: 0, return_qty: 0, leak_qty: 0 })))
-      setPayments({ cash: 0, upi: 0, bank: 0, advance: 0 })
-      loadDealerHistory(selectedDealer.id)
-
       if (shouldPrint) {
-        const billDataObj: BillData = {
-          id: savedData.id,
+        setPreviewBill({
           invoice_number: invNo,
-          bill_type: 'dealer_invoice',
           customer_name: selectedDealer.name,
+          customer_phone: selectedDealer.phone,
+          customer_address: selectedDealer.address,
+          customer_gstin: selectedDealer.gst_number,
           dealer_name: selectedDealer.name,
-          dealer_id: selectedDealer.id,
-          dealer_phone: selectedDealer.phone || null,
-          dealer_address: selectedDealer.address || null,
-          dealer_gstin: selectedDealer.gst_number || null,
+          dealer_gstin: selectedDealer.gst_number,
+          dealer_address: selectedDealer.address,
           date: saleDate,
           subtotal: grossTotal,
+          taxable_amount: gstBreakdown.taxableAmount,
+          gst_amount: gstBreakdown.gstAmount,
+          cgst_amount: gstBreakdown.cgstAmount,
+          sgst_amount: gstBreakdown.sgstAmount,
+          igst_amount: gstBreakdown.igstAmount,
           discount_amount: totalDiscount,
-          gst_amount: 0,
           total_amount: netBillAmount,
           paid_amount: totalPaid,
           due_amount: pendingDue,
-          payment_method: billPayload.payment_mode,
-          cash_amount: Number(payments.cash || 0),
-          upi_amount: Number(payments.upi || 0),
-          items: activeRows.map(r => ({
-            product_name: r.product_name,
-            quantity: r.qty,
-            rate: r.rate,
-            amount: Math.max(0, (r.qty * r.rate) - Number(r.discount || 0)),
-            item_discount: Number(r.discount || 0),
-            total: Math.max(0, (r.qty * r.rate) - Number(r.discount || 0))
-          }))
-        }
-        setPreviewBill(billDataObj)
+          bill_type: applyGstOnMatrix ? 'gst_invoice' : 'dealer_invoice',
+          payment_method: totalPaid >= netBillAmount ? 'CASH' : 'MIXED/CREDIT',
+          items: itemsPayload
+        })
       } else {
-        alert(`✅ Bill ${invNo} saved successfully! Current Dealer Balance Due: ${formatCurrency(updatedDue)}`)
+        alert('✅ Dealer Invoice saved successfully!')
       }
+
+      loadDealerHistory(selectedDealer.id)
     } catch (e: any) {
-      alert(`Error saving bill: ${e.message}`)
+      alert(`Error saving invoice: ${e.message}`)
     } finally {
       setSavingBill(false)
     }
   }
 
-  async function handlePrintDealerBill(b: any) {
-    try {
-      const { data: items } = await supabase
-        .from('bill_items')
-        .select('*')
-        .eq('bill_id', b.id)
+  // ── SUBMIT LOAD DISPATCH ──
+  async function handleCreateDispatch() {
+    if (!selectedDealer) return
+    setSavingDispatch(true)
 
-      const billDataObj: BillData = {
-        id: b.id,
-        invoice_number: b.invoice_number,
-        bill_type: 'dealer_invoice',
-        customer_name: selectedDealer?.name || 'Dealer',
-        dealer_name: selectedDealer?.name || 'Dealer',
-        dealer_phone: selectedDealer?.phone || null,
-        dealer_address: selectedDealer?.address || null,
-        dealer_gstin: selectedDealer?.gst_number || null,
-        date: b.date,
-        subtotal: Number(b.total_amount) || 0,
-        discount_amount: Number(b.discount_amount) || 0,
-        gst_amount: Number(b.gst_amount) || 0,
-        total_amount: Number(b.total_amount) || 0,
-        paid_amount: Number(b.paid_amount) || 0,
-        due_amount: Number(b.due_amount) || 0,
-        payment_method: b.payment_mode || 'cash',
-        items: (items && items.length > 0 ? items : [{
-          product_name: 'Water Can (20L)',
-          quantity: b.items_count || 1,
-          rate: Number(b.total_amount) || 0,
-          amount: Number(b.total_amount) || 0
-        }]).map((i: any) => ({
-          product_name: i.product_name,
-          quantity: i.quantity,
-          rate: Number(i.rate) || 0,
-          amount: Number(i.amount) || Number(i.total) || 0,
-          total: Number(i.total) || Number(i.amount) || 0
-        }))
+    const totalVal = dispatchItems.reduce((s, it) => s + (it.quantity * it.rate), 0)
+
+    try {
+      const res = await createDealerDispatch({
+        dealer_id: selectedDealer.id,
+        dealer_name: selectedDealer.name,
+        dealer_gstin: selectedDealer.gst_number,
+        is_gst_enabled: selectedDealer.is_gst_enabled ?? false,
+        is_interstate: isInterstate,
+        dispatch_date: dispatchDate,
+        subtotal: totalVal,
+        total_value: totalVal,
+        responsible_staff: dispatchStaff,
+        notes: dispatchNotes,
+        items: dispatchItems
+      })
+
+      if (!res.success) {
+        alert(res.message)
+        return
       }
-      setPreviewBill(billDataObj)
-    } catch (err: any) {
-      alert(`Error loading bill for print: ${err?.message || err}`)
+
+      alert(`✅ Load Dispatch #${res.dispatch?.dispatch_number} recorded! Warehouse stock deducted.`)
+      setShowDispatchModal(false)
+      loadDispatchesAndReturns(selectedDealer.id)
+      loadDealerHistory(selectedDealer.id)
+    } catch (e: any) {
+      alert(`Error: ${e.message}`)
+    } finally {
+      setSavingDispatch(false)
     }
   }
 
-  // Filter Dealers
-  const filteredDealers = dealers.filter(d => {
-    const matchesSearch = d.name?.toLowerCase().includes(search.toLowerCase()) || d.phone?.includes(search) || d.area?.toLowerCase().includes(search.toLowerCase())
-    const matchesArea = filterArea === 'all' || d.area === filterArea
-    return matchesSearch && matchesArea
-  })
+  // ── OPEN RETURN & LEAKAGE MODAL ──
+  function openReturnEntryModal(dispatch: DealerDispatchWithItems) {
+    setSelectedDispatchForReturn(dispatch)
+    setReturnReportingDate(new Date().toISOString().split('T')[0])
+    setReturnCondition('good')
+    setReturnNotes('')
 
-  const uniqueAreas = Array.from(new Set(dealers.map(d => d.area).filter(Boolean)))
+    const initRows = (dispatch.items || []).map(it => ({
+      dispatch_item_id: it.id,
+      product_id: it.product_id,
+      product_name: it.product_name,
+      unit: it.unit,
+      original_quantity: it.quantity,
+      previously_returned: it.returned_quantity || 0,
+      previously_leaked: it.leaked_quantity || 0,
+      remaining_qty: Math.max(0, it.quantity - ((it.returned_quantity || 0) + (it.leaked_quantity || 0))),
+      new_returned_qty: 0,
+      new_leaked_qty: 0,
+      original_rate: it.rate,
+      adjustment_rate: it.rate, // Preserves original dispatch rate by default
+      override_reason: ''
+    }))
+
+    setReturnItemsState(initRows)
+    setShowReturnModal(true)
+  }
+
+  // ── SUBMIT RETURN & LEAKAGE (NEXT-DAY ADJUSTMENT) ──
+  async function handleSubmitReturnAndLeakage() {
+    if (!selectedDispatchForReturn || !selectedDealer) return
+
+    // Validation
+    let hasAnyReturn = false
+    for (const r of returnItemsState) {
+      if (r.new_returned_qty > 0 || r.new_leaked_qty > 0) hasAnyReturn = true
+      if (r.new_returned_qty + r.new_leaked_qty > r.remaining_qty) {
+        alert(`Validation error: Returned (${r.new_returned_qty}) + Leaked (${r.new_leaked_qty}) exceeds remaining dispatch qty (${r.remaining_qty}) for ${r.product_name}!`)
+        return
+      }
+    }
+
+    if (!hasAnyReturn) {
+      alert('Please enter at least one returned or leaked quantity.')
+      return
+    }
+
+    setSavingReturn(true)
+    try {
+      const itemsPayload = returnItemsState.map(r => ({
+        dispatch_item_id: r.dispatch_item_id,
+        product_id: r.product_id,
+        product_name: r.product_name,
+        unit: r.unit,
+        original_quantity: r.original_quantity,
+        returned_quantity: Number(r.new_returned_qty) || 0,
+        leaked_quantity: Number(r.new_leaked_qty) || 0,
+        original_rate: r.original_rate,
+        adjustment_rate: Number(r.adjustment_rate) || r.original_rate,
+        override_reason: r.override_reason || null
+      }))
+
+      const res = await recordDealerReturnAndLeakage({
+        dealer_id: selectedDealer.id,
+        dispatch_id: selectedDispatchForReturn.id,
+        dispatch_date: selectedDispatchForReturn.dispatch_date,
+        return_date: returnReportingDate, // Key: dated the reporting day!
+        condition: returnCondition,
+        notes: returnNotes,
+        items: itemsPayload
+      })
+
+      if (!res.success) {
+        alert(res.message)
+        return
+      }
+
+      alert(`✅ Next-Day Return & Leakage recorded!\nCredit of ₹${res.returnEntry?.total_credit_amount} applied to ${returnReportingDate} account.\nOriginal dispatch (${selectedDispatchForReturn.dispatch_date}) preserved unchanged.`)
+      setShowReturnModal(false)
+      loadDispatchesAndReturns(selectedDealer.id)
+      loadDealerHistory(selectedDealer.id)
+    } catch (e: any) {
+      alert(`Error saving return: ${e.message}`)
+    } finally {
+      setSavingReturn(false)
+    }
+  }
+
+  // ── CONFIRM DAILY SETTLEMENT ──
+  async function handleConfirmDailySettlement() {
+    if (!settlementData || !selectedDealer) return
+    setConfirmingSettlement(true)
+    try {
+      const res = await confirmDealerDailySettlement(settlementData)
+      if (res.success) {
+        alert(`✅ Daily Account Settlement confirmed for ${settlementDate}!`)
+        loadSettlementBreakdown(selectedDealer.id, settlementDate)
+        loadDealerHistory(selectedDealer.id)
+      } else {
+        alert(res.message)
+      }
+    } catch (e: any) {
+      alert(`Error confirming settlement: ${e.message}`)
+    } finally {
+      setConfirmingSettlement(false)
+    }
+  }
+
+  // Print Load Dispatch Note
+  function printLoadDispatchNote(dispatch: DealerDispatchWithItems) {
+    setPreviewBill({
+      invoice_number: dispatch.dispatch_number,
+      customer_name: dispatch.dealer_name,
+      dealer_name: dispatch.dealer_name,
+      dealer_gstin: dispatch.dealer_gstin,
+      date: dispatch.dispatch_date,
+      subtotal: dispatch.subtotal,
+      taxable_amount: dispatch.taxable_amount,
+      gst_amount: dispatch.gst_amount,
+      cgst_amount: dispatch.cgst_amount,
+      sgst_amount: dispatch.sgst_amount,
+      igst_amount: dispatch.igst_amount,
+      total_amount: dispatch.total_value,
+      paid_amount: 0,
+      due_amount: dispatch.total_value,
+      bill_type: 'LOAD DISPATCH NOTE (NOT A SALES INVOICE)' as any,
+      items: (dispatch.items || []).map(it => ({
+        product_name: it.product_name,
+        quantity: it.quantity,
+        rate: it.rate,
+        amount: it.amount
+      }))
+    })
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      {/* Page Title & Controls */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+    <div style={{ padding: '1.5rem', maxWidth: '1440px', margin: '0 auto', color: '#f4f4f5' }}>
+      {/* Page Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Store style={{ color: '#fbbf24', width: '28px', height: '28px' }} />
-            Dealer Profile Workspace & Product-Wise Sales Matrix
-          </h2>
-          <p style={{ color: '#a1a1aa', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-            360° Dealer CRM &bull; Multi-product billing, daily rate overrides, returns log, running dues & split collections.
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
+            <div style={{ padding: '0.5rem', background: 'rgba(251, 191, 36, 0.12)', border: '1px solid rgba(251, 191, 36, 0.25)', borderRadius: '10px', color: '#fbbf24' }}>
+              <Store style={{ width: 22, height: 22 }} />
+            </div>
+            <h1 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, letterSpacing: '-0.02em', color: '#fff' }}>
+              Dealer Management &amp; Next-Day Reconciliation
+            </h1>
+          </div>
+          <p style={{ fontSize: '0.875rem', color: '#a1a1aa', margin: 0 }}>
+            GST-compliant billing, daily load dispatches, next-day return &amp; leakage adjustments, and daily account settlements.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <Button variant="primary" icon={<Plus style={{ width: '16px', height: '16px' }} />} onClick={() => setShowAddModal(true)}>
-            Add New Dealer Account
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <Button variant="secondary" onClick={() => setShowAddModal(true)} icon={<Plus style={{ width: 16, height: 16 }} />}>
+            Create Dealer
+          </Button>
+          <Button variant="primary" onClick={() => setShowDispatchModal(true)} icon={<Truck style={{ width: 16, height: 16 }} />}>
+            Issue Load Dispatch
           </Button>
         </div>
       </div>
 
-      {/* Main Dual-Panel Workspace */}
-      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '1.5rem' }}>
-        
-        {/* LEFT PANEL: Dealer Directory & Filters */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <Card style={{ padding: '1rem' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <Input
-                placeholder="Search dealer by name, area, phone..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                style={{ marginBottom: 0 }}
-              />
-              <Select
-                value={filterArea}
-                onChange={e => setFilterArea(e.target.value)}
-                options={[
-                  { value: 'all', label: 'All Areas / Regions' },
-                  ...uniqueAreas.map(a => ({ value: a, label: a }))
-                ]}
-                style={{ marginBottom: 0 }}
-              />
-            </div>
-          </Card>
-
-          {/* Dealer Cards List */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '780px', overflowY: 'auto' }}>
-            {filteredDealers.map(dealer => {
-              const isSelected = selectedDealer?.id === dealer.id
-              const isHighDue = (dealer.outstanding_amount || 0) > 10000
-              return (
-                <div
-                  key={dealer.id}
-                  onClick={() => setSelectedDealer(dealer)}
-                  style={{
-                    padding: '1rem',
-                    borderRadius: '12px',
-                    backgroundColor: isSelected ? 'rgba(37, 99, 235, 0.15)' : '#18181b',
-                    border: `1px solid ${isSelected ? '#2563eb' : 'rgba(255,255,255,0.08)'}`,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                      <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: '#27272a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#fbbf24' }}>
-                        {(dealer.name || 'D')[0]}
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 800, color: '#fff', fontSize: '0.95rem' }}>{dealer.name}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>{dealer.dealer_code || 'DLR-1000'} &bull; {dealer.area}</div>
-                      </div>
-                    </div>
-                    {isHighDue && <Badge variant="danger">HIGH DUE</Badge>}
-                  </div>
-
-                  <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>Ph: {dealer.phone}</span>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '0.65rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Balance Due</div>
-                      <div className="num" style={{ fontWeight: 800, color: (dealer.outstanding_amount || 0) > 0 ? '#f87171' : '#34d399', fontSize: '0.95rem' }}>
-                        {formatCurrency(dealer.outstanding_amount || 0)}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
+      {/* Main Dealer Workspace Layout (Sidebar List + 360 Workspace) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '1.5rem', alignItems: 'start' }}>
+        {/* LEFT COLUMN: DEALER DIRECTORY LIST */}
+        <Card style={{ padding: '1rem', backgroundColor: '#121215', maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+            <Input
+              placeholder="Search dealers..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{ marginBottom: 0 }}
+            />
           </div>
-        </div>
 
-        {/* RIGHT PANEL: Dealer 360° Profile Workspace */}
-        {selectedDealer ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            
-            {/* Dealer Profile Header Card */}
-            <Card style={{ padding: '1.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                  <div style={{ width: '56px', height: '56px', borderRadius: '16px', backgroundColor: '#fbbf24', color: '#000', fontWeight: 900, fontSize: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {(selectedDealer.name || 'D')[0]}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {dealers
+              .filter(d => !search || d.name?.toLowerCase().includes(search.toLowerCase()) || d.area?.toLowerCase().includes(search.toLowerCase()))
+              .map(d => {
+                const isSelected = selectedDealer?.id === d.id
+                const isDue = (d.outstanding_amount || 0) > 0
+
+                return (
+                  <div
+                    key={d.id}
+                    onClick={() => setSelectedDealer(d)}
+                    style={{
+                      padding: '0.85rem',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      border: isSelected ? '1px solid #fbbf24' : '1px solid rgba(255, 255, 255, 0.06)',
+                      backgroundColor: isSelected ? 'rgba(251, 191, 36, 0.08)' : '#18181b',
+                      transition: 'all 150ms'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ fontWeight: 700, color: isSelected ? '#fbbf24' : '#fff', fontSize: '0.9rem' }}>
+                        {d.name}
+                      </div>
+                      {d.gst_number && (
+                        <span style={{ fontSize: '0.65rem', padding: '0.1rem 0.35rem', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', borderRadius: '4px', fontWeight: 700 }}>
+                          GST
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '0.2rem' }}>
+                      📍 {d.area || 'General Area'} &bull; 📞 {d.phone || 'No phone'}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.8rem' }}>
+                      <span style={{ color: '#71717a' }}>Balance Due:</span>
+                      <span style={{ fontWeight: 800, color: isDue ? '#f87171' : '#34d399' }}>
+                        ₹{Number(d.outstanding_amount || 0).toLocaleString('en-IN')}
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#fff', margin: 0 }}>{selectedDealer.name}</h3>
-                      <Badge variant="info">{selectedDealer.dealer_code || 'DLR-1000'}</Badge>
-                      <Badge variant={selectedDealer.is_active ? 'success' : 'danger'}>
-                        {selectedDealer.is_active ? 'Active Dealer' : 'Inactive'}
+                )
+              })}
+          </div>
+        </Card>
+
+        {/* RIGHT COLUMN: DEALER 360 WORKSPACE */}
+        {selectedDealer ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            {/* Dealer Profile & GST Banner */}
+            <Card style={{ padding: '1.5rem', backgroundColor: '#121215' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: '#fff', margin: 0 }}>
+                      {selectedDealer.name}
+                    </h2>
+                    <Badge variant="neutral">{selectedDealer.dealer_code || 'DLR-ACTIVE'}</Badge>
+                    {selectedDealer.gst_number ? (
+                      <Badge variant="success" icon={<ShieldCheck style={{ width: 12, height: 12 }} />}>
+                        GST Registered ({selectedDealer.gst_number})
                       </Badge>
-                    </div>
-                    <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.35rem', color: '#a1a1aa', fontSize: '0.8rem', flexWrap: 'wrap' }}>
-                      <span><MapPin style={{ width: '13px', height: '13px', display: 'inline', marginRight: '3px' }} />{selectedDealer.address || selectedDealer.area}</span>
-                      <span><Phone style={{ width: '13px', height: '13px', display: 'inline', marginRight: '3px' }} />{selectedDealer.phone}</span>
-                      <span>GSTIN: <strong style={{ color: '#fff' }}>{selectedDealer.gst_number || '37AAAAA0000A1Z5'}</strong></span>
-                    </div>
+                    ) : (
+                      <Badge variant="neutral">Non-GST Account</Badge>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#a1a1aa', marginTop: '0.4rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+                    <span>📍 Area: <strong style={{ color: '#fff' }}>{selectedDealer.area || 'N/A'}</strong></span>
+                    <span>🛣️ Route: <strong style={{ color: '#fff' }}>{selectedDealer.route || 'General Route'}</strong></span>
+                    <span>📞 Phone: <strong style={{ color: '#fff' }}>{selectedDealer.phone || 'N/A'}</strong></span>
+                    <span>🏢 Tax Regime: <strong style={{ color: '#60a5fa' }}>{isInterstate ? 'Inter-State (IGST)' : 'Intra-State AP (CGST + SGST)'}</strong></span>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                  <a href={`/billing?type=dealer&dealerId=${selectedDealer.id}`}>
-                    <Button variant="primary" icon={<Receipt style={{ width: '14px', height: '14px' }} />}>
-                      Create Dealer Bill
-                    </Button>
-                  </a>
-                  <Button variant="secondary" icon={<DollarSign style={{ width: '14px', height: '14px' }} />} onClick={() => setShowCollectModal(true)}>
-                    Collect Due Payment
-                  </Button>
-                  <Button variant="secondary" icon={<Printer style={{ width: '14px', height: '14px' }} />} onClick={() => window.print()}>
-                    Print Statement
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <Button variant="secondary" size="sm" onClick={() => setShowCollectModal(true)} icon={<CreditCard style={{ width: 14, height: 14 }} />}>
+                    Collect Payment
                   </Button>
                 </div>
               </div>
 
-              {/* Top Summary Stats Bar */}
+              {/* Financial KPI Row */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                 <div>
-                  <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase', fontWeight: 600 }}>Outstanding Balance Due</span>
-                  <div className="num" style={{ fontSize: '1.35rem', fontWeight: 900, color: (selectedDealer.outstanding_amount || 0) > 0 ? '#f87171' : '#34d399' }}>
-                    {formatCurrency(selectedDealer.outstanding_amount || 0)}
+                  <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase', fontWeight: 600 }}>Closing Balance Due</span>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 900, color: (selectedDealer.outstanding_amount || 0) > 0 ? '#f87171' : '#34d399' }}>
+                    ₹{Number(selectedDealer.outstanding_amount || 0).toLocaleString('en-IN')}
                   </div>
                 </div>
                 <div>
                   <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase', fontWeight: 600 }}>Credit Limit</span>
-                  <div className="num" style={{ fontSize: '1.35rem', fontWeight: 900, color: '#fbbf24' }}>
-                    {formatCurrency(selectedDealer.credit_limit || 50000)}
+                  <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#fbbf24' }}>
+                    ₹{Number(selectedDealer.credit_limit || 50000).toLocaleString('en-IN')}
                   </div>
                 </div>
                 <div>
-                  <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase', fontWeight: 600 }}>Total Lifetime Purchases</span>
-                  <div className="num" style={{ fontSize: '1.35rem', fontWeight: 900, color: '#60a5fa' }}>
-                    {formatCurrency(selectedDealer.total_purchases || 185000)}
+                  <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase', fontWeight: 600 }}>Lifetime Purchases</span>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#60a5fa' }}>
+                    ₹{Number(selectedDealer.total_purchases || 0).toLocaleString('en-IN')}
                   </div>
                 </div>
                 <div>
                   <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase', fontWeight: 600 }}>Last Purchase Date</span>
                   <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', marginTop: '0.2rem' }}>
-                    {selectedDealer.last_purchase_date || '2026-08-02'}
+                    {selectedDealer.last_purchase_date || 'N/A'}
                   </div>
                 </div>
               </div>
             </Card>
 
             {/* Navigation Tabs */}
-            <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.5rem', overflowX: 'auto' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '0.5rem', overflowX: 'auto' }}>
               <Button variant={activeTab === 'sales_matrix' ? 'primary' : 'ghost'} size="sm" onClick={() => setActiveTab('sales_matrix')}>
-                🛒 Product-Wise Sales Matrix
+                🛒 Product-Wise Sales &amp; GST Billing
+              </Button>
+              <Button variant={activeTab === 'load_dispatches' ? 'primary' : 'ghost'} size="sm" onClick={() => setActiveTab('load_dispatches')}>
+                🚚 Daily Load Dispatches ({dispatchesList.length})
+              </Button>
+              <Button variant={activeTab === 'returns_leakages' ? 'primary' : 'ghost'} size="sm" onClick={() => setActiveTab('returns_leakages')}>
+                📦 Returns &amp; Leakage Log ({returnsList.length})
+              </Button>
+              <Button variant={activeTab === 'daily_settlement' ? 'primary' : 'ghost'} size="sm" onClick={() => setActiveTab('daily_settlement')}>
+                ⚖️ Daily Account Settlement
               </Button>
               <Button variant={activeTab === 'history' ? 'primary' : 'ghost'} size="sm" onClick={() => setActiveTab('history')}>
                 📜 Billing History
@@ -839,36 +897,41 @@ export default function DealersPage() {
               <Button variant={activeTab === 'due_ledger' ? 'primary' : 'ghost'} size="sm" onClick={() => setActiveTab('due_ledger')}>
                 🔴 Running Due Ledger
               </Button>
-              <Button variant={activeTab === 'returns_leakages' ? 'primary' : 'ghost'} size="sm" onClick={() => setActiveTab('returns_leakages')}>
-                📦 Returns & Leakages Log
-              </Button>
-              <Button variant={activeTab === 'analytics' ? 'primary' : 'ghost'} size="sm" onClick={() => setActiveTab('analytics')}>
-                📊 Purchase BI Analytics
-              </Button>
             </div>
 
-            {/* TAB 1: PRODUCT-WISE SALES MATRIX */}
+            {/* TAB 1: PRODUCT-WISE SALES MATRIX & GST BILLING */}
             {activeTab === 'sales_matrix' && (
-              <Card style={{ padding: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <Card style={{ padding: '1.5rem', backgroundColor: '#121215' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
                   <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <ShoppingBag style={{ color: '#fbbf24', width: '18px', height: '18px' }} />
-                    Daily Product Sales Ledger Entry ({selectedDealer.name})
+                    Dealer Sales Ledger &amp; GST Invoice ({selectedDealer.name})
                   </h3>
-                  <Input type="date" value={saleDate} onChange={e => setSaleDate(e.target.value)} style={{ width: 'auto', marginBottom: 0 }} />
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: '#fff', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={applyGstOnMatrix}
+                        onChange={e => setApplyGstOnMatrix(e.target.checked)}
+                        style={{ accentColor: '#fbbf24', cursor: 'pointer' }}
+                      />
+                      <span>Apply GST ({dealerGstRate}%)</span>
+                    </label>
+
+                    <Input type="date" value={saleDate} onChange={e => setSaleDate(e.target.value)} style={{ width: 'auto', marginBottom: 0 }} />
+                  </div>
                 </div>
 
-                {/* Product Sales Ledger Table */}
-                <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px' }}>
+                {/* Table */}
+                <div style={{ overflowX: 'auto', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
                     <thead>
-                      <tr style={{ backgroundColor: '#09090b', color: '#a1a1aa', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                      <tr style={{ backgroundColor: '#09090b', color: '#a1a1aa', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
                         <th style={{ padding: '0.75rem 1rem' }}>Product Name</th>
                         <th style={{ padding: '0.75rem', width: '70px' }}>Unit</th>
                         <th style={{ padding: '0.75rem', width: '90px' }}>Sold Qty</th>
                         <th style={{ padding: '0.75rem', width: '100px' }}>Rate (₹)</th>
-                        <th style={{ padding: '0.75rem', width: '90px' }}>Return Qty</th>
-                        <th style={{ padding: '0.75rem', width: '90px' }}>Leak Qty</th>
                         <th style={{ padding: '0.75rem', width: '90px' }}>Discount (₹)</th>
                         <th style={{ padding: '0.75rem 1rem', textAlign: 'right', width: '120px' }}>Total Amount</th>
                       </tr>
@@ -877,7 +940,7 @@ export default function DealersPage() {
                       {productRows.map((row, idx) => {
                         const lineTotal = (row.qty * row.rate) - Number(row.discount || 0)
                         return (
-                          <tr key={row.product_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', backgroundColor: row.qty > 0 ? 'rgba(251, 191, 36, 0.03)' : 'transparent' }}>
+                          <tr key={row.product_id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', backgroundColor: row.qty > 0 ? 'rgba(251, 191, 36, 0.03)' : 'transparent' }}>
                             <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: '#fff' }}>{row.product_name}</td>
                             <td style={{ padding: '0.75rem', color: '#a1a1aa' }}>{row.unit}</td>
                             <td style={{ padding: '0.75rem' }}>
@@ -886,7 +949,7 @@ export default function DealersPage() {
                                 min="0"
                                 value={row.qty || ''}
                                 onChange={e => updateProductRow(idx, 'qty', Number(e.target.value))}
-                                style={{ width: '100%', backgroundColor: '#09090b', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '0.4rem', borderRadius: '6px', textAlign: 'center', fontWeight: 800 }}
+                                style={{ width: '100%', backgroundColor: '#09090b', border: '1px solid rgba(255, 255, 255, 0.1)', color: '#fff', padding: '0.4rem', borderRadius: '6px', textAlign: 'center', fontWeight: 800 }}
                               />
                             </td>
                             <td style={{ padding: '0.75rem' }}>
@@ -895,25 +958,7 @@ export default function DealersPage() {
                                 min="0"
                                 value={row.rate}
                                 onChange={e => updateProductRow(idx, 'rate', Number(e.target.value))}
-                                style={{ width: '100%', backgroundColor: '#09090b', border: '1px solid rgba(255,255,255,0.1)', color: '#fbbf24', padding: '0.4rem', borderRadius: '6px', textAlign: 'center', fontWeight: 800 }}
-                              />
-                            </td>
-                            <td style={{ padding: '0.75rem' }}>
-                              <input
-                                type="number"
-                                min="0"
-                                value={row.return_qty || ''}
-                                onChange={e => updateProductRow(idx, 'return_qty', Number(e.target.value))}
-                                style={{ width: '100%', backgroundColor: '#09090b', border: '1px solid rgba(255,255,255,0.1)', color: '#60a5fa', padding: '0.4rem', borderRadius: '6px', textAlign: 'center' }}
-                              />
-                            </td>
-                            <td style={{ padding: '0.75rem' }}>
-                              <input
-                                type="number"
-                                min="0"
-                                value={row.leak_qty || ''}
-                                onChange={e => updateProductRow(idx, 'leak_qty', Number(e.target.value))}
-                                style={{ width: '100%', backgroundColor: '#09090b', border: '1px solid rgba(255,255,255,0.1)', color: '#f87171', padding: '0.4rem', borderRadius: '6px', textAlign: 'center' }}
+                                style={{ width: '100%', backgroundColor: '#09090b', border: '1px solid rgba(255, 255, 255, 0.1)', color: '#fbbf24', padding: '0.4rem', borderRadius: '6px', textAlign: 'center', fontWeight: 800 }}
                               />
                             </td>
                             <td style={{ padding: '0.75rem' }}>
@@ -922,11 +967,11 @@ export default function DealersPage() {
                                 min="0"
                                 value={row.discount || ''}
                                 onChange={e => updateProductRow(idx, 'discount', Number(e.target.value))}
-                                style={{ width: '100%', backgroundColor: '#09090b', border: '1px solid rgba(255,255,255,0.1)', color: '#34d399', padding: '0.4rem', borderRadius: '6px', textAlign: 'center' }}
+                                style={{ width: '100%', backgroundColor: '#09090b', border: '1px solid rgba(255, 255, 255, 0.1)', color: '#34d399', padding: '0.4rem', borderRadius: '6px', textAlign: 'center' }}
                               />
                             </td>
                             <td className="num" style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: 800, color: lineTotal > 0 ? '#fbbf24' : '#a1a1aa' }}>
-                              {formatCurrency(lineTotal)}
+                              ₹{lineTotal.toFixed(2)}
                             </td>
                           </tr>
                         )
@@ -935,187 +980,385 @@ export default function DealersPage() {
                   </table>
                 </div>
 
-                {/* Auto-Calculations Summary Footer */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginTop: '1.25rem', padding: '1.25rem', backgroundColor: '#09090b', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                {/* GST Financial Breakdown Summary Box */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginTop: '1.25rem', padding: '1.25rem', backgroundColor: '#09090b', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
                   <div>
-                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Total Sold Units</span>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>{totalQtySold} Units</div>
+                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Taxable Subtotal</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>₹{netTaxableAmount.toFixed(2)}</div>
                   </div>
+
+                  {applyGstOnMatrix && (
+                    <>
+                      {isInterstate ? (
+                        <div>
+                          <span style={{ fontSize: '0.7rem', color: '#60a5fa', textTransform: 'uppercase' }}>IGST ({dealerGstRate}%)</span>
+                          <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#60a5fa' }}>₹{gstBreakdown.igstAmount.toFixed(2)}</div>
+                        </div>
+                      ) : (
+                        <>
+                          <div>
+                            <span style={{ fontSize: '0.7rem', color: '#60a5fa', textTransform: 'uppercase' }}>CGST ({dealerGstRate / 2}%)</span>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#60a5fa' }}>₹{gstBreakdown.cgstAmount.toFixed(2)}</div>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '0.7rem', color: '#60a5fa', textTransform: 'uppercase' }}>SGST ({dealerGstRate / 2}%)</span>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#60a5fa' }}>₹{gstBreakdown.sgstAmount.toFixed(2)}</div>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+
                   <div>
-                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Total Returns / Leaks</span>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#60a5fa' }}>{totalQtyReturned} Ret / {totalQtyLeaked} Leak</div>
+                    <span style={{ fontSize: '0.7rem', color: '#fbbf24', textTransform: 'uppercase' }}>Grand Total (Inc. GST)</span>
+                    <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#fbbf24' }}>₹{netBillAmount.toFixed(2)}</div>
                   </div>
+
                   <div>
-                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Gross Bill Amount</span>
-                    <div className="num" style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>{formatCurrency(grossTotal)}</div>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Net Invoice Total</span>
-                    <div className="num" style={{ fontSize: '1.4rem', fontWeight: 900, color: '#fbbf24' }}>{formatCurrency(netBillAmount)}</div>
+                    <span style={{ fontSize: '0.7rem', color: pendingDue > 0 ? '#f87171' : '#34d399', textTransform: 'uppercase' }}>Pending Due</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: pendingDue > 0 ? '#f87171' : '#34d399' }}>₹{pendingDue.toFixed(2)}</div>
                   </div>
                 </div>
 
-                {/* Split Payment Section */}
-                <div style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                  <h4 style={{ fontSize: '0.95rem', fontWeight: 800, color: '#fff', marginBottom: '1rem' }}>Split Payment & Collection Details</h4>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
-                    <Input
-                      label="Cash Paid (₹)"
-                      type="number"
-                      value={payments.cash || ''}
-                      onChange={e => setPayments({ ...payments, cash: Number(e.target.value) })}
-                    />
-                    <Input
-                      label="UPI Paid (₹)"
-                      type="number"
-                      value={payments.upi || ''}
-                      onChange={e => setPayments({ ...payments, upi: Number(e.target.value) })}
-                    />
-                    <Input
-                      label="Bank Transfer (₹)"
-                      type="number"
-                      value={payments.bank || ''}
-                      onChange={e => setPayments({ ...payments, bank: Number(e.target.value) })}
-                    />
-                    <Input
-                      label="Advance Credit Used (₹)"
-                      type="number"
-                      value={payments.advance || ''}
-                      onChange={e => setPayments({ ...payments, advance: Number(e.target.value) })}
-                    />
+                {/* Action Buttons */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
+                  <Button variant="secondary" onClick={() => handleSaveBill(true)} icon={<Printer style={{ width: 15, height: 15 }} />}>
+                    Print GST Bill
+                  </Button>
+                  <Button variant="primary" loading={savingBill} onClick={() => handleSaveBill(false)} icon={<Save style={{ width: 15, height: 15 }} />}>
+                    Save Dealer Invoice
+                  </Button>
+                </div>
+              </Card>
+            )}
+
+            {/* TAB 2: DEALER LOAD DISPATCHES */}
+            {activeTab === 'load_dispatches' && (
+              <Card style={{ padding: '1.5rem', backgroundColor: '#121215' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                  <div>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <Truck style={{ color: '#fbbf24', width: '18px', height: '18px' }} />
+                      Dealer Load Dispatches (Goods Issued)
+                    </h3>
+                    <p style={{ fontSize: '0.75rem', color: '#a1a1aa', margin: '0.2rem 0 0' }}>
+                      Issued loads deduct warehouse stock and generate Load Dispatch Notes (Distinct from Sales Invoices).
+                    </p>
                   </div>
 
-                  {/* Summary Dues Result Bar */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', padding: '1rem', backgroundColor: '#18181b', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <Button variant="primary" size="sm" onClick={() => setShowDispatchModal(true)} icon={<Plus style={{ width: 14, height: 14 }} />}>
+                    Issue New Load Dispatch
+                  </Button>
+                </div>
+
+                {dispatchesList.length === 0 ? (
+                  <div style={{ padding: '3rem', textAlign: 'center', color: '#a1a1aa' }}>
+                    <Truck style={{ width: 36, height: 36, margin: '0 auto 0.75rem', opacity: 0.3 }} />
+                    <p style={{ margin: 0, fontWeight: 600 }}>No dispatches recorded for this dealer yet.</p>
+                    <p style={{ margin: '0.25rem 0', fontSize: '0.8rem', color: '#71717a' }}>Issue a load dispatch to track goods issued and enable next-day return logging.</p>
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#09090b', color: '#a1a1aa', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                          <th style={{ padding: '0.75rem 1rem' }}>Dispatch #</th>
+                          <th style={{ padding: '0.75rem 1rem' }}>Date</th>
+                          <th style={{ padding: '0.75rem 1rem' }}>Items Issued</th>
+                          <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Total Qty</th>
+                          <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Value (₹)</th>
+                          <th style={{ padding: '0.75rem 1rem' }}>Status</th>
+                          <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dispatchesList.map(disp => (
+                          <tr key={disp.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                            <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: '#fbbf24', fontFamily: 'var(--font-mono)' }}>
+                              {disp.dispatch_number}
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem', color: '#fff' }}>{disp.dispatch_date}</td>
+                            <td style={{ padding: '0.85rem 1rem', color: '#a1a1aa' }}>
+                              {(disp.items || []).map(it => `${it.product_name} (${it.quantity} ${it.unit})`).join(', ') || 'General load'}
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontWeight: 700, color: '#fff' }}>
+                              {disp.total_quantity}
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontWeight: 800, color: '#fbbf24' }}>
+                              ₹{Number(disp.total_value).toLocaleString('en-IN')}
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem' }}>
+                              <Badge variant={disp.status === 'SETTLED' ? 'success' : 'info'}>{disp.status}</Badge>
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
+                              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                                <Button variant="secondary" size="sm" onClick={() => printLoadDispatchNote(disp)} icon={<Printer style={{ width: 12, height: 12 }} />}>
+                                  Note
+                                </Button>
+                                <Button variant="primary" size="sm" onClick={() => openReturnEntryModal(disp)} icon={<RotateCcw style={{ width: 12, height: 12 }} />}>
+                                  Returns
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {/* TAB 3: DEALER RETURNS & LEAKAGE LOG */}
+            {activeTab === 'returns_leakages' && (
+              <Card style={{ padding: '1.5rem', backgroundColor: '#121215' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                  <div>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <RotateCcw style={{ color: '#60a5fa', width: '18px', height: '18px' }} />
+                      Dealer Next-Day Returns &amp; Leakage Log
+                    </h3>
+                    <p style={{ fontSize: '0.75rem', color: '#a1a1aa', margin: '0.2rem 0 0' }}>
+                      Credits are applied to the reporting day&apos;s account at original dispatch rates, leaving historical dispatches unchanged.
+                    </p>
+                  </div>
+                </div>
+
+                {returnsList.length === 0 ? (
+                  <div style={{ padding: '3rem', textAlign: 'center', color: '#a1a1aa' }}>
+                    <RotateCcw style={{ width: 36, height: 36, margin: '0 auto 0.75rem', opacity: 0.3 }} />
+                    <p style={{ margin: 0, fontWeight: 600 }}>No return entries logged yet.</p>
+                    <p style={{ margin: '0.25rem 0', fontSize: '0.8rem', color: '#71717a' }}>To log returns, open the Daily Load Dispatches tab and click &quot;Returns&quot; on any dispatch.</p>
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#09090b', color: '#a1a1aa', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                          <th style={{ padding: '0.75rem 1rem' }}>Return #</th>
+                          <th style={{ padding: '0.75rem 1rem' }}>Reporting Date</th>
+                          <th style={{ padding: '0.75rem 1rem' }}>Orig. Dispatch Date</th>
+                          <th style={{ padding: '0.75rem 1rem' }}>Returned (Good)</th>
+                          <th style={{ padding: '0.75rem 1rem' }}>Leaked / Damaged</th>
+                          <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Credit Adjustment (₹)</th>
+                          <th style={{ padding: '0.75rem 1rem' }}>Condition</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {returnsList.map(ret => (
+                          <tr key={ret.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                            <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: '#fbbf24', fontFamily: 'var(--font-mono)' }}>
+                              {ret.return_number}
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem', color: '#34d399', fontWeight: 600 }}>
+                              {ret.return_date}
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem', color: '#a1a1aa' }}>
+                              {ret.dispatch_date}
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem' }}>
+                              <Badge variant="info">{ret.total_returned_qty} Units</Badge>
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem' }}>
+                              <Badge variant="danger">{ret.total_leaked_qty} Leaks</Badge>
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontWeight: 800, color: '#34d399' }}>
+                              -₹{Number(ret.total_credit_amount).toLocaleString('en-IN')}
+                            </td>
+                            <td style={{ padding: '0.85rem 1rem', textTransform: 'uppercase', fontSize: '0.75rem', color: '#a1a1aa' }}>
+                              {ret.condition}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {/* TAB 4: DEALER DAILY SETTLEMENT */}
+            {activeTab === 'daily_settlement' && (
+              <Card style={{ padding: '1.5rem', backgroundColor: '#121215' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <Scale style={{ color: '#fbbf24', width: '18px', height: '18px' }} />
+                      Dealer Daily Account &amp; Outstanding Settlement
+                    </h3>
+                    <p style={{ fontSize: '0.75rem', color: '#a1a1aa', margin: '0.2rem 0 0' }}>
+                      Reconcile opening balance, dispatches, next-day returns, leakage credits, and collections.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <Input
+                      type="date"
+                      value={settlementDate}
+                      onChange={e => setSettlementDate(e.target.value)}
+                      style={{ marginBottom: 0, width: 'auto' }}
+                    />
+                    <Button variant="primary" size="sm" loading={confirmingSettlement} onClick={handleConfirmDailySettlement} icon={<CheckCircle2 style={{ width: 14, height: 14 }} />}>
+                      Confirm Daily Settlement
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Formula Breakdown Card */}
+                <div style={{ background: '#09090b', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(251, 191, 36, 0.25)', marginBottom: '1.5rem' }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '1rem' }}>
+                    Settlement Equation ({settlementDate})
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', alignItems: 'center' }}>
                     <div>
-                      <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>Today's Remaining Pending Due:</span>
-                      <span className="num" style={{ fontSize: '1.2rem', fontWeight: 900, color: pendingDue > 0 ? '#f87171' : '#34d399', marginLeft: '0.5rem' }}>
-                        {formatCurrency(pendingDue)}
-                      </span>
+                      <div style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase' }}>Opening Balance</div>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff' }}>₹{settlementData?.opening_balance?.toLocaleString('en-IN') || 0}</div>
                     </div>
 
+                    <div style={{ fontSize: '1.2rem', color: '#a1a1aa', textAlign: 'center' }}>+</div>
+
                     <div>
-                      <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>Updated Dealer Total Due:</span>
-                      <span className="num" style={{ fontSize: '1.3rem', fontWeight: 900, color: grandTotalDue > 0 ? '#f87171' : '#34d399', marginLeft: '0.5rem' }}>
-                        {formatCurrency(grandTotalDue)}
-                      </span>
+                      <div style={{ fontSize: '0.7rem', color: '#fbbf24', textTransform: 'uppercase' }}>Today Dispatches</div>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fbbf24' }}>₹{settlementData?.today_dispatches_amount?.toLocaleString('en-IN') || 0}</div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '0.75rem' }}>
-                      <Button variant="secondary" icon={<Save style={{ width: '14px', height: '14px' }} />} loading={savingBill} onClick={() => handleSaveBill(false)}>
-                        Save Bill
-                      </Button>
-                      <Button variant="primary" icon={<Printer style={{ width: '14px', height: '14px' }} />} loading={savingBill} onClick={() => handleSaveBill(true)}>
-                        Save & Print Receipt
-                      </Button>
+                    <div style={{ fontSize: '1.2rem', color: '#a1a1aa', textAlign: 'center' }}>-</div>
+
+                    <div>
+                      <div style={{ fontSize: '0.7rem', color: '#60a5fa', textTransform: 'uppercase' }}>Returns Credit</div>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#60a5fa' }}>₹{settlementData?.previous_returns_credit?.toLocaleString('en-IN') || 0}</div>
+                    </div>
+
+                    <div style={{ fontSize: '1.2rem', color: '#a1a1aa', textAlign: 'center' }}>-</div>
+
+                    <div>
+                      <div style={{ fontSize: '0.7rem', color: '#f87171', textTransform: 'uppercase' }}>Leakage Credit</div>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#f87171' }}>₹{settlementData?.previous_leakage_credit?.toLocaleString('en-IN') || 0}</div>
+                    </div>
+
+                    <div style={{ fontSize: '1.2rem', color: '#a1a1aa', textAlign: 'center' }}>-</div>
+
+                    <div>
+                      <div style={{ fontSize: '0.7rem', color: '#34d399', textTransform: 'uppercase' }}>Collections</div>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#34d399' }}>₹{settlementData?.collections_received?.toLocaleString('en-IN') || 0}</div>
+                    </div>
+
+                    <div style={{ fontSize: '1.2rem', color: '#a1a1aa', textAlign: 'center' }}>=</div>
+
+                    <div style={{ background: 'rgba(251, 191, 36, 0.1)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
+                      <div style={{ fontSize: '0.7rem', color: '#fbbf24', textTransform: 'uppercase', fontWeight: 700 }}>Closing Balance Due</div>
+                      <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#fbbf24' }}>₹{settlementData?.closing_balance?.toLocaleString('en-IN') || 0}</div>
                     </div>
                   </div>
                 </div>
               </Card>
             )}
 
-            {/* TAB 2: BILLING HISTORY */}
+            {/* TAB 5: BILLING HISTORY */}
             {activeTab === 'history' && (
-              <Card style={{ padding: '1.5rem' }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', marginBottom: '1rem' }}>Dealer Invoice History</h3>
+              <Card style={{ padding: '1.5rem', backgroundColor: '#121215' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', marginBottom: '1rem' }}>Billing &amp; Invoice History</h3>
                 <DataTable
                   columns={[
-                    { key: 'invoice_number', title: 'Invoice No', render: r => <span style={{ fontWeight: 800, color: '#fbbf24', fontFamily: 'monospace' }}>{r.invoice_number}</span> },
-                    { key: 'date', title: 'Date', render: r => <span style={{ color: '#a1a1aa' }}>{r.date}</span> },
-                    { key: 'total_amount', title: 'Total Amount', align: 'right', render: r => <span className="num" style={{ fontWeight: 800, color: '#fff' }}>{formatCurrency(r.total_amount)}</span> },
-                    { key: 'paid_amount', title: 'Paid', align: 'right', render: r => <span className="num" style={{ color: '#34d399' }}>{formatCurrency(r.paid_amount)}</span> },
-                    { key: 'due_amount', title: 'Due', align: 'right', render: r => <span className="num" style={{ color: r.due_amount > 0 ? '#f87171' : '#a1a1aa' }}>{formatCurrency(r.due_amount)}</span> },
-                    { key: 'payment_status', title: 'Status', render: r => <Badge variant={r.payment_status === 'paid' ? 'success' : 'danger'}>{r.payment_status?.toUpperCase()}</Badge> },
-                    { key: 'actions', title: 'Action', align: 'right', render: r => <Button variant="secondary" size="sm" icon={<Printer style={{ width: '12px', height: '12px', color: '#fbbf24' }} />} onClick={() => handlePrintDealerBill(r)}>Print Bill</Button> }
+                    { key: 'invoice_number', title: 'Invoice #', render: r => <span style={{ fontWeight: 800, color: '#fbbf24' }}>{r.invoice_number}</span> },
+                    { key: 'date', title: 'Date' },
+                    { key: 'bill_type', title: 'Type', render: r => <Badge variant="info">{r.bill_type}</Badge> },
+                    { key: 'taxable_amount', title: 'Taxable (₹)', render: r => <span>₹{Number(r.taxable_amount || r.total_amount).toFixed(2)}</span> },
+                    { key: 'gst_amount', title: 'GST (₹)', render: r => <span>₹{Number(r.gst_amount || 0).toFixed(2)}</span> },
+                    { key: 'grand_total', title: 'Total (₹)', render: r => <span style={{ fontWeight: 800, color: '#fff' }}>₹{Number(r.grand_total || r.total_amount).toFixed(2)}</span> },
+                    { key: 'paid_amount', title: 'Paid (₹)', render: r => <span style={{ color: '#34d399' }}>₹{Number(r.paid_amount || 0).toFixed(2)}</span> },
+                    { key: 'due_amount', title: 'Due (₹)', render: r => <span style={{ color: Number(r.due_amount) > 0 ? '#f87171' : '#a1a1aa' }}>₹{Number(r.due_amount || 0).toFixed(2)}</span> },
+                    { key: 'payment_status', title: 'Status', render: r => <Badge variant={r.payment_status === 'paid' ? 'success' : 'warning'}>{r.payment_status}</Badge> }
                   ]}
                   data={dealerBills}
-                  searchPlaceholder="Search invoices..."
-                  exportFileName={`dealer-${selectedDealer.name}-invoices`}
                 />
               </Card>
             )}
 
-            {/* TAB 3: DUE LEDGER */}
+            {/* TAB 6: RUNNING DUE LEDGER */}
             {activeTab === 'due_ledger' && (
-              <Card style={{ padding: '1.5rem' }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', marginBottom: '1rem' }}>Running Account Statement & Due Ledger</h3>
+              <Card style={{ padding: '1.5rem', backgroundColor: '#121215' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', marginBottom: '1rem' }}>Running Ledger Audit</h3>
                 <DataTable
                   columns={[
-                    { key: 'date', title: 'Date', render: r => <span style={{ color: '#a1a1aa' }}>{r.date}</span> },
-                    { key: 'type', title: 'Transaction Type', render: r => <span style={{ fontWeight: 700, color: '#fff' }}>{r.type}</span> },
-                    { key: 'debit', title: 'Invoice Debit (+)', align: 'right', render: r => <span className="num" style={{ color: '#f87171', fontWeight: 800 }}>{r.debit > 0 ? formatCurrency(r.debit) : '—'}</span> },
-                    { key: 'credit', title: 'Payment Credit (-)', align: 'right', render: r => <span className="num" style={{ color: '#34d399', fontWeight: 800 }}>{r.credit > 0 ? formatCurrency(r.credit) : '—'}</span> },
-                    { key: 'balance', title: 'Closing Due Balance', align: 'right', render: r => <span className="num" style={{ color: '#fbbf24', fontWeight: 900 }}>{formatCurrency(r.balance)}</span> },
-                    { key: 'notes', title: 'Remarks / Notes', render: r => <span style={{ color: '#a1a1aa' }}>{r.notes}</span> }
+                    { key: 'created_at', title: 'Timestamp', render: r => <span>{new Date(r.created_at).toLocaleString('en-IN')}</span> },
+                    { key: 'transaction_type', title: 'Type', render: r => <Badge variant={r.transaction_type === 'dispatch' ? 'warning' : 'success'}>{r.transaction_type}</Badge> },
+                    { key: 'amount', title: 'Amount (₹)', render: r => <span style={{ fontWeight: 800, color: '#fff' }}>₹{Number(r.amount).toLocaleString('en-IN')}</span> },
+                    { key: 'reference_id', title: 'Reference ID', render: r => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: '#a1a1aa' }}>{r.reference_id?.slice(0, 18)}...</span> }
                   ]}
                   data={dealerLedger}
-                  exportFileName={`dealer-${selectedDealer.name}-statement`}
                 />
-              </Card>
-            )}
-
-            {/* TAB 4: RETURNS & LEAKAGES */}
-            {activeTab === 'returns_leakages' && (
-              <Card style={{ padding: '1.5rem' }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', marginBottom: '1rem' }}>Returns & Leakage Log History</h3>
-                <DataTable
-                  columns={[
-                    { key: 'date', title: 'Log Date', render: r => <span style={{ color: '#a1a1aa' }}>{r.date}</span> },
-                    { key: 'product', title: 'Product Name', render: r => <span style={{ fontWeight: 700, color: '#fff' }}>{r.product}</span> },
-                    { key: 'return_qty', title: 'Returned Qty', render: r => <Badge variant="info">{r.return_qty} Units</Badge> },
-                    { key: 'leak_qty', title: 'Leak / Damaged', render: r => <Badge variant="danger">{r.leak_qty} Leaks</Badge> },
-                    { key: 'reason', title: 'Reason & Status', render: r => <span style={{ color: '#a1a1aa' }}>{r.reason}</span> }
-                  ]}
-                  data={dealerReturns}
-                />
-              </Card>
-            )}
-
-            {/* TAB 5: ANALYTICS */}
-            {activeTab === 'analytics' && (
-              <Card style={{ padding: '1.5rem' }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', marginBottom: '1rem' }}>Dealer Purchase BI Analytics</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
-                  <Card style={{ padding: '1.25rem', backgroundColor: '#09090b' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>Most Purchased Product</div>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fbbf24', marginTop: '0.2rem' }}>Water Can (20L)</div>
-                    <div style={{ fontSize: '0.75rem', color: '#34d399', marginTop: '0.25rem' }}>65% Share of Orders</div>
-                  </Card>
-                  <Card style={{ padding: '1.25rem', backgroundColor: '#09090b' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>Payment Reliability Score</div>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#34d399', marginTop: '0.2rem' }}>92% On-Time</div>
-                    <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '0.25rem' }}>Average Pay Days: 4 Days</div>
-                  </Card>
-                </div>
               </Card>
             )}
           </div>
         ) : (
           <Card style={{ padding: '3rem', textAlign: 'center', color: '#a1a1aa' }}>
-            Select a dealer from the directory list to open the 360° workspace.
+            Select a dealer from the directory list to open the workspace.
           </Card>
         )}
       </div>
 
-      {/* CREATE DEALER MODAL */}
+      {/* MODAL 1: CREATE DEALER */}
       {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal-container">
-            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="modal-container" style={{ maxWidth: '640px' }}>
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#fff' }}>Create New Dealer Account</h3>
-              <button onClick={() => setShowAddModal(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}><X style={{ width: '20px', height: '20px' }} /></button>
+              <button onClick={() => setShowAddModal(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}><X style={{ width: 20, height: 20 }} /></button>
             </div>
-            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <Input label="Dealer Business / Contact Name" placeholder="e.g. Ramesh Water Traders" value={newDealerForm.name} onChange={e => setNewDealerForm({ ...newDealerForm, name: e.target.value })} />
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '75vh', overflowY: 'auto' }}>
+              <Input label="Dealer Business / Contact Name *" placeholder="e.g. Ramesh Water Traders" value={newDealerForm.name} onChange={e => setNewDealerForm({ ...newDealerForm, name: e.target.value })} />
               <Input label="Phone Number" placeholder="10-digit mobile" value={newDealerForm.phone} onChange={e => setNewDealerForm({ ...newDealerForm, phone: e.target.value })} />
-              <Input label="GSTIN Number" placeholder="37AAAAA0000A1Z5" value={newDealerForm.gst_number} onChange={e => setNewDealerForm({ ...newDealerForm, gst_number: e.target.value })} />
+              
+              {/* GST Configuration */}
+              <div style={{ background: '#09090b', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#fbbf24', textTransform: 'uppercase' }}>GST Configuration</span>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', color: '#fff', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={newDealerForm.is_gst_enabled}
+                      onChange={e => setNewDealerForm({ ...newDealerForm, is_gst_enabled: e.target.checked })}
+                      style={{ accentColor: '#fbbf24' }}
+                    />
+                    <span>GST Enabled</span>
+                  </label>
+                </div>
+
+                <Input
+                  label="GSTIN Number (15-digit)"
+                  placeholder="37AAAAA0000A1Z5"
+                  value={newDealerForm.gst_number}
+                  onChange={e => setNewDealerForm({ ...newDealerForm, gst_number: e.target.value.toUpperCase() })}
+                  helperText={
+                    newDealerForm.gst_number 
+                      ? gstValidation.isValid 
+                        ? `Valid GSTIN: State ${gstValidation.stateCode} (${gstValidation.isInterstate ? 'Inter-State IGST' : 'Intra-State AP CGST+SGST'})`
+                        : gstValidation.error
+                      : 'Optional for unregistered dealers'
+                  }
+                />
+
+                <Select
+                  label="Applicable GST Rate"
+                  value={newDealerForm.default_gst_rate}
+                  onChange={e => setNewDealerForm({ ...newDealerForm, default_gst_rate: Number(e.target.value) })}
+                  options={[
+                    { value: 0, label: '0% (Exempt)' },
+                    { value: 5, label: '5% GST' },
+                    { value: 12, label: '12% GST' },
+                    { value: 18, label: '18% GST (Standard Packaged Water)' }
+                  ]}
+                />
+              </div>
+
               <Input label="Area / Region" placeholder="e.g. Kamavarapukota" value={newDealerForm.area} onChange={e => setNewDealerForm({ ...newDealerForm, area: e.target.value })} />
               <Input label="Assigned Route" placeholder="e.g. Nuzvid Highway" value={newDealerForm.route} onChange={e => setNewDealerForm({ ...newDealerForm, route: e.target.value })} />
               <Input label="Credit Limit Amount (₹)" type="number" value={newDealerForm.credit_limit} onChange={e => setNewDealerForm({ ...newDealerForm, credit_limit: Number(e.target.value) })} />
               <Input label="Full Address" placeholder="Street / Landmark..." value={newDealerForm.address} onChange={e => setNewDealerForm({ ...newDealerForm, address: e.target.value })} />
             </div>
-            <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
               <Button variant="secondary" onClick={() => setShowAddModal(false)}>Cancel</Button>
               <Button variant="primary" loading={savingDealer} onClick={handleCreateDealer}>Create Dealer Account</Button>
             </div>
@@ -1123,28 +1366,225 @@ export default function DealersPage() {
         </div>
       )}
 
-      {/* COLLECT DUE PAYMENT MODAL */}
+      {/* MODAL 2: ISSUE LOAD DISPATCH */}
+      {showDispatchModal && selectedDealer && (
+        <div className="modal-overlay">
+          <div className="modal-container" style={{ maxWidth: '720px' }}>
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#fff' }}>
+                  Issue Daily Load Dispatch ({selectedDealer.name})
+                </h3>
+                <p style={{ fontSize: '0.75rem', color: '#a1a1aa', margin: '0.2rem 0 0' }}>
+                  Generates Load Dispatch Note and deducts stock from warehouse inventory
+                </p>
+              </div>
+              <button onClick={() => setShowDispatchModal(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}><X style={{ width: 20, height: 20 }} /></button>
+            </div>
+
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '75vh', overflowY: 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <Input label="Dispatch Date" type="date" value={dispatchDate} onChange={e => setDispatchDate(e.target.value)} />
+                <Input label="Responsible Staff" value={dispatchStaff} onChange={e => setDispatchStaff(e.target.value)} />
+              </div>
+
+              {/* Items */}
+              <div>
+                <label style={{ fontSize: '0.75rem', color: '#a1a1aa', textTransform: 'uppercase', fontWeight: 700, display: 'block', marginBottom: '0.5rem' }}>Products to Dispatch</label>
+                {dispatchItems.map((item, idx) => (
+                  <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <Input
+                      label={idx === 0 ? 'Product Name' : undefined}
+                      value={item.product_name}
+                      onChange={e => {
+                        const copy = [...dispatchItems]
+                        copy[idx].product_name = e.target.value
+                        setDispatchItems(copy)
+                      }}
+                    />
+                    <Input
+                      label={idx === 0 ? 'Quantity' : undefined}
+                      type="number"
+                      value={item.quantity}
+                      onChange={e => {
+                        const copy = [...dispatchItems]
+                        const q = Number(e.target.value)
+                        copy[idx].quantity = q
+                        copy[idx].amount = q * copy[idx].rate
+                        setDispatchItems(copy)
+                      }}
+                    />
+                    <Input
+                      label={idx === 0 ? 'Rate (₹)' : undefined}
+                      type="number"
+                      value={item.rate}
+                      onChange={e => {
+                        const copy = [...dispatchItems]
+                        const r = Number(e.target.value)
+                        copy[idx].rate = r
+                        copy[idx].amount = copy[idx].quantity * r
+                        setDispatchItems(copy)
+                      }}
+                    />
+                    <div>
+                      {idx === 0 && <label style={{ fontSize: '0.75rem', color: '#a1a1aa', display: 'block', marginBottom: '0.35rem' }}>Amount</label>}
+                      <div style={{ padding: '0.65rem', fontWeight: 800, color: '#fbbf24' }}>₹{item.amount}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <Input label="Dispatch Notes / Truck Details" placeholder="Vehicle number, batch info..." value={dispatchNotes} onChange={e => setDispatchNotes(e.target.value)} />
+            </div>
+
+            <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <Button variant="secondary" onClick={() => setShowDispatchModal(false)}>Cancel</Button>
+              <Button variant="primary" loading={savingDispatch} onClick={handleCreateDispatch}>Issue Load Dispatch</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: RECORD NEXT-DAY RETURN & LEAKAGE */}
+      {showReturnModal && selectedDispatchForReturn && selectedDealer && (
+        <div className="modal-overlay">
+          <div className="modal-container" style={{ maxWidth: '780px' }}>
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#fff' }}>
+                  Record Next-Day Returns &amp; Leakage
+                </h3>
+                <p style={{ fontSize: '0.75rem', color: '#a1a1aa', margin: '0.2rem 0 0' }}>
+                  Dispatch Ref: <strong style={{ color: '#fbbf24' }}>{selectedDispatchForReturn.dispatch_number}</strong> (Issued: {selectedDispatchForReturn.dispatch_date})
+                </p>
+              </div>
+              <button onClick={() => setShowReturnModal(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}><X style={{ width: 20, height: 20 }} /></button>
+            </div>
+
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '75vh', overflowY: 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <Input label="Return Reporting Date *" type="date" value={returnReportingDate} onChange={e => setReturnReportingDate(e.target.value)} helperText="The day returns are reported (e.g. 14-11-2026)" />
+                <Select
+                  label="Product Condition"
+                  value={returnCondition}
+                  onChange={e => setReturnCondition(e.target.value as any)}
+                  options={[
+                    { value: 'good', label: 'Good condition (Return to Sellable Stock)' },
+                    { value: 'damaged', label: 'Damaged (Loss / Quarantine)' },
+                    { value: 'leaked', label: 'Leaked (Loss / Quarantine)' },
+                    { value: 'unsellable', label: 'Unsellable (Scrap)' }
+                  ]}
+                />
+              </div>
+
+              {/* Items Return Table */}
+              <div style={{ border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                  <thead>
+                    <tr style={{ background: '#09090b', color: '#a1a1aa', textAlign: 'left', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                      <th style={{ padding: '0.6rem 0.75rem' }}>Product</th>
+                      <th style={{ padding: '0.6rem 0.75rem' }}>Issued Qty</th>
+                      <th style={{ padding: '0.6rem 0.75rem' }}>Remaining</th>
+                      <th style={{ padding: '0.6rem 0.75rem', width: '90px' }}>Return (Good)</th>
+                      <th style={{ padding: '0.6rem 0.75rem', width: '90px' }}>Leak/Damaged</th>
+                      <th style={{ padding: '0.6rem 0.75rem' }}>Rate (₹)</th>
+                      <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Credit (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {returnItemsState.map((r, i) => {
+                      const lineCredit = ((Number(r.new_returned_qty) || 0) + (Number(r.new_leaked_qty) || 0)) * (Number(r.adjustment_rate) || r.original_rate)
+                      return (
+                        <tr key={i} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                          <td style={{ padding: '0.6rem 0.75rem', fontWeight: 700, color: '#fff' }}>{r.product_name}</td>
+                          <td style={{ padding: '0.6rem 0.75rem' }}>{r.original_quantity}</td>
+                          <td style={{ padding: '0.6rem 0.75rem', color: '#fbbf24', fontWeight: 700 }}>{r.remaining_qty}</td>
+                          <td style={{ padding: '0.6rem 0.75rem' }}>
+                            <input
+                              type="number"
+                              min="0"
+                              max={r.remaining_qty}
+                              value={r.new_returned_qty || ''}
+                              onChange={e => {
+                                const copy = [...returnItemsState]
+                                copy[i].new_returned_qty = Number(e.target.value)
+                                setReturnItemsState(copy)
+                              }}
+                              style={{ width: '100%', padding: '0.35rem', background: '#09090b', border: '1px solid #3f3f46', borderRadius: '6px', color: '#fff' }}
+                            />
+                          </td>
+                          <td style={{ padding: '0.6rem 0.75rem' }}>
+                            <input
+                              type="number"
+                              min="0"
+                              max={r.remaining_qty}
+                              value={r.new_leaked_qty || ''}
+                              onChange={e => {
+                                const copy = [...returnItemsState]
+                                copy[i].new_leaked_qty = Number(e.target.value)
+                                setReturnItemsState(copy)
+                              }}
+                              style={{ width: '100%', padding: '0.35rem', background: '#09090b', border: '1px solid #3f3f46', borderRadius: '6px', color: '#f87171' }}
+                            />
+                          </td>
+                          <td style={{ padding: '0.6rem 0.75rem' }}>
+                            <input
+                              type="number"
+                              value={r.adjustment_rate}
+                              onChange={e => {
+                                const copy = [...returnItemsState]
+                                copy[i].adjustment_rate = Number(e.target.value)
+                                setReturnItemsState(copy)
+                              }}
+                              style={{ width: '80px', padding: '0.35rem', background: '#09090b', border: '1px solid #3f3f46', borderRadius: '6px', color: '#fbbf24' }}
+                            />
+                          </td>
+                          <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 800, color: '#34d399' }}>
+                            ₹{lineCredit.toFixed(2)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <Input label="Remarks / Return Reason" placeholder="Inspection notes..." value={returnNotes} onChange={e => setReturnNotes(e.target.value)} />
+            </div>
+
+            <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <Button variant="secondary" onClick={() => setShowReturnModal(false)}>Cancel</Button>
+              <Button variant="primary" loading={savingReturn} onClick={handleSubmitReturnAndLeakage}>
+                Record Return &amp; Apply Credit
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: COLLECT DUE PAYMENT */}
       {showCollectModal && selectedDealer && (
         <div className="modal-overlay">
           <div className="modal-container">
-            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#fff' }}>Record Dealer Due Payment</h3>
-              <button onClick={() => setShowCollectModal(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}><X style={{ width: '20px', height: '20px' }} /></button>
+              <button onClick={() => setShowCollectModal(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}><X style={{ width: 20, height: 20 }} /></button>
             </div>
             <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>Dealer Account: <span style={{ color: '#fff', fontWeight: 700 }}>{selectedDealer.name}</span></div>
-              <div>Current Balance Due: <span style={{ color: '#f87171', fontWeight: 800 }}>{formatCurrency(selectedDealer.outstanding_amount || 0)}</span></div>
+              <div>Current Balance Due: <span style={{ color: '#f87171', fontWeight: 800 }}>₹{Number(selectedDealer.outstanding_amount || 0).toLocaleString('en-IN')}</span></div>
               <Input label="Collection Payment Amount (₹)" type="number" value={collectForm.amount || ''} onChange={e => setCollectForm({ ...collectForm, amount: Number(e.target.value) })} />
               <Select label="Payment Mode" value={collectForm.mode} onChange={e => setCollectForm({ ...collectForm, mode: e.target.value as any })} options={[{ value: 'cash', label: 'Cash Deposit' }, { value: 'upi', label: 'UPI / PhonePe / GPay' }, { value: 'bank', label: 'Bank Transfer (NEFT/RTGS)' }]} />
               <Input label="Payment Notes / Reference" value={collectForm.notes} onChange={e => setCollectForm({ ...collectForm, notes: e.target.value })} />
             </div>
-            <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
               <Button variant="secondary" onClick={() => setShowCollectModal(false)}>Cancel</Button>
               <Button variant="primary" loading={submittingPayment} onClick={handleCollectDue}>Record Collection</Button>
             </div>
           </div>
         </div>
       )}
+
       {/* RECEIPT PREVIEW & PRINT MODAL */}
       {previewBill && (
         <ReceiptPreviewModal

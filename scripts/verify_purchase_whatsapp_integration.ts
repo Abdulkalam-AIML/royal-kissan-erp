@@ -26,7 +26,7 @@ async function runTests() {
   await client.connect()
 
   let passedTests = 0
-  let totalTests = 9
+  const totalTests = 9
 
   try {
     // -------------------------------------------------------------------------

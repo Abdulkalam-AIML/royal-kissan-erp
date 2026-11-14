@@ -4,9 +4,21 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { emitDataChange, useDataSyncListener } from '@/lib/events/data-sync'
 import { saveUnifiedBill } from '@/lib/services/billing-service'
-import { resolveProductRate, RateSource } from '@/lib/pricing/pricing-engine'
+import { resolveProductRate, RateSource, round2 } from '@/lib/pricing/pricing-engine'
 import { fetchPricingRules } from '@/lib/services/pricing-service'
 import type { PricingRule } from '@/lib/pricing/pricing-engine'
+import ReceiptPreviewModal from '@/components/printer/ReceiptPreviewModal'
+import { BillData } from '@/lib/printer/receipt'
+import {
+  issueDriverLoad,
+  getDriverLoads,
+  settleDriverRoute,
+  getDriverSettlements
+} from '@/lib/services/driver-service'
+import type {
+  DriverLoadDispatchWithItems,
+  DriverRouteSettlementWithItems
+} from '@/lib/types/database'
 
 // Fallback preseeded data for drivers
 const FALLBACK_DRIVERS = [
@@ -88,7 +100,9 @@ export default function DriversPage() {
   const [selectedDriver, setSelectedDriver] = useState<any | null>(null)
   
   // Tabs inside Driver Profile
-  const [activeTab, setActiveTab] = useState<'local' | 'non-local' | 'collections' | 'dues' | 'daily' | 'monthly' | 'expenses'>('local')
+  const [activeTab, setActiveTab] = useState<
+    'load_dispatches' | 'route_settlement' | 'local' | 'non-local' | 'settlement_history' | 'collections' | 'dues' | 'daily' | 'monthly' | 'expenses'
+  >('load_dispatches')
   
   const [selectedRoute, setSelectedRoute] = useState<any | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<'cans' | 'bags' | 'bottles' | null>(null)
@@ -142,13 +156,62 @@ export default function DriversPage() {
   const [expensesList, setExpensesList] = useState<any[]>([])
 
   // =========================================================================
-  // NEW DRIVER WORKFLOW STATE: Daily Assignments, Dispatches, and Route Runs
+  // OFFICIAL DRIVER LOAD DISPATCHES & ROUTE SETTLEMENT STATE (PARTS 5 & 6)
   // =========================================================================
+  const [driverLoadsList, setDriverLoadsList] = useState<DriverLoadDispatchWithItems[]>([])
+  const [driverSettlementsList, setDriverSettlementsList] = useState<DriverRouteSettlementWithItems[]>([])
+  const [previewBill, setPreviewBill] = useState<BillData | null>(null)
+
+  // Load Issue Form State
+  const [showIssueModal, setShowIssueModal] = useState<boolean>(false)
+  const [loadDispatchDate, setLoadDispatchDate] = useState<string>(new Date().toISOString().split('T')[0])
+  const [loadVehicle, setLoadVehicle] = useState<string>('AP 16 AB 1234')
+  const [loadRouteId, setLoadRouteId] = useState<string>('')
+  const [loadStaff, setLoadStaff] = useState<string>('Operations Admin')
+  const [loadNotes, setLoadNotes] = useState<string>('')
+  const [loadIssuing, setLoadIssuing] = useState<boolean>(false)
+  const [loadItems, setLoadItems] = useState<Array<{
+    product_name: string
+    unit: string
+    loaded_quantity: number
+    rate: number
+    amount: number
+  }>>([
+    { product_name: 'Water Can (20L)', unit: 'cans', loaded_quantity: 50, rate: 30, amount: 1500 },
+    { product_name: 'Bags (100 Pack)', unit: 'bags', loaded_quantity: 30, rate: 80, amount: 2400 },
+    { product_name: '500ml Bottle Case', unit: 'cases', loaded_quantity: 10, rate: 140, amount: 1400 },
+    { product_name: '1L Bottle Case', unit: 'cases', loaded_quantity: 10, rate: 120, amount: 1200 }
+  ])
+
+  // Route Settlement State (4-Way Reconciliation)
+  const [selectedDispatchToSettle, setSelectedDispatchToSettle] = useState<DriverLoadDispatchWithItems | null>(null)
+  const [settlementDate, setSettlementDate] = useState<string>(new Date().toISOString().split('T')[0])
+  const [settlementRows, setSettlementRows] = useState<Array<{
+    product_name: string
+    loaded_qty: number
+    sold_qty: number
+    returned_good_qty: number
+    leaked_damaged_qty: number
+    rate: number
+    condition: string
+  }>>([])
+  const [settlementCash, setSettlementCash] = useState<number>(0)
+  const [settlementUpi, setSettlementUpi] = useState<number>(0)
+  const [settlementCredit, setSettlementCredit] = useState<number>(0)
+  const [settlementFuel, setSettlementFuel] = useState<number>(0)
+  const [settlementBata, setSettlementBata] = useState<number>(0)
+  const [settlementOtherExp, setSettlementOtherExp] = useState<number>(0)
+  const [settlementExpenseNotes, setSettlementExpenseNotes] = useState<string>('')
+  const [settlementActualHandover, setSettlementActualHandover] = useState<number>(0)
+  const [settlementDiscrepancyReason, setSettlementDiscrepancyReason] = useState<string>('')
+  const [settlingRoute, setSettlingRoute] = useState<boolean>(false)
+  const [autoGenerateCustomerBills, setAutoGenerateCustomerBills] = useState<boolean>(true)
+
+  // Legacy state preserved for temporary runs
   const [dailyAssignment, setDailyAssignment] = useState<any | null>(null)
   const [assignRouteId, setAssignRouteId] = useState<string>('')
   const [assignVehicle, setAssignVehicle] = useState<string>('AP 16 AB 1234')
   const [assigning, setAssigning] = useState<boolean>(false)
-
   const [dispatchItems, setDispatchItems] = useState<Record<string, number>>({
     'Water Can (20L)': 50,
     'Cooling Can (20L)': 20,
@@ -171,6 +234,12 @@ export default function DriversPage() {
     })
   }, [])
 
+  useDataSyncListener(['drivers', 'bills', 'stock', 'sales'], () => {
+    if (selectedDriver) {
+      loadProfileHistory(selectedDriver.id)
+    }
+  })
+
   async function loadDriversAndRoutes() {
     try {
       const today = new Date().toISOString().split('T')[0]
@@ -178,7 +247,6 @@ export default function DriversPage() {
       const currentYear = new Date().getFullYear()
       const firstOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`
 
-      // PARALLEL QUERY FETCHING (PROMISE.ALL FOR ZERO WATERFALL LATENCY)
       const [driversRes, routesRes, todaySalesRes, monthSalesRes] = await Promise.all([
         supabase.from('drivers').select('id, name, phone, salary, is_active').order('name'),
         supabase.from('routes').select('id, name, driver_id, area').order('name'),
@@ -238,7 +306,6 @@ export default function DriversPage() {
     }
   }
 
-  // Load persistent customer stop registry from route_customers table
   async function loadRouteCustomers(routeId: string) {
     try {
       const { data: dbCustomers } = await supabase
@@ -257,7 +324,7 @@ export default function DriversPage() {
           default_rate: Number(c.default_rate) || 0,
           product_name: c.default_product || (c.section === 'bags' ? 'Bags (100 Pack)' : c.section === 'bottles' ? '500ml Bottle Case' : 'Water Can (20L)'),
           qty_entered: Number(c.default_quantity) || 1,
-          rate_entered: Number(c.default_rate) || 0, // AUTO-POPULATED DEFAULT RATE
+          rate_entered: Number(c.default_rate) || 0,
           cash_paid: 0,
           upi_paid: 0,
           returned_qty: 0,
@@ -289,7 +356,6 @@ export default function DriversPage() {
     }
   }
 
-  // Load driver profile history & active daily assignment
   async function loadProfileHistory(driverId: string) {
     try {
       const today = new Date().toISOString().split('T')[0]
@@ -297,14 +363,24 @@ export default function DriversPage() {
       const currentYear = new Date().getFullYear()
       const firstOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`
 
-      // PARALLEL PROFILE HISTORY FETCHING (PROMISE.ALL)
-      const [assignRes, dispRes, dSalesRes, mSalesRes, expRes] = await Promise.all([
+      const [assignRes, dispRes, dSalesRes, mSalesRes, expRes, loads, settlements] = await Promise.all([
         supabase.from('daily_route_assignments').select('*, routes(id, name, area)').eq('driver_id', driverId).eq('date', today).maybeSingle(),
         supabase.from('route_dispatches').select('*').eq('driver_id', driverId).eq('date', today).order('created_at', { ascending: false }).limit(1).maybeSingle(),
         supabase.from('route_sales').select('id, invoice_number, customer_name, product_name, quantity, rate, total_amount, cash_paid, upi_paid, due_amount, payment_status, sale_date').eq('driver_id', driverId).eq('sale_date', today),
         supabase.from('route_sales').select('id, invoice_number, customer_name, product_name, quantity, rate, total_amount, cash_paid, upi_paid, due_amount, payment_status, sale_date').eq('driver_id', driverId).gte('sale_date', firstOfMonth),
-        supabase.from('route_expenses').select('id, expense_date, fuel_charges, driver_bata, other_expenses, notes, created_at').eq('driver_id', driverId).order('created_at', { ascending: false })
+        supabase.from('route_expenses').select('id, expense_date, fuel_charges, driver_bata, other_expenses, notes, created_at').eq('driver_id', driverId).order('created_at', { ascending: false }),
+        getDriverLoads(driverId),
+        getDriverSettlements(driverId)
       ])
+
+      setDriverLoadsList(loads)
+      setDriverSettlementsList(settlements)
+
+      // Auto-select latest open dispatch if available
+      const openLoad = loads.find(l => l.status === 'ISSUED')
+      if (openLoad && !selectedDispatchToSettle) {
+        initSettlementForDispatch(openLoad)
+      }
 
       const assignData = assignRes.data
       const dispData = dispRes.data
@@ -324,26 +400,7 @@ export default function DriversPage() {
         
         const routeObj = routes.find(r => r.id === assignData.route_id) || assignData.routes
         setSelectedRoute(routeObj)
-
         loadRouteCustomers(assignData.route_id)
-
-        // Fetch dispatch record for this assignment
-        if (dispData?.items) {
-          const itemsObj: Record<string, number> = {
-            'Water Can (20L)': 0,
-            'Cooling Can (20L)': 0,
-            'Bags (100 Pack)': 0,
-            '500ml Bottle Case': 0,
-            '1L Bottle Case': 0,
-            '2L Bottle Case': 0
-          }
-          if (Array.isArray(dispData.items)) {
-            dispData.items.forEach((it: any) => {
-              if (it.product_name) itemsObj[it.product_name] = Number(it.quantity) || 0
-            })
-          }
-          setDispatchItems(itemsObj)
-        }
       } else {
         const firstDriverRoute = routes.find(r => r.driver_id === driverId)
         if (firstDriverRoute) {
@@ -361,7 +418,7 @@ export default function DriversPage() {
     setSelectedDriver(driver)
     loadProfileHistory(driver.id)
     setCurrentView('profile')
-    setActiveTab(driver.id === 'b097b6a9-8395-4eb8-a720-3057e07662c1' ? 'local' : 'non-local')
+    setActiveTab('load_dispatches')
   }
 
   const handleRouteSelect = async (route: any) => {
@@ -374,6 +431,217 @@ export default function DriversPage() {
   const handleCategorySelect = (category: 'cans' | 'bags' | 'bottles') => {
     setSelectedCategory(category)
     setCurrentView('customers')
+  }
+
+  // -------------------------------------------------------------------------
+  // ACTION: ISSUE DRIVER LOAD (PART 5 — STEP 1)
+  // Deducts stock from warehouse inventory, generates Load Dispatch Note
+  // -------------------------------------------------------------------------
+  const handleIssueDriverLoad = async () => {
+    if (!selectedDriver) return
+    const validItems = loadItems.filter(it => it.loaded_quantity > 0)
+    if (validItems.length === 0) {
+      alert('⚠️ Please specify at least one product with quantity > 0.')
+      return
+    }
+
+    setLoadIssuing(true)
+    const selectedRouteObj = routes.find(r => r.id === loadRouteId)
+
+    const res = await issueDriverLoad({
+      driver_id: selectedDriver.id,
+      driver_name: selectedDriver.name,
+      vehicle_number: loadVehicle || 'AP 16 AB 1234',
+      route_id: loadRouteId || null,
+      route_name: selectedRouteObj?.name || null,
+      dispatch_date: loadDispatchDate,
+      created_by: loadStaff || 'Operations Admin',
+      notes: loadNotes,
+      items: validItems.map(it => ({
+        product_name: it.product_name,
+        unit: it.unit,
+        loaded_quantity: it.loaded_quantity,
+        rate: it.rate,
+        amount: round2(it.loaded_quantity * it.rate)
+      }))
+    })
+
+    setLoadIssuing(false)
+
+    if (res.success && res.dispatch) {
+      alert(`✅ Driver Load Dispatch #${res.dispatch.dispatch_number} Issued!\nWarehouse inventory has been deducted atomically.`)
+      setShowIssueModal(false)
+      loadProfileHistory(selectedDriver.id)
+
+      // Prompt to preview/print Load Dispatch Note
+      printLoadDispatchNote(res.dispatch)
+    } else {
+      alert(`❌ Failed to issue driver load: ${res.message}`)
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // ACTION: INITIALIZE ROUTE SETTLEMENT FOR A DISPATCH
+  // -------------------------------------------------------------------------
+  function initSettlementForDispatch(dispatch: DriverLoadDispatchWithItems) {
+    setSelectedDispatchToSettle(dispatch)
+    const initialRows = (dispatch.items || []).map(it => ({
+      product_name: it.product_name,
+      loaded_qty: Number(it.loaded_quantity) || 0,
+      sold_qty: Number(it.loaded_quantity) || 0,
+      returned_good_qty: 0,
+      leaked_damaged_qty: 0,
+      rate: Number(it.rate) || 0,
+      condition: 'good'
+    }))
+    setSettlementRows(initialRows)
+    
+    // Estimate collection from sold quantity
+    const totalEst = initialRows.reduce((s, r) => s + (r.sold_qty * r.rate), 0)
+    setSettlementCash(totalEst)
+    setSettlementUpi(0)
+    setSettlementCredit(0)
+    setSettlementActualHandover(totalEst)
+    setSettlementDate(new Date().toISOString().split('T')[0])
+  }
+
+  // -------------------------------------------------------------------------
+  // ACTION: CONFIRM ROUTE SETTLEMENT & 4-WAY RECONCILIATION (PART 5 — STEPS 3 & 4)
+  // -------------------------------------------------------------------------
+  const handleConfirmRouteSettlement = async () => {
+    if (!selectedDispatchToSettle || !selectedDriver) return
+
+    // 1. Verify 4-way quantity conservation
+    for (const r of settlementRows) {
+      const accounted = Number(r.sold_qty) + Number(r.returned_good_qty) + Number(r.leaked_damaged_qty)
+      if (accounted > Number(r.loaded_qty)) {
+        alert(`❌ Validation error for ${r.product_name}:\nAccounted quantity (${accounted}) exceeds loaded quantity (${r.loaded_qty})!`)
+        return
+      }
+    }
+
+    const totalLoaded = settlementRows.reduce((s, r) => s + Number(r.loaded_qty), 0)
+    const totalSold = settlementRows.reduce((s, r) => s + Number(r.sold_qty), 0)
+    const totalReturned = settlementRows.reduce((s, r) => s + Number(r.returned_good_qty), 0)
+    const totalLeaked = settlementRows.reduce((s, r) => s + Number(r.leaked_damaged_qty), 0)
+    const totalUnaccounted = totalLoaded - (totalSold + totalReturned + totalLeaked)
+
+    const totalExpenses = round2(Number(settlementFuel) + Number(settlementBata) + Number(settlementOtherExp))
+    const expectedCollection = round2(Number(settlementCash) + Number(settlementUpi))
+    const expectedHandover = round2(Math.max(0, expectedCollection - totalExpenses))
+    const actualHandover = round2(Number(settlementActualHandover))
+    const collectionDiff = round2(actualHandover - expectedHandover)
+
+    if ((totalUnaccounted > 0 || Math.abs(collectionDiff) > 0) && !settlementDiscrepancyReason.trim()) {
+      alert(`⚠️ Discrepancy detected:\n- Unaccounted Stock: ${totalUnaccounted} units\n- Collection Difference: ₹${collectionDiff}\n\nPlease enter an explanation in Discrepancy Reason before confirming.`)
+      return
+    }
+
+    setSettlingRoute(true)
+
+    // Optional customer sales generated at route settlement
+    const customerSalesPayload = autoGenerateCustomerBills ? customers.filter(c => (Number(c.qty_entered) || 0) > 0).map(c => ({
+      customer_name: c.name,
+      product_name: c.product_name,
+      quantity: Number(c.qty_entered) || 1,
+      rate: Number(c.rate_entered) || 0,
+      total_amount: (Number(c.qty_entered) || 1) * (Number(c.rate_entered) || 0),
+      paid_amount: (Number(c.cash_paid) || 0) + (Number(c.upi_paid) || 0),
+      payment_method: (Number(c.cash_paid) || 0) > 0 && (Number(c.upi_paid) || 0) > 0 ? 'cash_upi' : (Number(c.upi_paid) || 0) > 0 ? 'upi' : 'cash',
+      cash_amount: Number(c.cash_paid) || 0,
+      upi_amount: Number(c.upi_paid) || 0
+    })) : []
+
+    const res = await settleDriverRoute({
+      load_dispatch_id: selectedDispatchToSettle.id,
+      driver_id: selectedDriver.id,
+      route_id: selectedDispatchToSettle.route_id,
+      settlement_date: settlementDate,
+      total_loaded_qty: totalLoaded,
+      total_sold_qty: totalSold,
+      total_returned_qty: totalReturned,
+      total_leaked_qty: totalLeaked,
+      unaccounted_qty: totalUnaccounted,
+      cash_collected: Number(settlementCash),
+      upi_collected: Number(settlementUpi),
+      credit_sales_amount: Number(settlementCredit),
+      route_expenses_amount: totalExpenses,
+      expected_collection: expectedCollection,
+      actual_collection: actualHandover,
+      collection_difference: collectionDiff,
+      discrepancy_reason: settlementDiscrepancyReason,
+      confirmed_by: 'Operations Admin',
+      items: settlementRows.map(r => ({
+        product_name: r.product_name,
+        loaded_qty: Number(r.loaded_qty),
+        sold_qty: Number(r.sold_qty),
+        returned_good_qty: Number(r.returned_good_qty),
+        leaked_damaged_qty: Number(r.leaked_damaged_qty),
+        rate: Number(r.rate),
+        condition: r.condition
+      })),
+      customer_sales: customerSalesPayload
+    })
+
+    setSettlingRoute(false)
+
+    if (res.success && res.settlement) {
+      alert(`🎉 Route Settlement #${res.settlement.settlement_number} Confirmed!\n- Returned good stock (${totalReturned}) restored to warehouse.\n- Damaged/leaked stock (${totalLeaked}) quarantined.\n- Final customer bills generated without double-deducting warehouse stock.`)
+      loadProfileHistory(selectedDriver.id)
+      printSettlementSummary(res.settlement)
+      setActiveTab('settlement_history')
+    } else {
+      alert(`❌ Route settlement failed: ${res.message}`)
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // PRINT HELPERS: Load Dispatch Note & Route Settlement Summary
+  // -------------------------------------------------------------------------
+  function printLoadDispatchNote(dispatch: DriverLoadDispatchWithItems) {
+    setPreviewBill({
+      invoice_number: dispatch.dispatch_number,
+      customer_name: `DRIVER LOAD: ${dispatch.driver_name}`,
+      dealer_name: `DRIVER LOAD: ${dispatch.driver_name}`,
+      date: dispatch.dispatch_date,
+      subtotal: dispatch.total_load_value,
+      taxable_amount: dispatch.total_load_value,
+      gst_amount: 0,
+      total_amount: dispatch.total_load_value,
+      paid_amount: 0,
+      due_amount: dispatch.total_load_value,
+      bill_type: 'DRIVER LOAD DISPATCH NOTE (NOT A SALE INVOICE)' as any,
+      notes: `Vehicle: ${dispatch.vehicle_number || 'N/A'} | Route: ${dispatch.route_name || 'N/A'} | Dispatched By: ${dispatch.created_by || 'Operations Admin'}`,
+      items: (dispatch.items || []).map(it => ({
+        product_name: it.product_name,
+        quantity: it.loaded_quantity,
+        rate: it.rate,
+        amount: it.amount
+      }))
+    })
+  }
+
+  function printSettlementSummary(settlement: DriverRouteSettlementWithItems) {
+    setPreviewBill({
+      invoice_number: settlement.settlement_number,
+      customer_name: `ROUTE SETTLEMENT: ${selectedDriver?.name || 'Driver'}`,
+      dealer_name: `ROUTE SETTLEMENT: ${selectedDriver?.name || 'Driver'}`,
+      date: settlement.settlement_date,
+      subtotal: settlement.actual_collection,
+      taxable_amount: settlement.actual_collection,
+      gst_amount: 0,
+      total_amount: settlement.actual_collection,
+      paid_amount: settlement.actual_collection,
+      due_amount: 0,
+      bill_type: 'DRIVER ROUTE SETTLEMENT SUMMARY' as any,
+      notes: `Loaded: ${settlement.total_loaded_qty} | Sold: ${settlement.total_sold_qty} | Ret Good: ${settlement.total_returned_qty} | Leaked: ${settlement.total_leaked_qty} | Shortage: ${settlement.unaccounted_qty} | Net Collection: ₹${settlement.actual_collection} | Expenses: ₹${settlement.route_expenses_amount}`,
+      items: (settlement.items || []).map(it => ({
+        product_name: `${it.product_name} (Sold: ${it.sold_qty}, Ret: ${it.returned_good_qty}, Leak: ${it.leaked_damaged_qty})`,
+        quantity: it.sold_qty,
+        rate: it.rate,
+        amount: it.sold_amount
+      }))
+    })
   }
 
   // Create daily route assignment
@@ -533,7 +801,7 @@ export default function DriversPage() {
     }
   }
 
-  // Edit Customer stop entry inline (Rate is auto default_rate with manual override!)
+  // Edit Customer stop entry inline
   const updateCustomerEntry = (id: string, field: string, value: any) => {
     setCustomers(prev => prev.map(c => {
       if (c.id === id) {
@@ -578,91 +846,99 @@ export default function DriversPage() {
   }
 
   const updateBillingForm = (field: string, val: any) => {
-    setBillingForm(prev => ({
-      ...prev,
-      [field]: val
-    }))
+    setBillingForm(prev => {
+      const updated = { ...prev, [field]: val }
+      if (field === 'qty' || field === 'product_name') {
+        const res = resolveProductRate({
+          productId: billingCustomer?.product_id || '',
+          productName: updated.product_name,
+          defaultRate: billingCustomer?.default_rate || 15.00,
+          unit: 'piece',
+          customerId: billingCustomer?.id,
+          routeId: selectedRoute?.id || null,
+          billDate: new Date().toISOString().split('T')[0],
+          quantity: updated.qty,
+          availableRules: pricingRules
+        })
+        if (field === 'product_name' || !updated.rate) {
+          updated.rate = res.resolvedRate
+        }
+        updated.rate_source = res.rateSource
+        updated.rate_rule_id = res.ruleId
+      }
+      return updated
+    })
   }
 
   const handleSaveSale = async () => {
-    if (!billingCustomer) return
+    if (!billingCustomer || !selectedDriver) return
     setSubmitting(true)
 
+    const today = new Date().toISOString().split('T')[0]
+    const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`
     const total = billingForm.qty * billingForm.rate
-    const due = total - (Number(billingForm.cash) || 0) - (Number(billingForm.upi) || 0)
-    const invoiceNumber = `RK-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`
+    const cash = Number(billingForm.cash) || 0
+    const upi = Number(billingForm.upi) || 0
+    const paid = cash + upi
+    const due = Math.max(0, total - paid)
 
-    const updatedCustomers = customers.map(c => {
-      if (c.id === billingCustomer.id) {
-        return {
-          ...c,
-          qty_entered: billingForm.qty,
-          rate_entered: billingForm.rate,
-          cash_paid: Number(billingForm.cash) || 0,
-          upi_paid: Number(billingForm.upi) || 0,
-          due_amount: due > 0 ? due : 0
-        }
-      }
-      return c
-    })
-    setCustomers(updatedCustomers)
-
-    const todayDate = new Date().toISOString().split('T')[0]
-    const cashVal = Number(billingForm.cash) || 0
-    const upiVal = Number(billingForm.upi) || 0
-    const totalPaid = cashVal + upiVal
-
-    try {
-      await saveUnifiedBill({
-        invoice_number: invoiceNumber,
-        bill_type: 'route',
-        customer_name: billingCustomer.name,
-        driver_id: selectedDriver.id,
-        route_id: selectedRoute?.id || null,
-        route_customer_id: billingCustomer.id || null,
-        date: todayDate,
-        subtotal: total,
-        taxable_amount: total,
-        gst_amount: 0,
-        grand_total: total,
-        total_amount: total,
-        paid_amount: totalPaid,
-        due_amount: due > 0 ? due : 0,
-        cash_amount: cashVal,
-        upi_amount: upiVal,
-        payment_mode: cashVal > 0 && upiVal > 0 ? 'mixed' : upiVal > 0 ? 'upi' : due >= total ? 'due' : 'cash',
-        items: [{
+    const payload = {
+      invoice_number: invoiceNumber,
+      customer_name: billingCustomer.name,
+      customer_phone: billingCustomer.phone || null,
+      bill_type: 'route' as const,
+      driver_id: selectedDriver.id,
+      route_id: selectedRoute?.id || null,
+      date: today,
+      subtotal: total,
+      taxable_amount: total,
+      gst_amount: 0,
+      grand_total: total,
+      total_amount: total,
+      paid_amount: paid,
+      due_amount: due,
+      payment_mode: (cash > 0 && upi > 0 ? 'mixed' : upi > 0 ? 'upi' : 'cash') as any,
+      payment_status: (due === 0 ? 'paid' : paid > 0 ? 'partial' : 'pending') as any,
+      cash_amount: cash,
+      upi_amount: upi,
+      items: [
+        {
           product_name: billingForm.product_name,
           quantity: billingForm.qty,
           rate: billingForm.rate,
-          original_rate: billingForm.rate,
-          rate_source: (billingForm.rate_source || 'Route Rate') as RateSource,
-          rate_rule_id: billingForm.rate_rule_id || null,
-          unit: 'piece',
           amount: total,
-          total: total
-        }]
-      })
+          rate_source: billingForm.rate_source,
+          rate_rule_id: billingForm.rate_rule_id
+        }
+      ]
+    }
 
-      setSuccessData({
-        invoiceNumber,
-        customerName: billingCustomer.name,
-        productName: billingForm.product_name,
-        qty: billingForm.qty,
-        rate: billingForm.rate,
-        total,
-        cash: Number(billingForm.cash) || 0,
-        upi: Number(billingForm.upi) || 0,
-        due: due > 0 ? due : 0,
-        driverName: selectedDriver.name,
-        routeName: selectedRoute?.name || 'Local Route'
-      })
+    try {
+      const res = await saveUnifiedBill(payload)
+      if (res.success) {
+        setSuccessData({
+          invoiceNumber,
+          customerName: billingCustomer.name,
+          productName: billingForm.product_name,
+          qty: billingForm.qty,
+          rate: billingForm.rate,
+          total,
+          cash,
+          upi,
+          due,
+          driverName: selectedDriver.name,
+          routeName: selectedRoute?.name || 'Local Route'
+        })
 
-      setBillingModalOpen(false)
-      loadDriversAndRoutes()
-      loadProfileHistory(selectedDriver.id)
+        setBillingModalOpen(false)
+        emitDataChange('bills')
+        emitDataChange('drivers')
+        loadProfileHistory(selectedDriver.id)
+      } else {
+        alert('Failed to save bill: ' + res.error)
+      }
     } catch (e: any) {
-      alert(`Error saving route sale: ${e.message}`)
+      alert('Error saving bill: ' + e?.message)
     } finally {
       setSubmitting(false)
     }
@@ -671,27 +947,35 @@ export default function DriversPage() {
   const handleSaveExpense = async () => {
     if (!selectedDriver) return
     setExpenseLoading(true)
-    
+    const today = new Date().toISOString().split('T')[0]
+
     try {
-      const { error } = await supabase.from('route_expenses').insert({
-        route_id: selectedRoute?.id || null,
+      const payload = {
         driver_id: selectedDriver.id,
+        route_id: selectedRoute?.id || assignRouteId || null,
+        expense_date: today,
         fuel_charges: Number(expenseForm.fuel) || 0,
         driver_bata: Number(expenseForm.bata) || 0,
         other_expenses: Number(expenseForm.other) || 0,
-        remarks: expenseForm.remarks,
-        vehicle_number: expenseForm.vehicle
-      })
+        vehicle_number: expenseForm.vehicle || assignVehicle,
+        notes: expenseForm.remarks || null
+      }
 
-      if (!error) {
+      const { data, error } = await supabase
+        .from('route_expenses')
+        .insert(payload)
+        .select()
+        .single()
+
+      if (!error && data) {
+        alert('✅ Trip expense logged successfully!')
         setExpenseForm({ fuel: 0, bata: 0, other: 0, remarks: '', vehicle: '' })
         loadProfileHistory(selectedDriver.id)
-        alert('🎉 Trip Expense Saved Successfully!')
       } else {
-        alert('Failed to save expense: ' + error.message)
+        alert('Failed to log expense: ' + (error?.message || 'Error'))
       }
-    } catch (e) {
-      console.error(e)
+    } catch (e: any) {
+      alert('Error: ' + e.message)
     } finally {
       setExpenseLoading(false)
     }
@@ -701,14 +985,9 @@ export default function DriversPage() {
     window.print()
   }
 
-  const driverRoutes = routes.filter(r => r.driver_id === selectedDriver?.id)
-  const localRoutes = driverRoutes.filter(r => r.name.toLowerCase().includes('local') && !r.name.toLowerCase().includes('non'))
-  const nonLocalRoutes = driverRoutes.filter(r => !r.name.toLowerCase().includes('local') || r.name.toLowerCase().includes('non'))
-
   const isNagaraju = selectedDriver?.id === 'b097b6a9-8395-4eb8-a720-3057e07662c1'
   const isDriver2  = selectedDriver?.id === '70c293e7-bae8-4de2-a505-edccfd35f761'
 
-  // Reconciliation summary calculations
   const summarySales = customers.reduce((acc, c) => acc + ((Number(c.qty_entered) || 0) * (Number(c.rate_entered) || 0)), 0)
   const summaryCash = customers.reduce((acc, c) => acc + (Number(c.cash_paid) || 0), 0)
   const summaryUpi = customers.reduce((acc, c) => acc + (Number(c.upi_paid) || 0), 0)
@@ -748,101 +1027,40 @@ export default function DriversPage() {
             </tbody>
           </table>
 
-          <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '6px 0', marginBottom: '10px' }}>
-            <table style={{ width: '100%', fontSize: '11px' }}>
-              <thead>
-                <tr style={{ textAlign: 'left' }}>
-                  <th>Item</th>
-                  <th style={{ textAlign: 'center' }}>Qty</th>
-                  <th style={{ textAlign: 'right' }}>Rate</th>
-                  <th style={{ textAlign: 'right' }}>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>{successData.productName}</td>
-                  <td style={{ textAlign: 'center' }}>{successData.qty}</td>
-                  <td style={{ textAlign: 'right' }}>₹{successData.rate}</td>
-                  <td style={{ textAlign: 'right' }}>₹{successData.total}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <table style={{ width: '100%', fontSize: '11px', marginBottom: '15px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '10px', fontSize: '11px' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid #000' }}>
+                <th style={{ textAlign: 'left', padding: '4px 0' }}>Item</th>
+                <th style={{ textAlign: 'center', padding: '4px 0' }}>Qty</th>
+                <th style={{ textAlign: 'right', padding: '4px 0' }}>Rate</th>
+                <th style={{ textAlign: 'right', padding: '4px 0' }}>Amt</th>
+              </tr>
+            </thead>
             <tbody>
               <tr>
-                <td style={{ textAlign: 'right' }}><strong>Net Amount:</strong></td>
-                <td style={{ textAlign: 'right', width: '80px' }}>₹{successData.total}</td>
-              </tr>
-              <tr>
-                <td style={{ textAlign: 'right' }}>Cash Paid:</td>
-                <td style={{ textAlign: 'right' }}>₹{successData.cash}</td>
-              </tr>
-              <tr>
-                <td style={{ textAlign: 'right' }}>UPI Paid:</td>
-                <td style={{ textAlign: 'right' }}>₹{successData.upi}</td>
-              </tr>
-              <tr style={{ fontWeight: 'bold' }}>
-                <td style={{ textAlign: 'right' }}>Balance Due:</td>
-                <td style={{ textAlign: 'right' }}>₹{successData.due}</td>
+                <td style={{ padding: '4px 0' }}>{successData.productName}</td>
+                <td style={{ textAlign: 'center', padding: '4px 0' }}>{successData.qty}</td>
+                <td style={{ textAlign: 'right', padding: '4px 0' }}>₹{successData.rate}</td>
+                <td style={{ textAlign: 'right', padding: '4px 0' }}>₹{successData.total}</td>
               </tr>
             </tbody>
           </table>
 
-          <div style={{ textAlign: 'center', fontSize: '10px', borderTop: '1px dashed #000', paddingTop: '8px' }}>
-            <p style={{ margin: 0 }}>Thank you for doing business with us!</p>
-            <p style={{ margin: '2px 0 0' }}>Quality Water Guaranteed • Royal Kissan ERP</p>
-          </div>
-        </div>
-      )}
-
-      {/* SUCCESS MODAL ON SCREEN */}
-      {successData && (
-        <div className="modal-overlay" style={{ display: 'flex', zIndex: 1000 }}>
-          <div className="modal-content" style={{ maxWidth: '400px' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.125rem', fontWeight: '800', color: '#fff', margin: 0 }}>
-                🎉 Sale Recorded Successfully
-              </h3>
-              <button className="btn btn-ghost btn-sm" onClick={() => setSuccessData(null)}>✕</button>
+          <div style={{ borderTop: '1px dashed #000', paddingTop: '6px', fontSize: '11px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+              <span>Total Amount:</span>
+              <strong>₹{successData.total}</strong>
             </div>
-            <div style={{ padding: '1.5rem' }}>
-              <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
-                <span style={{ fontSize: '3rem' }}>🧾</span>
-                <h4 style={{ margin: '0.5rem 0 0.25rem', fontWeight: '700' }}>Bill Generated</h4>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>Invoice #: {successData.invoiceNumber}</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+              <span>Paid (Cash+UPI):</span>
+              <span>₹{successData.cash + successData.upi}</span>
+            </div>
+            {successData.due > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+                <span>Remaining Due:</span>
+                <span>₹{successData.due}</span>
               </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', fontSize: '0.875rem', border: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-2)' }}>Customer:</span>
-                  <span style={{ fontWeight: '700' }}>{successData.customerName}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-2)' }}>Product:</span>
-                  <span>{successData.productName} ({successData.qty} units)</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
-                  <span style={{ color: 'var(--text-2)' }}>Total Amount:</span>
-                  <span style={{ fontWeight: '700' }}>₹{successData.total}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#34d399' }}>
-                  <span>Paid:</span>
-                  <span>₹{successData.cash + successData.upi}</span>
-                </div>
-                {successData.due > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#f87171' }}>
-                    <span>Outstanding Due:</span>
-                    <span style={{ fontWeight: '800' }}>₹{successData.due}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div style={{ padding: '1rem', display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
-              <button className="btn btn-ghost" onClick={() => setSuccessData(null)}>Close</button>
-              <button className="btn btn-primary" onClick={handlePrint}>🖨️ Print Receipt</button>
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -882,7 +1100,7 @@ export default function DriversPage() {
           </h2>
           <p style={{ fontSize: '0.8125rem', color: 'var(--text-2)', marginTop: '0.25rem' }}>
             {currentView === 'drivers' && 'Select active driver to run daily route assignments, dispatches, and reconciliation'}
-            {currentView === 'profile' && 'Assign daily routes, record truck stock, enter customer stops with auto/manual rates, and complete run reconciliation'}
+            {currentView === 'profile' && 'Issue warehouse truck load dispatches, complete 4-way physical reconciliation, and confirm route settlements.'}
             {currentView === 'categories' && 'Select product type to log sales'}
             {currentView === 'customers' && `Record dues and log customer sales for ${selectedRoute?.name}`}
           </p>
@@ -998,7 +1216,7 @@ export default function DriversPage() {
 
       {/* VIEW 2: DRIVER WORKSPACE & PROFILE */}
       {currentView === 'profile' && selectedDriver && (
-        <div style={{ maxWidth: '1100px', margin: '0 auto' }} className="animate-fade-in">
+        <div style={{ maxWidth: '1200px', margin: '0 auto' }} className="animate-fade-in">
           
           {/* Driver Stats summary strip */}
           <div className="card" style={{ padding: '1.25rem 2rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
@@ -1007,7 +1225,7 @@ export default function DriversPage() {
               <div>
                 <h4 style={{ margin: 0, fontWeight: '800', fontSize: '1.1rem', color: '#fff' }}>{selectedDriver.name}</h4>
                 <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-2)' }}>
-                  {dailyAssignment ? `Assigned Route: ${dailyAssignment.routes?.name || 'Local Route'} (${dailyAssignment.vehicle_number})` : 'No Route Assigned For Today'}
+                  {dailyAssignment ? `Route: ${dailyAssignment.routes?.name || 'Local Route'} (${dailyAssignment.vehicle_number})` : 'Active Route Workspace'}
                 </p>
               </div>
             </div>
@@ -1021,135 +1239,17 @@ export default function DriversPage() {
                 <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#34d399' }}>₹{(driverStats[selectedDriver.id]?.collection || 0).toLocaleString('en-IN')}</div>
               </div>
               <div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Status</div>
-                <div style={{ fontSize: '0.9rem', fontWeight: '800', color: dailyAssignment?.status === 'completed' ? '#34d399' : dailyAssignment?.status === 'in_progress' ? '#fbbf24' : '#60a5fa' }}>
-                  {dailyAssignment?.status ? dailyAssignment.status.toUpperCase() : 'PENDING'}
-                </div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Issued Loads</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#60a5fa' }}>{driverLoadsList.length}</div>
               </div>
-            </div>
-          </div>
-
-          {/* 1. DAILY ROUTE ASSIGNMENT BANNER (LAYER) */}
-          <div className="card" style={{ padding: '1.5rem', marginBottom: '1.5rem', borderLeft: '4px solid #3b82f6' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
               <div>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>
-                  📅 Today's Temporary Driver Route Assignment
-                </h3>
-                <p style={{ fontSize: '0.8125rem', color: 'var(--text-2)', margin: '0.25rem 0 0' }}>
-                  Assign driver to route temporarily for today without hardcoding permanent route links.
-                </p>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Settlements</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#34d399' }}>{driverSettlementsList.length}</div>
               </div>
-
-              {dailyAssignment ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '0.875rem', fontWeight: '700', color: '#fff' }}>
-                      {dailyAssignment.routes?.name || selectedRoute?.name || 'Local Route'}
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>
-                      Vehicle: {dailyAssignment.vehicle_number}
-                    </div>
-                  </div>
-                  <span className={`badge ${dailyAssignment.status === 'completed' ? 'badge-success' : 'badge-warning'}`}>
-                    {dailyAssignment.status?.toUpperCase()}
-                  </span>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <select
-                    className="form-input"
-                    style={{ width: '220px' }}
-                    value={assignRouteId}
-                    onChange={e => {
-                      setAssignRouteId(e.target.value)
-                      const r = routes.find(x => x.id === e.target.value)
-                      if (r) setSelectedRoute(r)
-                    }}
-                  >
-                    <option value="">Select Today's Route...</option>
-                    {routes.map(r => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    className="form-input"
-                    style={{ width: '150px' }}
-                    placeholder="Vehicle #"
-                    value={assignVehicle}
-                    onChange={e => setAssignVehicle(e.target.value)}
-                  />
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={handleCreateAssignment}
-                    disabled={assigning || !assignRouteId}
-                  >
-                    {assigning ? 'Assigning...' : '▶ Assign Route for Today'}
-                  </button>
-                </div>
-              )}
             </div>
           </div>
 
-          {/* 2. TRUCK DISPATCH / STOCK LOADING SECTION */}
-          <div className="card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <div>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', margin: 0 }}>
-                  🚚 Truck Loading & Dispatch (Products Loaded)
-                </h3>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-2)', margin: '0.25rem 0 0' }}>
-                  {activeDispatch ? `Dispatched Stock Logged on ${activeDispatch.date}` : 'Log truck stock loaded before starting route run'}
-                </p>
-              </div>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => setShowDispatchForm(!showDispatchForm)}
-              >
-                {showDispatchForm ? 'Hide Stock Form' : activeDispatch ? '✏️ Edit Dispatched Stock' : '📦 Load Truck Stock'}
-              </button>
-            </div>
-
-            {/* Display Active Dispatch Summary */}
-            {activeDispatch && !showDispatchForm && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '0.75rem', background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
-                {Array.isArray(activeDispatch.items) && activeDispatch.items.map((it: any, idx: number) => (
-                  <div key={idx} style={{ fontSize: '0.8125rem' }}>
-                    <span style={{ color: 'var(--text-2)' }}>{it.product_name}: </span>
-                    <strong style={{ color: '#60a5fa' }}>{it.quantity} units</strong>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Stock Loading Form */}
-            {showDispatchForm && (
-              <div style={{ marginTop: '1rem', background: 'var(--surface-3)', padding: '1.25rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
-                  {Object.keys(dispatchItems).map(pName => (
-                    <div key={pName} className="form-group">
-                      <label className="form-label" style={{ fontSize: '0.75rem' }}>{pName}</label>
-                      <input
-                        type="number"
-                        className="form-input"
-                        value={dispatchItems[pName]}
-                        onChange={e => setDispatchItems({ ...dispatchItems, [pName]: Math.max(0, Number(e.target.value)) })}
-                      />
-                    </div>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setShowDispatchForm(false)}>Cancel</button>
-                  <button className="btn btn-primary btn-sm" onClick={handleSaveDispatch} disabled={savingDispatch}>
-                    {savingDispatch ? 'Saving Dispatch...' : '💾 Save Truck Stock Dispatch'}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Navigation Tabs inside Workspace */}
+          {/* Navigation Tabs inside Driver Workspace */}
           <div style={{ 
             display: 'flex', 
             gap: '0.5rem', 
@@ -1159,27 +1259,505 @@ export default function DriversPage() {
             borderBottom: '1px solid var(--border)' 
           }}>
             {[
-              ...(isNagaraju ? [{ id: 'local', label: 'Route Completion & Customer Stop Sheet', icon: '🗺️' }] : []),
-              ...(isDriver2  ? [{ id: 'non-local', label: 'Route Completion & Customer Stop Sheet', icon: '🛣️' }] : []),
-              { id: 'collections', label: 'Collections', icon: '💰' },
-              { id: 'dues', label: 'Due Reports', icon: '🔴' },
-              { id: 'daily', label: 'Daily Sales', icon: '📅' },
-              { id: 'monthly', label: 'Monthly Sales', icon: '📈' },
-              { id: 'expenses', label: 'Expenses', icon: '💸' }
+              { id: 'load_dispatches', label: '🚚 Truck Load Dispatches', icon: '' },
+              { id: 'route_settlement', label: '⚖️ Route Settlement & Reconciliation', icon: '' },
+              ...(isNagaraju ? [{ id: 'local', label: '📋 Customer Stop Sheet', icon: '' }] : []),
+              ...(isDriver2  ? [{ id: 'non-local', label: '📋 Customer Stop Sheet', icon: '' }] : []),
+              { id: 'settlement_history', label: '📜 Settlement Log', icon: '' },
+              { id: 'collections', label: '💰 Collections Log', icon: '' },
+              { id: 'dues', label: '🔴 Route Dues', icon: '' },
+              { id: 'daily', label: '📅 Daily Sales', icon: '' },
+              { id: 'monthly', label: '📈 Monthly Sales', icon: '' },
+              { id: 'expenses', label: '💸 Expenses', icon: '' }
             ].map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
                 className={activeTab === tab.id ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-                style={{ borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.375rem', fontWeight: '700' }}
+                style={{ borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.375rem', fontWeight: '700', whiteSpace: 'nowrap' }}
               >
-                <span>{tab.icon}</span>
                 <span>{tab.label}</span>
               </button>
             ))}
           </div>
 
-          {/* MAIN DRIVER ROUTE COMPLETION & CUSTOMER STOP SHEET (Reuses route_runs & route_customers) */}
+          {/* =========================================================================
+              TAB 1: TRUCK LOAD DISPATCHES (PART 5 — STEP 1)
+              ========================================================================= */}
+          {activeTab === 'load_dispatches' && (
+            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              
+              <div className="card" style={{ padding: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div>
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: '800', color: '#fff', margin: 0 }}>
+                      🚚 Driver Truck Load Dispatches
+                    </h3>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-2)', margin: '0.25rem 0 0' }}>
+                      Warehouse stock issued for distribution. Deducts stock at dispatch time. Not a sales invoice.
+                    </p>
+                  </div>
+
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => setShowIssueModal(true)}
+                  >
+                    + Issue New Truck Load
+                  </button>
+                </div>
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="erp-table">
+                    <thead>
+                      <tr>
+                        <th>Dispatch Number</th>
+                        <th>Date</th>
+                        <th>Vehicle</th>
+                        <th>Route</th>
+                        <th style={{ textAlign: 'center' }}>Loaded Items</th>
+                        <th style={{ textAlign: 'center' }}>Total Qty</th>
+                        <th style={{ textAlign: 'right' }}>Load Value</th>
+                        <th style={{ textAlign: 'center' }}>Status</th>
+                        <th style={{ textAlign: 'center' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {driverLoadsList.map(load => (
+                        <tr key={load.id}>
+                          <td style={{ fontWeight: '700', color: '#60a5fa', fontFamily: 'var(--font-m)' }}>
+                            {load.dispatch_number}
+                          </td>
+                          <td>{load.dispatch_date}</td>
+                          <td>{load.vehicle_number || 'AP 16 AB 1234'}</td>
+                          <td>{load.route_name || 'Assigned Route'}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>
+                              {(load.items || []).map(it => `${it.product_name} (${it.loaded_quantity})`).join(', ')}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'center', fontWeight: '700' }}>
+                            {load.total_loaded_qty}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: '700' }}>
+                            ₹{load.total_load_value.toLocaleString('en-IN')}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <span className={`badge ${load.status === 'SETTLED' ? 'badge-success' : 'badge-primary'}`}>
+                              {load.status}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                              <button
+                                className="btn btn-secondary btn-xs"
+                                onClick={() => printLoadDispatchNote(load)}
+                                title="Print Load Dispatch Note"
+                              >
+                                🖨️ Note
+                              </button>
+                              {load.status === 'ISSUED' && (
+                                <button
+                                  className="btn btn-primary btn-xs"
+                                  onClick={() => {
+                                    initSettlementForDispatch(load)
+                                    setActiveTab('route_settlement')
+                                  }}
+                                  title="Reconcile and settle this route run"
+                                >
+                                  ⚖️ Settle Route
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {driverLoadsList.length === 0 && (
+                        <tr>
+                          <td colSpan={9} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
+                            No truck loads dispatched yet for {selectedDriver.name}. Click "+ Issue New Truck Load" to issue inventory.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* =========================================================================
+              TAB 2: ROUTE SETTLEMENT & 4-WAY RECONCILIATION (PART 5 — STEPS 3 & 4)
+              Loaded = Sold + Returned (Good) + Leaked/Damaged + Unaccounted
+              ========================================================================= */}
+          {activeTab === 'route_settlement' && (
+            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              
+              <div className="card" style={{ padding: '1.5rem', borderLeft: '4px solid #3b82f6' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
+                  <div>
+                    <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#fff', margin: 0 }}>
+                      ⚖️ Driver Route Settlement & Physical Stock Reconciliation
+                    </h3>
+                    <p style={{ fontSize: '0.8125rem', color: 'var(--text-2)', margin: '0.25rem 0 0' }}>
+                      Reconcile loaded products against actual sales, returns, and leakages. Good returns are checked back into warehouse stock.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                    <label style={{ fontSize: '0.8125rem', color: 'var(--text-2)' }}>Select Load Dispatch:</label>
+                    <select
+                      className="form-input"
+                      style={{ width: '260px' }}
+                      value={selectedDispatchToSettle?.id || ''}
+                      onChange={e => {
+                        const target = driverLoadsList.find(l => l.id === e.target.value)
+                        if (target) initSettlementForDispatch(target)
+                      }}
+                    >
+                      <option value="">-- Choose Dispatched Load --</option>
+                      {driverLoadsList.map(l => (
+                        <option key={l.id} value={l.id}>
+                          {l.dispatch_number} ({l.dispatch_date}) — {l.status}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {selectedDispatchToSettle ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    
+                    {/* Header Details */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'var(--surface-3)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
+                      <div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Dispatch Number</div>
+                        <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#60a5fa' }}>{selectedDispatchToSettle.dispatch_number}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Dispatch Date</div>
+                        <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#fff' }}>{selectedDispatchToSettle.dispatch_date}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Vehicle</div>
+                        <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#fff' }}>{selectedDispatchToSettle.vehicle_number || 'AP 16 AB 1234'}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-2)', textTransform: 'uppercase' }}>Settlement Date</div>
+                        <input
+                          type="date"
+                          className="form-input"
+                          style={{ padding: '0.25rem 0.5rem', height: '32px', fontSize: '0.85rem' }}
+                          value={settlementDate}
+                          onChange={e => setSettlementDate(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Stock Reconciliation Grid */}
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="erp-table">
+                        <thead>
+                          <tr>
+                            <th>Product Name</th>
+                            <th style={{ textAlign: 'center', width: '100px' }}>Loaded Qty</th>
+                            <th style={{ textAlign: 'center', width: '110px' }}>Sold Qty</th>
+                            <th style={{ textAlign: 'center', width: '110px' }}>Returned (Good)</th>
+                            <th style={{ textAlign: 'center', width: '110px' }}>Leaked / Damaged</th>
+                            <th style={{ textAlign: 'center', width: '100px' }}>Unaccounted</th>
+                            <th style={{ textAlign: 'right', width: '100px' }}>Rate (₹)</th>
+                            <th style={{ textAlign: 'right', width: '110px' }}>Sold Value</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {settlementRows.map((r, idx) => {
+                            const accounted = Number(r.sold_qty) + Number(r.returned_good_qty) + Number(r.leaked_damaged_qty)
+                            const unaccounted = Number(r.loaded_qty) - accounted
+                            const isOver = accounted > Number(r.loaded_qty)
+
+                            return (
+                              <tr key={idx}>
+                                <td style={{ fontWeight: '700', color: '#fff' }}>{r.product_name}</td>
+                                <td style={{ textAlign: 'center', fontWeight: '700', color: '#60a5fa' }}>{r.loaded_qty}</td>
+                                <td style={{ textAlign: 'center' }}>
+                                  <input
+                                    type="number"
+                                    className="form-input"
+                                    style={{ width: '80px', textAlign: 'center', padding: '0.25rem' }}
+                                    value={r.sold_qty}
+                                    onChange={e => {
+                                      const val = Math.max(0, Number(e.target.value))
+                                      setSettlementRows(prev => prev.map((item, i) => i === idx ? { ...item, sold_qty: val } : item))
+                                    }}
+                                  />
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                  <input
+                                    type="number"
+                                    className="form-input"
+                                    style={{ width: '80px', textAlign: 'center', padding: '0.25rem', color: '#34d399' }}
+                                    value={r.returned_good_qty}
+                                    placeholder="0"
+                                    onChange={e => {
+                                      const val = Math.max(0, Number(e.target.value))
+                                      setSettlementRows(prev => prev.map((item, i) => i === idx ? { ...item, returned_good_qty: val } : item))
+                                    }}
+                                  />
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                  <input
+                                    type="number"
+                                    className="form-input"
+                                    style={{ width: '80px', textAlign: 'center', padding: '0.25rem', color: '#f87171' }}
+                                    value={r.leaked_damaged_qty}
+                                    placeholder="0"
+                                    onChange={e => {
+                                      const val = Math.max(0, Number(e.target.value))
+                                      setSettlementRows(prev => prev.map((item, i) => i === idx ? { ...item, leaked_damaged_qty: val } : item))
+                                    }}
+                                  />
+                                </td>
+                                <td style={{ textAlign: 'center', fontWeight: '800', color: isOver ? '#f87171' : unaccounted > 0 ? '#fbbf24' : '#34d399' }}>
+                                  {isOver ? `Over by ${accounted - r.loaded_qty}` : unaccounted}
+                                </td>
+                                <td style={{ textAlign: 'right' }}>₹{r.rate}</td>
+                                <td style={{ textAlign: 'right', fontWeight: '700' }}>₹{round2(r.sold_qty * r.rate)}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Financials & Expenses Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
+                      
+                      {/* Collections Card */}
+                      <div className="card" style={{ padding: '1.25rem', background: 'var(--surface-3)' }}>
+                        <h4 style={{ margin: '0 0 1rem', fontSize: '0.95rem', fontWeight: '800', color: '#fff' }}>
+                          💰 Route Collections
+                        </h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label style={{ fontSize: '0.8125rem' }}>Cash Collected (₹):</label>
+                            <input
+                              type="number"
+                              className="form-input"
+                              style={{ width: '130px', textAlign: 'right', color: '#34d399' }}
+                              value={settlementCash}
+                              onChange={e => setSettlementCash(Math.max(0, Number(e.target.value)))}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label style={{ fontSize: '0.8125rem' }}>UPI Collected (₹):</label>
+                            <input
+                              type="number"
+                              className="form-input"
+                              style={{ width: '130px', textAlign: 'right', color: '#34d399' }}
+                              value={settlementUpi}
+                              onChange={e => setSettlementUpi(Math.max(0, Number(e.target.value)))}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label style={{ fontSize: '0.8125rem' }}>Credit Sales (Due) (₹):</label>
+                            <input
+                              type="number"
+                              className="form-input"
+                              style={{ width: '130px', textAlign: 'right', color: '#fbbf24' }}
+                              value={settlementCredit}
+                              onChange={e => setSettlementCredit(Math.max(0, Number(e.target.value)))}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Route Expenses Card */}
+                      <div className="card" style={{ padding: '1.25rem', background: 'var(--surface-3)' }}>
+                        <h4 style={{ margin: '0 0 1rem', fontSize: '0.95rem', fontWeight: '800', color: '#fff' }}>
+                          💸 Route Trip Expenses
+                        </h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label style={{ fontSize: '0.8125rem' }}>Fuel Charges (₹):</label>
+                            <input
+                              type="number"
+                              className="form-input"
+                              style={{ width: '130px', textAlign: 'right' }}
+                              value={settlementFuel}
+                              onChange={e => setSettlementFuel(Math.max(0, Number(e.target.value)))}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label style={{ fontSize: '0.8125rem' }}>Driver Bata (₹):</label>
+                            <input
+                              type="number"
+                              className="form-input"
+                              style={{ width: '130px', textAlign: 'right' }}
+                              value={settlementBata}
+                              onChange={e => setSettlementBata(Math.max(0, Number(e.target.value)))}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label style={{ fontSize: '0.8125rem' }}>Other Expenses (₹):</label>
+                            <input
+                              type="number"
+                              className="form-input"
+                              style={{ width: '130px', textAlign: 'right' }}
+                              value={settlementOtherExp}
+                              onChange={e => setSettlementOtherExp(Math.max(0, Number(e.target.value)))}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Cashier Handover Reconciliation */}
+                      <div className="card" style={{ padding: '1.25rem', background: 'var(--surface-3)' }}>
+                        <h4 style={{ margin: '0 0 1rem', fontSize: '0.95rem', fontWeight: '800', color: '#fff' }}>
+                          ⚖️ Cashier Handover Reconciliation
+                        </h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.85rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ color: 'var(--text-2)' }}>Expected Handover:</span>
+                            <strong>₹{Math.max(0, settlementCash + settlementUpi - (settlementFuel + settlementBata + settlementOtherExp)).toLocaleString('en-IN')}</strong>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
+                            <span style={{ fontWeight: '700', color: '#fff' }}>Actual Handover (₹):</span>
+                            <input
+                              type="number"
+                              className="form-input"
+                              style={{ width: '130px', textAlign: 'right', fontWeight: '800', color: '#34d399' }}
+                              value={settlementActualHandover}
+                              onChange={e => setSettlementActualHandover(Math.max(0, Number(e.target.value)))}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
+                            <span style={{ color: 'var(--text-2)' }}>Difference:</span>
+                            <strong style={{ color: (settlementActualHandover - Math.max(0, settlementCash + settlementUpi - (settlementFuel + settlementBata + settlementOtherExp))) === 0 ? '#34d399' : '#f87171' }}>
+                              ₹{(settlementActualHandover - Math.max(0, settlementCash + settlementUpi - (settlementFuel + settlementBata + settlementOtherExp))).toLocaleString('en-IN')}
+                            </strong>
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+
+                    {/* Discrepancy Reason field */}
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontWeight: '700' }}>
+                        Discrepancy Explanation / Notes (Required if shortage or cash mismatch exists):
+                      </label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. 2 leaked cans reported, ₹50 shortage approved for route toll"
+                        value={settlementDiscrepancyReason}
+                        onChange={e => setSettlementDiscrepancyReason(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Confirmation Button */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <input
+                          type="checkbox"
+                          id="autoGen"
+                          checked={autoGenerateCustomerBills}
+                          onChange={e => setAutoGenerateCustomerBills(e.target.checked)}
+                        />
+                        <label htmlFor="autoGen" style={{ fontSize: '0.8125rem', color: 'var(--text-2)', cursor: 'pointer' }}>
+                          Generate official customer invoices for completed sales (prevents double inventory deduction)
+                        </label>
+                      </div>
+
+                      <button
+                        className="btn btn-primary btn-lg"
+                        style={{ minWidth: '260px' }}
+                        onClick={handleConfirmRouteSettlement}
+                        disabled={settlingRoute}
+                      >
+                        {settlingRoute ? 'Processing Settlement...' : '🏁 Confirm & Finalize Route Settlement'}
+                      </button>
+                    </div>
+
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
+                    Please select an issued truck load from the dropdown above to begin settlement and reconciliation.
+                  </div>
+                )}
+              </div>
+
+            </div>
+          )}
+
+          {/* =========================================================================
+              TAB 3: SETTLEMENT HISTORY (AUDIT TRAIL)
+              ========================================================================= */}
+          {activeTab === 'settlement_history' && (
+            <div className="card" style={{ padding: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: '800', color: '#fff', margin: 0 }}>
+                    📜 Confirmed Route Settlement Audit Log
+                  </h3>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-2)', margin: '0.25rem 0 0' }}>
+                    Historical log of reconciled routes, physical stock returns, leakages, and cash collections.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ overflowX: 'auto' }}>
+                <table className="erp-table">
+                  <thead>
+                    <tr>
+                      <th>Settlement #</th>
+                      <th>Date</th>
+                      <th style={{ textAlign: 'center' }}>Loaded</th>
+                      <th style={{ textAlign: 'center' }}>Sold</th>
+                      <th style={{ textAlign: 'center' }}>Good Returns</th>
+                      <th style={{ textAlign: 'center' }}>Leaked / Scrap</th>
+                      <th style={{ textAlign: 'center' }}>Shortage</th>
+                      <th style={{ textAlign: 'right' }}>Net Collections</th>
+                      <th style={{ textAlign: 'center' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {driverSettlementsList.map(s => (
+                      <tr key={s.id}>
+                        <td style={{ fontWeight: '700', color: '#60a5fa', fontFamily: 'var(--font-m)' }}>
+                          {s.settlement_number}
+                        </td>
+                        <td>{s.settlement_date}</td>
+                        <td style={{ textAlign: 'center' }}>{s.total_loaded_qty}</td>
+                        <td style={{ textAlign: 'center', fontWeight: '700' }}>{s.total_sold_qty}</td>
+                        <td style={{ textAlign: 'center', color: '#34d399', fontWeight: '700' }}>{s.total_returned_qty}</td>
+                        <td style={{ textAlign: 'center', color: '#f87171', fontWeight: '700' }}>{s.total_leaked_qty}</td>
+                        <td style={{ textAlign: 'center', color: s.unaccounted_qty > 0 ? '#fbbf24' : 'inherit' }}>{s.unaccounted_qty}</td>
+                        <td style={{ textAlign: 'right', fontWeight: '800', color: '#34d399' }}>₹{s.actual_collection.toLocaleString('en-IN')}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            className="btn btn-secondary btn-xs"
+                            onClick={() => printSettlementSummary(s)}
+                          >
+                            🖨️ Summary
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {driverSettlementsList.length === 0 && (
+                      <tr>
+                        <td colSpan={9} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
+                          No confirmed route settlements recorded yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* MAIN DRIVER ROUTE COMPLETION & CUSTOMER STOP SHEET */}
           {(activeTab === 'local' || activeTab === 'non-local') && (
             <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               
@@ -1272,7 +1850,6 @@ export default function DriversPage() {
                                 />
                               </td>
                               <td style={{ textAlign: 'right' }}>
-                                {/* EDITABLE RATE FIELD — AUTO PRE-FILLED WITH default_rate */}
                                 <input
                                   type="number"
                                   className="form-input"
@@ -1371,53 +1948,6 @@ export default function DriversPage() {
                   </div>
                 </div>
 
-                {/* Trip Expenses Form */}
-                <div style={{ background: 'var(--surface-3)', padding: '1.25rem', borderRadius: '0.75rem', border: '1px solid var(--border)', marginBottom: '1.5rem' }}>
-                  <h4 style={{ fontSize: '0.9rem', fontWeight: '700', color: '#fff', margin: '0 0 1rem' }}>💸 Log Trip Expenses for Reconciliation</h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
-                    <div className="form-group">
-                      <label className="form-label">Fuel Charges (₹)</label>
-                      <input
-                        type="number"
-                        className="form-input"
-                        placeholder="0"
-                        value={expenseForm.fuel || ''}
-                        onChange={e => setExpenseForm({ ...expenseForm, fuel: Math.max(0, Number(e.target.value)) })}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Driver Bata (₹)</label>
-                      <input
-                        type="number"
-                        className="form-input"
-                        placeholder="0"
-                        value={expenseForm.bata || ''}
-                        onChange={e => setExpenseForm({ ...expenseForm, bata: Math.max(0, Number(e.target.value)) })}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Other Expenses (₹)</label>
-                      <input
-                        type="number"
-                        className="form-input"
-                        placeholder="0"
-                        value={expenseForm.other || ''}
-                        onChange={e => setExpenseForm({ ...expenseForm, other: Math.max(0, Number(e.target.value)) })}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Remarks</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="Optional remarks"
-                        value={expenseForm.remarks}
-                        onChange={e => setExpenseForm({ ...expenseForm, remarks: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                </div>
-
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
                   <div>
                     <span style={{ fontSize: '0.8125rem', color: 'var(--text-2)' }}>Net Reconciliation Collection: </span>
@@ -1441,7 +1971,7 @@ export default function DriversPage() {
             </div>
           )}
 
-          {/* TAB 3: COLLECTIONS */}
+          {/* TAB 4: COLLECTIONS */}
           {activeTab === 'collections' && (
             <div className="card" style={{ overflow: 'hidden' }}>
               <div className="card-header"><h3 className="card-title">💰 Today's Collections Log</h3></div>
@@ -1481,7 +2011,7 @@ export default function DriversPage() {
             </div>
           )}
 
-          {/* TAB 4: DUE REPORTS */}
+          {/* TAB 5: DUE REPORTS */}
           {activeTab === 'dues' && (
             <div className="card" style={{ overflow: 'hidden' }}>
               <div className="card-header"><h3 className="card-title">🔴 Pending Route Dues</h3></div>
@@ -1515,7 +2045,7 @@ export default function DriversPage() {
             </div>
           )}
 
-          {/* TAB 5: DAILY SALES */}
+          {/* TAB 6: DAILY SALES */}
           {activeTab === 'daily' && (
             <div className="card" style={{ overflow: 'hidden' }}>
               <div className="card-header"><h3 className="card-title">📅 Today's Sales Activity</h3></div>
@@ -1555,16 +2085,16 @@ export default function DriversPage() {
             </div>
           )}
 
-          {/* TAB 6: MONTHLY SALES */}
+          {/* TAB 7: MONTHLY SALES */}
           {activeTab === 'monthly' && (
             <div className="card" style={{ overflow: 'hidden' }}>
-              <div className="card-header"><h3 className="card-title">📈 Monthly Consolidated Sales Log</h3></div>
+              <div className="card-header"><h3 className="card-title">📈 Current Month Route Sales</h3></div>
               <div style={{ overflowX: 'auto' }}>
                 <table className="erp-table">
                   <thead>
                     <tr>
-                      <th>Invoice No</th>
                       <th>Date</th>
+                      <th>Invoice No</th>
                       <th>Customer Name</th>
                       <th>Product</th>
                       <th style={{ textAlign: 'center' }}>Qty</th>
@@ -1574,8 +2104,8 @@ export default function DriversPage() {
                   <tbody>
                     {monthlySalesList.map((s, idx) => (
                       <tr key={idx}>
-                        <td style={{ fontFamily: 'var(--font-m)', color: '#3b82f6' }}>{s.invoice_number}</td>
                         <td>{s.sale_date}</td>
+                        <td style={{ fontFamily: 'var(--font-m)', color: '#3b82f6' }}>{s.invoice_number}</td>
                         <td style={{ fontWeight: '600', color: '#fff' }}>{s.customer_name}</td>
                         <td>{s.product_name}</td>
                         <td style={{ textAlign: 'center' }}>{s.quantity}</td>
@@ -1585,7 +2115,7 @@ export default function DriversPage() {
                     {monthlySalesList.length === 0 && (
                       <tr>
                         <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-2)' }}>
-                          No sales recorded this month.
+                          No sales registered this month.
                         </td>
                       </tr>
                     )}
@@ -1595,11 +2125,10 @@ export default function DriversPage() {
             </div>
           )}
 
-          {/* TAB 7: EXPENSES */}
+          {/* TAB 8: EXPENSES */}
           {activeTab === 'expenses' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               
-              {/* Log Expense Form */}
               <div className="card" style={{ padding: '1.5rem' }}>
                 <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff', marginBottom: '1rem' }}>
                   💸 Log Trip Expense
@@ -1664,7 +2193,6 @@ export default function DriversPage() {
                 </button>
               </div>
 
-              {/* Expenses History List */}
               <div className="card" style={{ overflow: 'hidden' }}>
                 <div className="card-header"><h3 className="card-title">📜 Expense History Log</h3></div>
                 <div style={{ overflowX: 'auto' }}>
@@ -1711,7 +2239,124 @@ export default function DriversPage() {
         </div>
       )}
 
-      {/* FLOATING BILLING MODAL SHEET */}
+      {/* MODAL 1: ISSUE NEW TRUCK LOAD DISPATCH */}
+      {showIssueModal && selectedDriver && (
+        <div className="modal-overlay" style={{ display: 'flex', zIndex: 1000 }}>
+          <div className="modal-content" style={{ maxWidth: '640px' }}>
+            <div className="modal-header">
+              <h3 style={{ fontSize: '1.15rem', fontWeight: '800', color: '#fff', margin: 0 }}>
+                🚚 Issue Truck Load Dispatch to Driver
+              </h3>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowIssueModal(false)}>✕</button>
+            </div>
+
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Driver Name</label>
+                  <input className="form-input" value={selectedDriver.name} readOnly style={{ background: 'var(--surface-3)', color: 'var(--text-2)' }} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Dispatch Date</label>
+                  <input type="date" className="form-input" value={loadDispatchDate} onChange={e => setLoadDispatchDate(e.target.value)} />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Vehicle Number</label>
+                  <input type="text" className="form-input" placeholder="e.g. AP 16 AB 1234" value={loadVehicle} onChange={e => setLoadVehicle(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Assigned Route</label>
+                  <select className="form-input" value={loadRouteId} onChange={e => setLoadRouteId(e.target.value)}>
+                    <option value="">Select Route...</option>
+                    {routes.map(r => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Line items table */}
+              <div>
+                <label className="form-label" style={{ fontWeight: '700', marginBottom: '0.5rem' }}>Products to Load (Deducts Warehouse Stock):</label>
+                <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: '0.5rem' }}>
+                  <table className="erp-table" style={{ margin: 0 }}>
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th style={{ width: '90px', textAlign: 'center' }}>Loaded Qty</th>
+                        <th style={{ width: '100px', textAlign: 'right' }}>Rate (₹)</th>
+                        <th style={{ width: '110px', textAlign: 'right' }}>Amount (₹)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loadItems.map((it, idx) => (
+                        <tr key={idx}>
+                          <td style={{ fontWeight: '600', color: '#fff' }}>{it.product_name}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <input
+                              type="number"
+                              className="form-input"
+                              style={{ width: '75px', textAlign: 'center', padding: '0.25rem' }}
+                              value={it.loaded_quantity}
+                              onChange={e => {
+                                const val = Math.max(0, Number(e.target.value))
+                                setLoadItems(prev => prev.map((item, i) => i === idx ? { ...item, loaded_quantity: val, amount: round2(val * item.rate) } : item))
+                              }}
+                            />
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <input
+                              type="number"
+                              className="form-input"
+                              style={{ width: '85px', textAlign: 'right', padding: '0.25rem' }}
+                              value={it.rate}
+                              onChange={e => {
+                                const val = Math.max(0, Number(e.target.value))
+                                setLoadItems(prev => prev.map((item, i) => i === idx ? { ...item, rate: val, amount: round2(item.loaded_quantity * val) } : item))
+                              }}
+                            />
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: '700' }}>
+                            ₹{round2(it.loaded_quantity * it.rate)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--surface-3)', padding: '0.75rem 1rem', borderRadius: '0.5rem', fontWeight: '700' }}>
+                <span>Total Load Quantity: {loadItems.reduce((s, it) => s + Number(it.loaded_quantity), 0)} units</span>
+                <span style={{ color: '#60a5fa' }}>Total Load Value: ₹{loadItems.reduce((s, it) => s + (it.loaded_quantity * it.rate), 0).toLocaleString('en-IN')}</span>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Notes</label>
+                <input type="text" className="form-input" placeholder="Optional dispatch notes..." value={loadNotes} onChange={e => setLoadNotes(e.target.value)} />
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+                <button className="btn btn-ghost" onClick={() => setShowIssueModal(false)}>Cancel</button>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleIssueDriverLoad}
+                  disabled={loadIssuing || loadItems.reduce((s, it) => s + Number(it.loaded_quantity), 0) <= 0}
+                >
+                  {loadIssuing ? 'Issuing Load...' : '🚚 Confirm & Issue Dispatch'}
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: FLOATING BILLING MODAL SHEET */}
       {billingModalOpen && billingCustomer && (
         <div className="modal-overlay" style={{ display: 'flex', zIndex: 1000 }}>
           <div className="modal-content" style={{ maxWidth: '480px' }}>
@@ -1838,6 +2483,14 @@ export default function DriversPage() {
           </div>
         </div>
       )}
+
+      {/* RECEIPT & SETTLEMENT PREVIEW MODAL */}
+      <ReceiptPreviewModal
+        isOpen={!!previewBill}
+        onClose={() => setPreviewBill(null)}
+        bill={previewBill}
+        initialFormat="80mm"
+      />
 
     </div>
   )

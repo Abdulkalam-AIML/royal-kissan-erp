@@ -81,6 +81,7 @@ export interface LineFinancialInput {
   gstRate?: number
   isTaxInclusive?: boolean
   isGstEnabled?: boolean
+  isInterstate?: boolean
   costPrice?: number
 }
 
@@ -105,6 +106,7 @@ export interface BillFinancialInput {
   extraDiscountType?: 'flat' | 'percent'
   paidAmount?: number
   isGstEnabled?: boolean
+  isInterstate?: boolean
 }
 
 export interface BillFinancialOutput {
@@ -345,9 +347,17 @@ export function calculateLineFinancials(input: LineFinancialInput): LineFinancia
   }
 
   const lineTotal = round2(taxable + gst)
-  const cgst = round2(gst / 2)
-  const sgst = round2(gst - cgst) // ensures cgst + sgst === gst
-  const igst = 0
+  const isInterstate = Boolean(input.isInterstate)
+  let cgst = 0
+  let sgst = 0
+  let igst = 0
+
+  if (isInterstate) {
+    igst = gst
+  } else {
+    cgst = round2(gst / 2)
+    sgst = round2(gst - cgst) // ensures cgst + sgst === gst
+  }
   const cogsAmount = round2(qty * costPrice)
   const grossProfit = round2(taxable - cogsAmount)
 
@@ -398,9 +408,17 @@ export function calculateBillFinancials(input: BillFinancialInput): BillFinancia
     gstAmount = round2(rawGst * factor)
   }
 
-  const cgstAmount = round2(gstAmount / 2)
-  const sgstAmount = round2(gstAmount - cgstAmount)
-  const igstAmount = 0
+  const isInterstate = Boolean(input.isInterstate) || items.some(it => (it.igstAmount || 0) > 0)
+  let cgstAmount = 0
+  let sgstAmount = 0
+  let igstAmount = 0
+
+  if (isInterstate) {
+    igstAmount = gstAmount
+  } else {
+    cgstAmount = round2(gstAmount / 2)
+    sgstAmount = round2(gstAmount - cgstAmount)
+  }
 
   const calculatedGrandTotal = round2(taxableAmount + gstAmount)
   const roundOff = 0

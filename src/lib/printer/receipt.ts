@@ -28,7 +28,11 @@ export interface BillData {
   dealer_gstin?: string | null
   dealer_code?: string | null
   subtotal: number
+  taxable_amount?: number
   gst_amount: number
+  cgst_amount?: number
+  sgst_amount?: number
+  igst_amount?: number
   discount_amount?: number
   total_amount: number
   payment_method?: string
@@ -172,7 +176,15 @@ export function generateReceiptBuffer(
   // 6. Totals Breakdown
   builder.divider('-')
   builder.twoColumn('Subtotal:', `Rs.${Number(bill.subtotal).toFixed(2)}`)
-  if (bill.gst_amount > 0) {
+  if (bill.taxable_amount && bill.taxable_amount > 0 && Math.abs(bill.taxable_amount - bill.subtotal) > 0.01) {
+    builder.twoColumn('Taxable Amount:', `Rs.${Number(bill.taxable_amount).toFixed(2)}`)
+  }
+  if (bill.igst_amount && bill.igst_amount > 0) {
+    builder.twoColumn('IGST (Inter-State):', `Rs.${Number(bill.igst_amount).toFixed(2)}`)
+  } else if (bill.cgst_amount && bill.cgst_amount > 0) {
+    builder.twoColumn('CGST (Central Tax):', `Rs.${Number(bill.cgst_amount).toFixed(2)}`)
+    builder.twoColumn('SGST (State Tax):', `Rs.${Number(bill.sgst_amount || bill.cgst_amount).toFixed(2)}`)
+  } else if (bill.gst_amount > 0) {
     builder.twoColumn('GST Amount:', `Rs.${Number(bill.gst_amount).toFixed(2)}`)
   }
   if (bill.discount_amount && bill.discount_amount > 0) {

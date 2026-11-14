@@ -135,9 +135,11 @@ export default function ReceiptPreviewModal({
   const subtotal = Number(bill.subtotal || 0)
   const discount = Number(bill.discount_amount || 0)
   const gstAmount = Number(bill.gst_amount || 0)
-  const cgstAmount = isGstOn ? gstAmount / 2 : 0
-  const sgstAmount = isGstOn ? gstAmount / 2 : 0
-  const taxableAmount = Math.max(0, subtotal - discount)
+  const igstAmount = Number((bill as any).igst_amount || 0)
+  const isInterstate = igstAmount > 0
+  const cgstAmount = isGstOn && !isInterstate ? Number((bill as any).cgst_amount ?? gstAmount / 2) : 0
+  const sgstAmount = isGstOn && !isInterstate ? Number((bill as any).sgst_amount ?? gstAmount / 2) : 0
+  const taxableAmount = Number((bill as any).taxable_amount ?? Math.max(0, subtotal - discount))
   const paidAmount = Number(bill.paid_amount || 0)
   const dueAmount = Number(bill.due_amount || 0)
 
@@ -564,14 +566,23 @@ export default function ReceiptPreviewModal({
                   </div>
                   {isGstOn && (
                     <>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#52525b' }}>
-                        <span>CGST (9%):</span>
-                        <span>₹{cgstAmount.toFixed(2)}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#52525b' }}>
-                        <span>SGST (9%):</span>
-                        <span>₹{sgstAmount.toFixed(2)}</span>
-                      </div>
+                      {isInterstate ? (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#52525b' }}>
+                          <span>IGST (Inter-State Tax):</span>
+                          <span>₹{igstAmount.toFixed(2)}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#52525b' }}>
+                            <span>CGST:</span>
+                            <span>₹{cgstAmount.toFixed(2)}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#52525b' }}>
+                            <span>SGST:</span>
+                            <span>₹{sgstAmount.toFixed(2)}</span>
+                          </div>
+                        </>
+                      )}
                     </>
                   )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: 900, borderTop: '2px solid #000', paddingTop: '6px', marginTop: '4px', color: '#000' }}>
@@ -698,14 +709,23 @@ export default function ReceiptPreviewModal({
                 )}
                 {isGstOn && (
                   <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>CGST (9%):</span>
-                      <span>₹{cgstAmount.toFixed(2)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>SGST (9%):</span>
-                      <span>₹{sgstAmount.toFixed(2)}</span>
-                    </div>
+                    {isInterstate ? (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>IGST:</span>
+                        <span>₹{igstAmount.toFixed(2)}</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>CGST:</span>
+                          <span>₹{cgstAmount.toFixed(2)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>SGST:</span>
+                          <span>₹{sgstAmount.toFixed(2)}</span>
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
               </div>
