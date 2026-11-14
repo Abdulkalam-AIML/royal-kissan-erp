@@ -38,6 +38,8 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { BillData } from '@/lib/printer/receipt'
 import ReceiptPreviewModal from '@/components/printer/ReceiptPreviewModal'
+import { generateBillPDFBlob } from '@/lib/utils/pdf-generator'
+import { sendInvoiceWhatsApp } from '@/lib/services/whatsapp-service'
 
 interface UnifiedBillingFormProps {
   initialBillType?: UnifiedBillType
@@ -557,40 +559,62 @@ export default function UnifiedBillingForm({
         onSuccess(savedResult)
       }
 
-      // Handle Print Workflow
-      if (shouldPrint) {
-        const billDataObj: BillData = {
-          id: savedResult.id,
-          invoice_number: savedResult.invoice_number,
-          bill_type: savedResult.bill_type,
-          customer_name: savedResult.customer_name,
-          customer_phone: effectivePhone,
-          customer_address: effectiveAddress,
-          customer_gstin: effectiveGstin,
-          subtotal: subtotal,
-          gst_amount: totalGst,
-          discount_amount: totalDiscount,
-          total_amount: grandTotal,
-          payment_method: paymentMode,
-          cash_amount: cashAmount,
-          upi_amount: upiAmount,
-          paid_amount: paidAmount,
-          due_amount: dueAmount,
-          payment_status: savedResult.payment_status,
-          date: date,
-          items: cartItems.map(i => ({
-            product_name: i.product_name,
-            quantity: i.quantity,
-            rate: i.rate,
-            amount: i.total,
-            item_discount: i.item_discount,
-            gst_rate: isGstEnabled ? i.gst_rate : 0,
-            gst_amount: isGstEnabled ? i.gst_amount : 0,
-            total: i.total
-          }))
-        }
-        setSavedBillForPrint(billDataObj)
+      // Construct unified bill data object for receipt preview and WhatsApp sharing
+      const billDataObj: BillData = {
+        id: savedResult.id,
+        invoice_number: savedResult.invoice_number,
+        bill_type: savedResult.bill_type,
+        customer_name: savedResult.customer_name,
+        customer_phone: effectivePhone,
+        customer_address: effectiveAddress,
+        customer_gstin: effectiveGstin,
+        subtotal: subtotal,
+        gst_amount: totalGst,
+        discount_amount: totalDiscount,
+        total_amount: grandTotal,
+        payment_method: paymentMode,
+        cash_amount: cashAmount,
+        upi_amount: upiAmount,
+        paid_amount: paidAmount,
+        due_amount: dueAmount,
+        payment_status: savedResult.payment_status,
+        date: date,
+        items: cartItems.map(i => ({
+          product_name: i.product_name,
+          quantity: i.quantity,
+          rate: i.rate,
+          amount: i.total,
+          item_discount: i.item_discount,
+          gst_rate: isGstEnabled ? i.gst_rate : 0,
+          gst_amount: isGstEnabled ? i.gst_amount : 0,
+          total: i.total
+        }))
       }
+
+      // Check for automatic WhatsApp sharing (if enabled in settings)
+      try {
+        const { data: waSettings } = await supabase
+          .from('whatsapp_settings')
+          .select('enabled, auto_send_invoices')
+          .eq('organization_id', 'default_org')
+          .maybeSingle()
+
+        if (waSettings?.enabled !== false && waSettings?.auto_send_invoices && effectivePhone) {
+          const pdfRes = generateBillPDFBlob(billDataObj)
+          sendInvoiceWhatsApp({
+            invoiceId: savedResult.id,
+            billData: billDataObj,
+            recipientPhone: effectivePhone,
+            pdfBase64: pdfRes.base64,
+            pdfFilename: pdfRes.filename
+          }).catch(err => console.warn('Auto WhatsApp send error:', err))
+        }
+      } catch (waErr) {
+        console.warn('Auto WhatsApp check failed:', waErr)
+      }
+
+      // Open receipt modal for preview, print and instant WhatsApp sharing
+      setSavedBillForPrint(billDataObj)
 
       // Reset form for next invoice
       setCartItems([])

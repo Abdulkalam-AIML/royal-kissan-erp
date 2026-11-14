@@ -864,7 +864,7 @@ export default function PurchasesPage() {
                         onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
                       >
                         <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: '#fbbf24', fontFamily: 'var(--font-mono)' }}>
-                          {notif.purchase_number || 'TEST-PING'}
+                          {notif.purchase_number || notif.invoice_number || 'TEST-PING'}
                         </td>
                         <td style={{ padding: '0.85rem 1rem', fontWeight: 600, color: '#fff', whiteSpace: 'nowrap' }}>
                           {notif.recipient_phone}

@@ -301,6 +301,7 @@ export interface WhatsAppSettings {
   default_recipient_phone: string
   recipient_type: 'owner' | 'admin' | 'supplier' | 'custom'
   send_to_supplier: boolean
+  auto_send_invoices?: boolean
   webhook_verify_token?: string | null
   updated_at?: string
 }
@@ -311,6 +312,12 @@ export interface WhatsAppNotification {
   id: string
   purchase_id?: string | null
   purchase_number?: string | null
+  invoice_id?: string | null
+  invoice_number?: string | null
+  bill_type?: string | null
+  pdf_filename?: string | null
+  pdf_url?: string | null
+  media_id?: string | null
   recipient_phone: string
   recipient_name?: string | null
   recipient_type?: string

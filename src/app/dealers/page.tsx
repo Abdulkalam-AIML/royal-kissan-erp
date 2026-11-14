@@ -47,6 +47,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Input, Select } from '@/components/ui/Input'
 import { SkeletonTable, SkeletonCard } from '@/components/ui/Skeleton'
 import ReceiptPreviewModal from '@/components/printer/ReceiptPreviewModal'
+import WhatsAppShareModal from '@/components/whatsapp/WhatsAppShareModal'
 import { BillData } from '@/lib/printer/receipt'
 import { round2 } from '@/lib/pricing/pricing-engine'
 import {
@@ -160,6 +161,7 @@ export default function DealersPage() {
   >('sales_matrix')
   
   const [previewBill, setPreviewBill] = useState<BillData | null>(null)
+  const [whatsAppBill, setWhatsAppBill] = useState<any | null>(null)
 
   // Dispatches & Returns Data State
   const [dispatchesList, setDispatchesList] = useState<DealerDispatchWithItems[]>([])
@@ -1269,7 +1271,64 @@ export default function DealersPage() {
                     { key: 'grand_total', title: 'Total (₹)', render: r => <span style={{ fontWeight: 800, color: '#fff' }}>₹{Number(r.grand_total || r.total_amount).toFixed(2)}</span> },
                     { key: 'paid_amount', title: 'Paid (₹)', render: r => <span style={{ color: '#34d399' }}>₹{Number(r.paid_amount || 0).toFixed(2)}</span> },
                     { key: 'due_amount', title: 'Due (₹)', render: r => <span style={{ color: Number(r.due_amount) > 0 ? '#f87171' : '#a1a1aa' }}>₹{Number(r.due_amount || 0).toFixed(2)}</span> },
-                    { key: 'payment_status', title: 'Status', render: r => <Badge variant={r.payment_status === 'paid' ? 'success' : 'warning'}>{r.payment_status}</Badge> }
+                    { key: 'payment_status', title: 'Status', render: r => <Badge variant={r.payment_status === 'paid' ? 'success' : 'warning'}>{r.payment_status}</Badge> },
+                    {
+                      key: 'actions',
+                      title: 'Actions',
+                      align: 'center',
+                      render: r => (
+                        <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={async () => {
+                              const { data: itemRows } = await supabase.from('bill_items').select('*').eq('bill_id', r.id)
+                              const items = itemRows && itemRows.length > 0 ? itemRows : [
+                                { product_name: 'Water Can 20L', quantity: 1, rate: Number(r.total_amount) || 0, amount: Number(r.total_amount) || 0 }
+                              ]
+                              setPreviewBill({
+                                ...r,
+                                dealer_name: selectedDealer?.name || r.customer_name,
+                                dealer_gstin: selectedDealer?.gst_number || r.customer_gstin,
+                                dealer_phone: selectedDealer?.phone || r.customer_phone,
+                                dealer_address: selectedDealer?.address || r.customer_address,
+                                previous_balance: selectedDealer?.outstanding_amount || 0,
+                                items
+                              })
+                            }}
+                          >
+                            View
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            style={{ color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.3)' }}
+                            icon={
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="#25D366">
+                                <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.694.075-2.223-.559-1.848-.767-3.037-2.656-3.129-2.78-.093-.123-.746-.991-.746-1.888 0-.898.469-1.339.636-1.52.167-.182.366-.228.487-.228.121 0 .243.002.348.006.111.005.26-.042.407.311.152.365.518 1.265.564 1.357.045.092.076.2.015.322-.061.122-.092.199-.183.307-.091.107-.191.24-.273.322-.091.091-.186.19-.08.373.106.183.473.78 1.016 1.263.699.623 1.288.816 1.472.907.183.092.29.077.397-.046.107-.123.456-.533.578-.716.121-.183.243-.153.407-.092.164.061 1.042.492 1.22.583.178.091.297.137.34.213.045.076.045.441-.099.846z"/>
+                              </svg>
+                            }
+                            onClick={async () => {
+                              const { data: itemRows } = await supabase.from('bill_items').select('*').eq('bill_id', r.id)
+                              const items = itemRows && itemRows.length > 0 ? itemRows : [
+                                { product_name: 'Water Can 20L', quantity: 1, rate: Number(r.total_amount) || 0, amount: Number(r.total_amount) || 0 }
+                              ]
+                              setWhatsAppBill({
+                                ...r,
+                                dealer_name: selectedDealer?.name || r.customer_name,
+                                dealer_gstin: selectedDealer?.gst_number || r.customer_gstin,
+                                dealer_phone: selectedDealer?.phone || r.customer_phone,
+                                dealer_address: selectedDealer?.address || r.customer_address,
+                                previous_balance: selectedDealer?.outstanding_amount || 0,
+                                items
+                              })
+                            }}
+                          >
+                            WhatsApp
+                          </Button>
+                        </div>
+                      )
+                    }
                   ]}
                   data={dealerBills}
                 />
@@ -1592,6 +1651,15 @@ export default function DealersPage() {
           onClose={() => setPreviewBill(null)}
           bill={previewBill}
           initialFormat="80mm"
+        />
+      )}
+
+      {/* WHATSAPP INVOICE SHARE MODAL */}
+      {whatsAppBill && (
+        <WhatsAppShareModal
+          isOpen={!!whatsAppBill}
+          onClose={() => setWhatsAppBill(null)}
+          bill={whatsAppBill}
         />
       )}
     </div>

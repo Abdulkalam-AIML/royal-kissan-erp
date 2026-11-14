@@ -207,17 +207,132 @@ export async function saveWhatsAppSettings(
 }
 
 /**
+ * Generates the professional WhatsApp Invoice / Bill Confirmation text message
+ * Strict compliance with Royal Kissan standard template for Customers and Dealers
+ */
+export function formatInvoiceWhatsAppMessage(bill: any): string {
+  const isDispatchNote = String(bill.bill_type || '').toUpperCase().includes('DISPATCH NOTE')
+  const recipientName = bill.dealer_name || bill.customer_name || 'Valued Customer'
+  const invoiceNumber = bill.invoice_number || bill.bill_number || `INV-${bill.id ? String(bill.id).slice(0, 8).toUpperCase() : 'NEW'}`
+  const invoiceDate = bill.date || bill.dispatch_date || new Date().toISOString().split('T')[0]
+  
+  const subtotal = Number(bill.subtotal || bill.taxable_amount || bill.total_amount || 0)
+  const gst = Number(bill.gst_amount || 0)
+  const grandTotal = Number(bill.grand_total || bill.total_amount || (subtotal + gst))
+  const paid = Number(bill.paid_amount || 0)
+  const due = Number(bill.due_amount || Math.max(0, grandTotal - paid))
+  const previousBalance = Number(bill.previous_balance || bill.opening_balance || bill.outstanding_balance || 0)
+
+  if (isDispatchNote) {
+    const totalQty = bill.total_quantity || (bill.items || []).reduce((acc: number, i: any) => acc + (Number(i.quantity) || 0), 0)
+    return `*ROYAL KISSAN — LOAD DISPATCH NOTE*
+
+Hello ${recipientName},
+
+Your Royal Kissan daily load dispatch record is ready.
+
+*Dispatch Details:*
+Dispatch Number: ${invoiceNumber}
+Dispatch Date: ${invoiceDate}
+Total Quantity: ${totalQty} units
+Load Value: ₹${grandTotal.toFixed(2)}
+
+*Note: This is an inventory load dispatch record, NOT a finalized sales tax invoice. Return and leakage adjustments will be applied upon settlement.*
+
+Please find your dispatch document attached as a PDF.
+
+Thank you.
+*ROYAL KISSAN ERP*`
+  }
+
+  let financialSummary = `Invoice Number: ${invoiceNumber}
+Invoice Date: ${invoiceDate}
+Total Amount: ₹${grandTotal.toFixed(2)}`
+
+  if (gst > 0) {
+    financialSummary += `\nGST Included: ₹${gst.toFixed(2)}`
+  }
+
+  financialSummary += `\nAmount Paid: ₹${paid.toFixed(2)}
+Remaining Due: ₹${due.toFixed(2)}`
+
+  if (previousBalance > 0) {
+    financialSummary += `\nPrevious Outstanding: ₹${previousBalance.toFixed(2)}
+Total Outstanding: ₹${(grandTotal + previousBalance).toFixed(2)}`
+  }
+
+  const paymentMethod = bill.payment_mode ? `\nPayment Method: ${String(bill.payment_mode).toUpperCase()}` : ''
+
+  return `*ROYAL KISSAN — INVOICE CONFIRMATION*
+
+Hello ${recipientName},
+
+Your Royal Kissan invoice is ready.
+
+*Invoice Details:*
+${financialSummary}${paymentMethod}
+
+Please find your official invoice attached as a PDF.
+
+Thank you for choosing Royal Kissan.
+*ROYAL KISSAN ERP*`
+}
+
+/**
+ * Sends an invoice on WhatsApp via the backend API endpoint
+ */
+export async function sendInvoiceWhatsApp(payload: {
+  invoiceId?: string
+  billData: any
+  recipientPhone?: string
+  forceResend?: boolean
+  pdfBase64?: string
+  pdfFilename?: string
+}): Promise<{
+  success: boolean
+  status?: string
+  isDuplicate?: boolean
+  messageId?: string
+  mediaId?: string
+  hasDocumentAttachment?: boolean
+  recipient?: string
+  waLink?: string
+  message: string
+}> {
+  try {
+    const res = await fetch('/api/whatsapp/send-invoice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    return await res.json()
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `Failed to connect to WhatsApp API: ${err?.message || err}`
+    }
+  }
+}
+
+/**
  * Retrieves notification delivery audit history
  */
-export async function getNotificationHistory(limit: number = 50): Promise<WhatsAppNotification[]> {
+export async function getNotificationHistory(limit: number = 50, filterType?: 'all' | 'invoice' | 'purchase'): Promise<WhatsAppNotification[]> {
   const supabase = createClient()
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('whatsapp_notifications')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(limit)
 
+    if (filterType === 'invoice') {
+      query = query.eq('message_type', 'invoice_document')
+    } else if (filterType === 'purchase') {
+      query = query.eq('message_type', 'purchase_confirmation')
+    }
+
+    const { data, error } = await query
     if (error || !data) return []
     return data as WhatsAppNotification[]
   } catch {

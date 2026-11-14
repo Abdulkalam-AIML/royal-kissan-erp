@@ -15,6 +15,7 @@ import {
   PrintBridgeWorkerRecord,
   PrintJobRecord 
 } from '@/lib/services/print-job-service'
+import WhatsAppShareModal from '@/components/whatsapp/WhatsAppShareModal'
 
 interface ReceiptPreviewModalProps {
   isOpen: boolean
@@ -68,6 +69,7 @@ export default function ReceiptPreviewModal({
   const [trackedJob, setTrackedJob] = useState<PrintJobRecord | null>(null)
   const [isConfirmingPrint, setIsConfirmingPrint] = useState(false)
   const [isRetrying, setIsRetrying] = useState(false)
+  const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false)
 
   useEffect(() => {
     if (!isOpen) {
@@ -1194,6 +1196,31 @@ export default function ReceiptPreviewModal({
               {printing ? 'Opening...' : 'Browser Print / PDF'}
             </button>
 
+            {/* Prominent WhatsApp Share Action */}
+            <button
+              onClick={() => setIsWhatsAppOpen(true)}
+              style={{
+                padding: '0.55rem 1.15rem',
+                borderRadius: '6px',
+                backgroundColor: '#25D366',
+                color: '#000',
+                fontWeight: 800,
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                boxShadow: '0 2px 10px rgba(37, 211, 102, 0.25)'
+              }}
+              title="Send bill document & invoice summary on WhatsApp"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.694.075-2.223-.559-1.848-.767-3.037-2.656-3.129-2.78-.093-.123-.746-.991-.746-1.888 0-.898.469-1.339.636-1.52.167-.182.366-.228.487-.228.121 0 .243.002.348.006.111.005.26-.042.407.311.152.365.518 1.265.564 1.357.045.092.076.2.015.322-.061.122-.092.199-.183.307-.091.107-.191.24-.273.322-.091.091-.186.19-.08.373.106.183.473.78 1.016 1.263.699.623 1.288.816 1.472.907.183.092.29.077.397-.046.107-.123.456-.533.578-.716.121-.183.243-.153.407-.092.164.061 1.042.492 1.22.583.178.091.297.137.34.213.045.076.045.441-.099.846z"/>
+              </svg>
+              SEND BILL ON WHATSAPP
+            </button>
+
             {/* Primary TVS Thermal Print Bridge Action */}
             <button
               onClick={handleThermalBridgePrint}
@@ -1219,6 +1246,15 @@ export default function ReceiptPreviewModal({
           </div>
         </div>
       </div>
+
+      {/* WhatsApp Document Sharing Modal */}
+      {isWhatsAppOpen && bill && (
+        <WhatsAppShareModal
+          isOpen={isWhatsAppOpen}
+          onClose={() => setIsWhatsAppOpen(false)}
+          bill={bill}
+        />
+      )}
     </div>
   )
 }
