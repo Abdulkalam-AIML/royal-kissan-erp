@@ -134,7 +134,7 @@ export default function BillingRouteSelector({
         </div>
         {activeAssignment ? (
           <Badge variant="success" icon={<Navigation style={{ width: '11px', height: '11px' }} />}>
-            Active Run: Vehicle {activeAssignment.vehicle_number || selectedDriver?.vehicle_number || 'AP 16 AB 1234'}
+            Active Run: Vehicle {activeAssignment.vehicle_number || selectedDriver?.vehicle_number || 'Not Assigned'}
           </Badge>
         ) : (
           <Badge variant="neutral">

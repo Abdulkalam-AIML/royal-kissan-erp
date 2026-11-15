@@ -43,3 +43,4 @@ VALUES
   ('AP 16 CD 5678', 'Can Carrier Truck', 150, 'AVAILABLE', 'Heavy distribution vehicle'),
   ('AP 16 EF 9012', 'Water Bags Carrier', 120, 'AVAILABLE', 'Light commercial vehicle')
 ON CONFLICT (registration_number) DO NOTHING;
+

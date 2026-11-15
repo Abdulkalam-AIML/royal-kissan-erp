@@ -358,7 +358,7 @@ export default function DriverProfilePage() {
                       </td>
                       <td style={{ padding: '0.65rem 0.85rem' }}>
                         <div style={{ fontWeight: 600, color: '#f4f4f5' }}>{r.route_name || 'Standard Route'}</div>
-                        <div style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>{r.vehicle_number || 'Van'}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>{r.vehicle_number || 'Not Assigned'}</div>
                       </td>
                       <td style={{ padding: '0.65rem 0.85rem', textAlign: 'center', fontWeight: 700 }}>{r.total_loaded_qty}</td>
                       <td style={{ padding: '0.65rem 0.85rem', textAlign: 'center', color: '#34d399', fontWeight: 700 }}>{r.total_sold_qty || 0}</td>
@@ -698,7 +698,7 @@ export default function DriverProfilePage() {
                     Route {r.dispatch_number} &mdash; {r.status}
                   </div>
                   <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>
-                    Loaded {r.total_loaded_qty} units on {r.dispatch_date} ({r.vehicle_number || 'Van'}). Sales: ₹{Number(r.total_sales_amount || 0).toLocaleString('en-IN')}.
+                    Loaded {r.total_loaded_qty} units on {r.dispatch_date} ({r.vehicle_number ? `Vehicle: ${r.vehicle_number}` : 'Vehicle: Not Assigned'}). Sales: ₹{Number(r.total_sales_amount || 0).toLocaleString('en-IN')}.
                   </div>
                 </div>
                 <span style={{ fontSize: '0.72rem', color: '#71717a' }}>{r.created_at?.slice(0, 16)}</span>
@@ -710,3 +710,4 @@ export default function DriverProfilePage() {
     </div>
   )
 }
+

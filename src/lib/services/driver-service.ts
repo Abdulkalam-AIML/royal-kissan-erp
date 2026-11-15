@@ -39,6 +39,7 @@ export interface RouteDispatchRecord {
   dispatch_number: string
   driver_id: string
   driver_name: string
+  vehicle_id?: string | null
   vehicle_number?: string | null
   route_id?: string | null
   route_name?: string | null
@@ -110,11 +111,32 @@ export interface RouteExpenseRecord {
   created_at?: string
 }
 
+export interface SavedRoute {
+  id: string
+  name: string
+  area?: string | null
+  description?: string | null
+  driver_id?: string | null
+  is_active: boolean
+}
+
+export interface VehicleOption {
+  id: string
+  registration_number: string
+  vehicle_type?: string | null
+  capacity?: number | null
+  status: string
+  assigned_driver_id?: string | null
+  assigned_driver_name?: string | null
+}
+
 export interface StartRoutePayload {
+  route_id?: string | null
   route_name: string
   driver_id: string
   driver_name: string
-  vehicle_number: string
+  vehicle_id?: string | null
+  vehicle_number?: string | null
   dispatch_date: string
   start_time: string
   start_location: string
@@ -128,6 +150,20 @@ export interface StartRoutePayload {
     rate: number
     amount: number
   }>
+}
+
+export interface UpdateRoutePayload {
+  dispatch_id: string
+  route_id: string
+  route_name?: string
+  driver_id?: string
+  vehicle_id?: string | null
+  vehicle_number?: string | null
+  dispatch_date?: string
+  start_time?: string
+  start_location?: string
+  destination_areas?: string
+  notes?: string
 }
 
 export interface FinalizeRoutePayload {
@@ -242,6 +278,40 @@ export async function saveDriver(
 }
 
 /**
+ * MODULE 0: Saved Routes & Vehicles List
+ */
+export async function getSavedRoutes(): Promise<SavedRoute[]> {
+  const supabase = createClient()
+  try {
+    const { data, error } = await supabase
+      .from('routes')
+      .select('id, name, area, description, driver_id, is_active')
+      .eq('is_active', true)
+      .order('name', { ascending: true })
+
+    if (error || !data) return []
+    return data as SavedRoute[]
+  } catch {
+    return []
+  }
+}
+
+export async function getAvailableVehicles(): Promise<VehicleOption[]> {
+  const supabase = createClient()
+  try {
+    const { data, error } = await supabase
+      .from('vehicles')
+      .select('id, registration_number, vehicle_type, capacity, status, assigned_driver_id, assigned_driver_name')
+      .order('registration_number', { ascending: true })
+
+    if (error || !data) return []
+    return data as VehicleOption[]
+  } catch {
+    return []
+  }
+}
+
+/**
  * MODULE 2A: START A ROUTE
  * Reserves/deducts stock once, creates dispatch reference, changes driver status to ON_ROUTE,
  * marks route IN_PROGRESS. Stored in DB permanently.
@@ -255,10 +325,12 @@ export async function startDriverRoute(
 
   const supabase = createClient()
   const dispatchHeader = {
+    route_id: payload.route_id || null,
+    route_name: payload.route_name,
     driver_id: payload.driver_id,
     driver_name: payload.driver_name,
-    vehicle_number: payload.vehicle_number,
-    route_name: payload.route_name,
+    vehicle_id: payload.vehicle_id || null,
+    vehicle_number: payload.vehicle_number || null,
     dispatch_date: payload.dispatch_date || new Date().toISOString().split('T')[0],
     start_time: payload.start_time || new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
     start_location: payload.start_location || 'Main Factory Plant',
@@ -281,6 +353,7 @@ export async function startDriverRoute(
     emitDataChange('routes')
     emitDataChange('stock')
     emitDataChange('products')
+    emitDataChange('vehicles')
 
     return {
       success: true,
@@ -289,6 +362,55 @@ export async function startDriverRoute(
     }
   } catch (err: any) {
     return { success: false, message: `Error starting route: ${err?.message || err}` }
+  }
+}
+
+/**
+ * MODULE 2B: UPDATE AN EXISTING IN-PROGRESS ROUTE
+ */
+export async function updateDriverRoute(
+  payload: UpdateRoutePayload
+): Promise<{ success: boolean; dispatch?: any; message?: string }> {
+  if (!payload.dispatch_id) {
+    return { success: false, message: 'Dispatch ID is required' }
+  }
+  if (!payload.route_id) {
+    return { success: false, message: 'Route Name is mandatory from saved routes list' }
+  }
+
+  const supabase = createClient()
+  try {
+    const { data, error } = await supabase.rpc('update_driver_route', {
+      p_payload: {
+        dispatch_id: payload.dispatch_id,
+        route_id: payload.route_id,
+        route_name: payload.route_name,
+        driver_id: payload.driver_id || null,
+        vehicle_id: payload.vehicle_id || null,
+        vehicle_number: payload.vehicle_number || null,
+        dispatch_date: payload.dispatch_date,
+        start_time: payload.start_time,
+        start_location: payload.start_location,
+        destination_areas: payload.destination_areas,
+        notes: payload.notes
+      }
+    })
+
+    if (error) {
+      return { success: false, message: `Failed to update route: ${error.message}` }
+    }
+
+    emitDataChange('routes')
+    emitDataChange('drivers')
+    emitDataChange('vehicles')
+
+    return {
+      success: true,
+      dispatch: data,
+      message: 'Route details updated successfully.'
+    }
+  } catch (err: any) {
+    return { success: false, message: `Error updating route: ${err?.message || err}` }
   }
 }
 

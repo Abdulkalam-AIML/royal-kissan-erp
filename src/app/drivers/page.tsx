@@ -44,6 +44,9 @@ import {
   getDrivers,
   saveDriver,
   startDriverRoute,
+  updateDriverRoute,
+  getSavedRoutes,
+  getAvailableVehicles,
   getActiveRoutes,
   getCompletedRoutes,
   recordRouteCustomerSale,
@@ -55,7 +58,9 @@ import {
   RouteDispatchRecord,
   RouteLoadItem,
   RouteCustomerSale,
-  DriverDashboardStats
+  DriverDashboardStats,
+  SavedRoute,
+  VehicleOption
 } from '@/lib/services/driver-service'
 import { generateBillPDF } from '@/lib/utils/pdf-generator'
 
@@ -78,16 +83,21 @@ export default function DriversAndRoutesPage() {
   const [activeRoutes, setActiveRoutes] = useState<RouteDispatchRecord[]>([])
   const [completedRoutes, setCompletedRoutes] = useState<RouteDispatchRecord[]>([])
   const [products, setProducts] = useState<any[]>([])
+  const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>([])
+  const [vehiclesList, setVehiclesList] = useState<VehicleOption[]>([])
+  const [routeSearchTerm, setRouteSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
 
   // Start Route Form State
   const [startRouteForm, setStartRouteForm] = useState({
+    route_id: '',
     route_name: '',
     driver_id: '',
+    vehicle_id: '',
     vehicle_number: '',
     dispatch_date: new Date().toISOString().split('T')[0],
     start_time: '08:30 AM',
-    start_location: 'Main Factory Plant, Guntur',
+    start_location: 'Main Factory Warehouse',
     destination_areas: '',
     notes: '',
     items: [
@@ -95,6 +105,24 @@ export default function DriversAndRoutesPage() {
     ]
   })
   const [startingRoute, setStartingRoute] = useState(false)
+
+  // Edit Route Modal State
+  const [showEditRouteModal, setShowEditRouteModal] = useState(false)
+  const [editingRouteDispatch, setEditingRouteDispatch] = useState<RouteDispatchRecord | null>(null)
+  const [editRouteForm, setEditRouteForm] = useState({
+    dispatch_id: '',
+    route_id: '',
+    route_name: '',
+    driver_id: '',
+    vehicle_id: '',
+    vehicle_number: '',
+    dispatch_date: '',
+    start_time: '',
+    start_location: '',
+    destination_areas: '',
+    notes: ''
+  })
+  const [savingEditRoute, setSavingEditRoute] = useState(false)
 
   // Active Route Sub-Modals
   const [selectedActiveRoute, setSelectedActiveRoute] = useState<RouteDispatchRecord | null>(null)
@@ -145,8 +173,8 @@ export default function DriversAndRoutesPage() {
     name: '',
     phone: '',
     address: '',
-    assigned_vehicle: 'Tata Ace 407',
-    vehicle_number: 'AP 16 AB 1234',
+    assigned_vehicle: '',
+    vehicle_number: '',
     license_number: '',
     joining_date: new Date().toISOString().split('T')[0],
     salary: 18000,
@@ -165,7 +193,7 @@ export default function DriversAndRoutesPage() {
   const supabase = createClient()
 
   // Live Sync Listeners
-  useDataSyncListener(['drivers', 'routes', 'bills', 'sales', 'stock'], () => {
+  useDataSyncListener(['drivers', 'routes', 'bills', 'sales', 'stock', 'vehicles'], () => {
     loadAllData()
   })
 
@@ -176,12 +204,14 @@ export default function DriversAndRoutesPage() {
   async function loadAllData() {
     setLoading(true)
     try {
-      const [stats, drvs, actv, cmpl, { data: prods }] = await Promise.all([
+      const [stats, drvs, actv, cmpl, { data: prods }, sRoutes, vList] = await Promise.all([
         getDriverDashboardStats(),
         getDrivers(),
         getActiveRoutes(),
         getCompletedRoutes(),
-        supabase.from('products').select('id, name, unit, default_rate, stock_quantity').order('name')
+        supabase.from('products').select('id, name, unit, default_rate, stock_quantity').order('name'),
+        getSavedRoutes(),
+        getAvailableVehicles()
       ])
 
       setDashboardStats(stats)
@@ -189,6 +219,8 @@ export default function DriversAndRoutesPage() {
       setActiveRoutes(actv)
       setCompletedRoutes(cmpl)
       setProducts(prods || [])
+      setSavedRoutes(sRoutes)
+      setVehiclesList(vList)
     } catch (err) {
       console.warn('Error loading driver & route data:', err)
     } finally {
@@ -245,12 +277,20 @@ export default function DriversAndRoutesPage() {
   }
 
   async function handleStartRouteSubmit() {
-    if (!startRouteForm.route_name.trim()) {
-      alert('Route Name is required (e.g. Chintalapudi Route)')
+    if (!startRouteForm.route_id) {
+      alert('Route Name is mandatory. Please select a route from the saved routes list.')
       return
     }
     if (!startRouteForm.driver_id) {
       alert('Please select an assigned driver')
+      return
+    }
+    if (!startRouteForm.dispatch_date) {
+      alert('Route Date is required')
+      return
+    }
+    if (!startRouteForm.items || startRouteForm.items.length === 0) {
+      alert('At least one product item must be loaded.')
       return
     }
 
@@ -260,13 +300,22 @@ export default function DriversAndRoutesPage() {
       return
     }
 
+    // Vehicle is optional - do not generate fake vehicle numbers
+    const vId = startRouteForm.vehicle_id || null
+    let vNum = startRouteForm.vehicle_number?.trim() || null
+    if (vNum === 'Not Assigned' || vNum === '' || vNum === 'NONE') {
+      vNum = null
+    }
+
     setStartingRoute(true)
     try {
       const res = await startDriverRoute({
+        route_id: startRouteForm.route_id,
         route_name: startRouteForm.route_name,
         driver_id: selectedDriver.id,
         driver_name: selectedDriver.name,
-        vehicle_number: startRouteForm.vehicle_number || selectedDriver.vehicle_number || 'AP 16 AB 1234',
+        vehicle_id: vId,
+        vehicle_number: vNum,
         dispatch_date: startRouteForm.dispatch_date,
         start_time: startRouteForm.start_time,
         start_location: startRouteForm.start_location,
@@ -283,12 +332,14 @@ export default function DriversAndRoutesPage() {
       alert(`✅ ${res.message}`)
       // Reset form and transition to Active Routes tab
       setStartRouteForm({
+        route_id: '',
         route_name: '',
         driver_id: '',
+        vehicle_id: '',
         vehicle_number: '',
         dispatch_date: new Date().toISOString().split('T')[0],
         start_time: '08:30 AM',
-        start_location: 'Main Factory Plant, Guntur',
+        start_location: 'Main Factory Warehouse',
         destination_areas: '',
         notes: '',
         items: [
@@ -301,6 +352,77 @@ export default function DriversAndRoutesPage() {
       alert(`Error starting route: ${e?.message || e}`)
     } finally {
       setStartingRoute(false)
+    }
+  }
+
+  // --- EDIT ROUTE ACTIONS ---
+  function openEditRouteModal(route: RouteDispatchRecord) {
+    setEditingRouteDispatch(route)
+    const matchedVehicle = vehiclesList.find(v => 
+      (route.vehicle_id && v.id === route.vehicle_id) || 
+      (route.vehicle_number && v.registration_number.toLowerCase() === route.vehicle_number.toLowerCase())
+    )
+
+    setEditRouteForm({
+      dispatch_id: route.id,
+      route_id: route.route_id || '',
+      route_name: route.route_name || '',
+      driver_id: route.driver_id || '',
+      vehicle_id: matchedVehicle?.id || route.vehicle_id || '',
+      vehicle_number: route.vehicle_number || '',
+      dispatch_date: route.dispatch_date || new Date().toISOString().split('T')[0],
+      start_time: route.start_time || '08:30 AM',
+      start_location: route.start_location || 'Main Factory Warehouse',
+      destination_areas: route.destination_areas || '',
+      notes: route.notes || ''
+    })
+    setShowEditRouteModal(true)
+  }
+
+  async function handleEditRouteSubmit() {
+    if (!editRouteForm.route_id) {
+      alert('Route Name is mandatory from the saved routes list.')
+      return
+    }
+    if (!editRouteForm.driver_id) {
+      alert('Driver is required')
+      return
+    }
+
+    setSavingEditRoute(true)
+    try {
+      const vId = editRouteForm.vehicle_id || null
+      let vNum = editRouteForm.vehicle_number?.trim() || null
+      if (vNum === 'Not Assigned' || vNum === '') {
+        vNum = null
+      }
+
+      const res = await updateDriverRoute({
+        dispatch_id: editRouteForm.dispatch_id,
+        route_id: editRouteForm.route_id,
+        route_name: editRouteForm.route_name,
+        driver_id: editRouteForm.driver_id,
+        vehicle_id: vId,
+        vehicle_number: vNum,
+        dispatch_date: editRouteForm.dispatch_date,
+        start_time: editRouteForm.start_time,
+        start_location: editRouteForm.start_location,
+        destination_areas: editRouteForm.destination_areas,
+        notes: editRouteForm.notes
+      })
+
+      if (!res.success) {
+        alert(res.message || 'Failed to update route')
+        return
+      }
+
+      setShowEditRouteModal(false)
+      await loadAllData()
+      alert('Route details updated successfully!')
+    } catch (err: any) {
+      alert('Error updating route: ' + (err?.message || err))
+    } finally {
+      setSavingEditRoute(false)
     }
   }
 
@@ -570,8 +692,8 @@ export default function DriversAndRoutesPage() {
       name: '',
       phone: '',
       address: '',
-      assigned_vehicle: 'Tata Ace 407',
-      vehicle_number: 'AP 16 AB 1234',
+      assigned_vehicle: '',
+      vehicle_number: '',
       license_number: '',
       joining_date: new Date().toISOString().split('T')[0],
       salary: 18000,
@@ -881,7 +1003,7 @@ export default function DriversAndRoutesPage() {
                       </div>
                       <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.45rem', fontSize: '0.8rem', color: '#a1a1aa', flexWrap: 'wrap' }}>
                         <span>👤 Driver: <strong style={{ color: '#fff' }}>{route.driver_name}</strong></span>
-                        <span>🚚 Vehicle: <strong style={{ color: '#fff' }}>{route.vehicle_number || 'AP 16 AB 1234'}</strong></span>
+                        <span>🚚 Vehicle: <strong style={{ color: route.vehicle_number ? '#fff' : '#a1a1aa' }}>{route.vehicle_number || 'Not Assigned'}</strong></span>
                         <span>📅 Date: <strong style={{ color: '#fff' }}>{route.dispatch_date}</strong></span>
                         <span>⏰ Started: <strong style={{ color: '#fff' }}>{route.start_time || '08:30 AM'}</strong></span>
                         {route.destination_areas && <span>📍 Destination: <strong style={{ color: '#fff' }}>{route.destination_areas}</strong></span>}
@@ -980,6 +1102,14 @@ export default function DriversAndRoutesPage() {
                     </Button>
 
                     <Button
+                      variant="outline"
+                      onClick={() => openEditRouteModal(route)}
+                      icon={<Edit style={{ width: '13px', height: '13px', color: '#60a5fa' }} />}
+                    >
+                      Edit Route
+                    </Button>
+
+                    <Button
                       variant="secondary"
                       onClick={() => setViewRouteRecord(route)}
                       icon={<Eye style={{ width: '13px', height: '13px' }} />}
@@ -1012,31 +1142,116 @@ export default function DriversAndRoutesPage() {
             Start &amp; Assign Delivery Route
           </h2>
           <p style={{ color: '#a1a1aa', fontSize: '0.82rem', marginBottom: '1.5rem' }}>
-            Assign a driver, vehicle, and load inventory. Inventory is reserved and deducted once from warehouse stock. Route remains active in dashboard until manually ended.
+            Select a saved route and assigned driver. Vehicle assignment is optional. Inventory is reserved and deducted from warehouse stock upon route launch.
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-            <Input
-              label="Route Name *"
-              placeholder="e.g. Chintalapudi Route"
-              value={startRouteForm.route_name}
-              onChange={(e) => setStartRouteForm({ ...startRouteForm, route_name: e.target.value })}
-            />
+            {/* 1. ROUTE NAME - MANDATORY SEARCHABLE DROPDOWN */}
+            <div style={{ width: '100%' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  color: '#a1a1aa',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  marginBottom: '0.35rem',
+                }}
+              >
+                Route Name * <span style={{ color: '#fbbf24', textTransform: 'none' }}>(Select from Saved Routes)</span>
+              </label>
 
+              {/* Quick Search Filter */}
+              <div style={{ position: 'relative', marginBottom: '0.35rem' }}>
+                <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '14px', height: '14px', color: '#71717a' }} />
+                <input
+                  type="text"
+                  placeholder="Search saved routes..."
+                  value={routeSearchTerm}
+                  onChange={(e) => setRouteSearchTerm(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.45rem 0.75rem 0.45rem 2.2rem',
+                    backgroundColor: '#09090b',
+                    border: '1px solid #27272a',
+                    borderRadius: '8px',
+                    color: '#f4f4f5',
+                    fontSize: '0.8rem',
+                  }}
+                />
+              </div>
+
+              {/* Mandatory Dropdown */}
+              <select
+                value={startRouteForm.route_id}
+                onChange={(e) => {
+                  const rId = e.target.value
+                  const found = savedRoutes.find(r => r.id === rId)
+                  if (found) {
+                    setStartRouteForm(prev => ({
+                      ...prev,
+                      route_id: found.id,
+                      route_name: found.name,
+                      destination_areas: prev.destination_areas || found.area || found.name,
+                      driver_id: prev.driver_id || (found.driver_id || '')
+                    }))
+                  } else {
+                    setStartRouteForm(prev => ({
+                      ...prev,
+                      route_id: '',
+                      route_name: ''
+                    }))
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '0.65rem 0.9rem',
+                  backgroundColor: '#09090b',
+                  border: `1px solid ${!startRouteForm.route_id ? '#fbbf24' : '#3f3f46'}`,
+                  borderRadius: '12px',
+                  color: '#f4f4f5',
+                  fontSize: '0.85rem',
+                }}
+              >
+                <option value="">-- Select Saved Route (Required) --</option>
+                {savedRoutes
+                  .filter(r => !routeSearchTerm.trim() || r.name.toLowerCase().includes(routeSearchTerm.toLowerCase()) || (r.area && r.area.toLowerCase().includes(routeSearchTerm.toLowerCase())))
+                  .map(r => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} {r.area ? `(Area: ${r.area})` : ''}
+                    </option>
+                  ))}
+              </select>
+              {!startRouteForm.route_id ? (
+                <span style={{ fontSize: '0.72rem', color: '#fbbf24', marginTop: '0.25rem', display: 'block' }}>
+                  * Required: Must be chosen from the saved routes database list.
+                </span>
+              ) : (
+                <span style={{ fontSize: '0.72rem', color: '#34d399', marginTop: '0.25rem', display: 'block' }}>
+                  ✓ Selected: {startRouteForm.route_name}
+                </span>
+              )}
+            </div>
+
+            {/* 2. ASSIGNED DRIVER - MANDATORY DROPDOWN */}
             <Select
               label="Assigned Driver *"
               value={startRouteForm.driver_id}
               onChange={(e) => {
                 const dId = e.target.value
                 const found = drivers.find(d => d.id === dId)
+                // If driver has an assigned vehicle and no vehicle chosen yet, can set it
+                const driverVeh = vehiclesList.find(v => v.registration_number === found?.vehicle_number)
                 setStartRouteForm({
                   ...startRouteForm,
                   driver_id: dId,
-                  vehicle_number: found?.vehicle_number || startRouteForm.vehicle_number
+                  vehicle_id: startRouteForm.vehicle_id || driverVeh?.id || '',
+                  vehicle_number: startRouteForm.vehicle_number || found?.vehicle_number || ''
                 })
               }}
               options={[
-                { value: '', label: '-- Select Driver --' },
+                { value: '', label: '-- Select Driver (Required) --' },
                 ...drivers.map(d => ({
                   value: d.id,
                   label: `${d.name} (${d.status || 'AVAILABLE'}) - ${d.phone}`
@@ -1044,13 +1259,68 @@ export default function DriversAndRoutesPage() {
               ]}
             />
 
-            <Input
-              label="Vehicle Registration Number *"
-              placeholder="e.g. AP 16 AB 1234"
-              value={startRouteForm.vehicle_number}
-              onChange={(e) => setStartRouteForm({ ...startRouteForm, vehicle_number: e.target.value })}
-            />
+            {/* 3. ASSIGNED VEHICLE - OPTIONAL DROPDOWN */}
+            <div style={{ width: '100%' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  color: '#a1a1aa',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  marginBottom: '0.35rem',
+                }}
+              >
+                Assigned Vehicle <span style={{ color: '#71717a', textTransform: 'none' }}>(Optional)</span>
+              </label>
 
+              <select
+                value={startRouteForm.vehicle_id}
+                onChange={(e) => {
+                  const vId = e.target.value
+                  if (!vId) {
+                    setStartRouteForm(prev => ({
+                      ...prev,
+                      vehicle_id: '',
+                      vehicle_number: ''
+                    }))
+                  } else {
+                    const found = vehiclesList.find(v => v.id === vId)
+                    setStartRouteForm(prev => ({
+                      ...prev,
+                      vehicle_id: vId,
+                      vehicle_number: found?.registration_number || ''
+                    }))
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '0.65rem 0.9rem',
+                  backgroundColor: '#09090b',
+                  border: '1px solid #3f3f46',
+                  borderRadius: '12px',
+                  color: '#f4f4f5',
+                  fontSize: '0.85rem',
+                }}
+              >
+                <option value="">-- None (Not Assigned) --</option>
+                {vehiclesList.map(v => (
+                  <option 
+                    key={v.id} 
+                    value={v.id}
+                    disabled={v.status === 'MAINTENANCE' || v.status === 'INACTIVE'}
+                  >
+                    {v.registration_number} ({v.vehicle_type || 'Fleet'}) - [{v.status}]
+                  </option>
+                ))}
+              </select>
+              <span style={{ fontSize: '0.72rem', color: '#71717a', marginTop: '0.25rem', display: 'block' }}>
+                Optional. Leave empty to dispatch without a vehicle ("Not Assigned").
+              </span>
+            </div>
+
+            {/* 4. ROUTE DATE */}
             <Input
               type="date"
               label="Route Date *"
@@ -1058,6 +1328,7 @@ export default function DriversAndRoutesPage() {
               onChange={(e) => setStartRouteForm({ ...startRouteForm, dispatch_date: e.target.value })}
             />
 
+            {/* 5. STARTING TIME */}
             <Input
               label="Starting Time"
               placeholder="e.g. 08:30 AM"
@@ -1065,6 +1336,7 @@ export default function DriversAndRoutesPage() {
               onChange={(e) => setStartRouteForm({ ...startRouteForm, start_time: e.target.value })}
             />
 
+            {/* 6. STARTING LOCATION */}
             <Input
               label="Starting Location"
               placeholder="e.g. Main Plant Warehouse"
@@ -1072,6 +1344,7 @@ export default function DriversAndRoutesPage() {
               onChange={(e) => setStartRouteForm({ ...startRouteForm, start_location: e.target.value })}
             />
 
+            {/* 7. DESTINATION AREAS */}
             <Input
               label="Destination / Route Areas"
               placeholder="e.g. Chintalapudi, Guntur Rural"
@@ -1219,7 +1492,7 @@ export default function DriversAndRoutesPage() {
                 render: r => (
                   <div>
                     <div style={{ fontWeight: 700, color: '#f4f4f5' }}>{r.driver_name}</div>
-                    <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>{r.vehicle_number || 'AP 16 AB 1234'}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>{r.vehicle_number || 'Not Assigned'}</div>
                   </div>
                 )
               },
@@ -1334,8 +1607,8 @@ export default function DriversAndRoutesPage() {
                 title: 'Vehicle & Reg',
                 render: d => (
                   <div>
-                    <div style={{ fontWeight: 600, color: '#d4d4d8', fontSize: '0.85rem' }}>{d.assigned_vehicle || 'Tata Ace 407'}</div>
-                    <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#fbbf24' }}>{d.vehicle_number || 'AP 16 AB 1234'}</div>
+                    <div style={{ fontWeight: 600, color: '#d4d4d8', fontSize: '0.85rem' }}>{d.assigned_vehicle || 'Not Assigned'}</div>
+                    <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#fbbf24' }}>{d.vehicle_number || 'Not Assigned'}</div>
                   </div>
                 )
               },
@@ -1926,6 +2199,197 @@ export default function DriversAndRoutesPage() {
       )}
 
       {/* =========================================================================
+          MODAL: EDIT ACTIVE ROUTE ASSIGNMENT
+          ========================================================================= */}
+      {showEditRouteModal && editingRouteDispatch && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div style={{ backgroundColor: '#18181b', border: '1px solid rgba(251, 191, 36, 0.4)', borderRadius: '12px', width: '100%', maxWidth: '580px', maxHeight: '90vh', overflowY: 'auto', padding: '1.75rem', boxShadow: '0 20px 40px rgba(0,0,0,0.8)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fbbf24', margin: 0 }}>
+                  Edit Route Assignment
+                </h3>
+                <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>
+                  Update route name, assigned vehicle, driver, or timing for dispatch #{editingRouteDispatch.id.slice(0, 8)}
+                </span>
+              </div>
+              <button onClick={() => setShowEditRouteModal(false)} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}>
+                <X style={{ width: '18px', height: '18px' }} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Mandatory Route Name Dropdown */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.35rem' }}>
+                  Route Name * (Mandatory - Select from Saved Routes)
+                </label>
+                <select
+                  value={editRouteForm.route_id}
+                  onChange={(e) => {
+                    const rId = e.target.value
+                    const found = savedRoutes.find(r => r.id === rId)
+                    if (found) {
+                      setEditRouteForm(prev => ({
+                        ...prev,
+                        route_id: found.id,
+                        route_name: found.name,
+                        destination_areas: prev.destination_areas || found.area || found.name
+                      }))
+                    } else {
+                      setEditRouteForm(prev => ({
+                        ...prev,
+                        route_id: '',
+                        route_name: ''
+                      }))
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.9rem',
+                    backgroundColor: '#09090b',
+                    border: `1px solid ${!editRouteForm.route_id ? '#ef4444' : '#3f3f46'}`,
+                    borderRadius: '10px',
+                    color: '#f4f4f5',
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  <option value="">-- Select Saved Route (Required) --</option>
+                  {savedRoutes.map(r => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} {r.area ? `(Area: ${r.area})` : ''}
+                    </option>
+                  ))}
+                </select>
+                {!editRouteForm.route_id ? (
+                  <span style={{ fontSize: '0.72rem', color: '#ef4444', marginTop: '0.25rem', display: 'block' }}>
+                    * Required: Route Name must be selected from the database list.
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '0.72rem', color: '#34d399', marginTop: '0.25rem', display: 'block' }}>
+                    ✓ Canonical Route: {editRouteForm.route_name}
+                  </span>
+                )}
+              </div>
+
+              {/* Driver Dropdown */}
+              <Select
+                label="Assigned Driver *"
+                value={editRouteForm.driver_id}
+                onChange={(e) => setEditRouteForm({ ...editRouteForm, driver_id: e.target.value })}
+                options={[
+                  { value: '', label: '-- Select Driver --' },
+                  ...drivers.map(d => ({
+                    value: d.id,
+                    label: `${d.name} (${d.status || 'AVAILABLE'}) - ${d.phone}`
+                  }))
+                ]}
+              />
+
+              {/* Assigned Vehicle (Optional Dropdown) */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.35rem' }}>
+                  Assigned Vehicle <span style={{ color: '#71717a', textTransform: 'none' }}>(Optional)</span>
+                </label>
+                <select
+                  value={editRouteForm.vehicle_id}
+                  onChange={(e) => {
+                    const vId = e.target.value
+                    if (!vId) {
+                      setEditRouteForm(prev => ({
+                        ...prev,
+                        vehicle_id: '',
+                        vehicle_number: ''
+                      }))
+                    } else {
+                      const found = vehiclesList.find(v => v.id === vId)
+                      setEditRouteForm(prev => ({
+                        ...prev,
+                        vehicle_id: vId,
+                        vehicle_number: found?.registration_number || ''
+                      }))
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.9rem',
+                    backgroundColor: '#09090b',
+                    border: '1px solid #3f3f46',
+                    borderRadius: '10px',
+                    color: '#f4f4f5',
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  <option value="">-- None (Not Assigned) --</option>
+                  {vehiclesList.map(v => (
+                    <option key={v.id} value={v.id}>
+                      {v.registration_number} ({v.vehicle_type || 'Fleet'}) - [{v.status}]
+                    </option>
+                  ))}
+                </select>
+                <span style={{ fontSize: '0.72rem', color: '#71717a', marginTop: '0.25rem', display: 'block' }}>
+                  Select a vehicle or choose "-- None (Not Assigned) --" to leave vehicle unassigned.
+                </span>
+              </div>
+
+              {/* Date & Time */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <Input
+                  type="date"
+                  label="Route Date *"
+                  value={editRouteForm.dispatch_date}
+                  onChange={(e) => setEditRouteForm({ ...editRouteForm, dispatch_date: e.target.value })}
+                />
+                <Input
+                  label="Starting Time"
+                  placeholder="e.g. 08:30 AM"
+                  value={editRouteForm.start_time}
+                  onChange={(e) => setEditRouteForm({ ...editRouteForm, start_time: e.target.value })}
+                />
+              </div>
+
+              {/* Start Location & Destination */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <Input
+                  label="Start Location"
+                  placeholder="e.g. Main Plant"
+                  value={editRouteForm.start_location}
+                  onChange={(e) => setEditRouteForm({ ...editRouteForm, start_location: e.target.value })}
+                />
+                <Input
+                  label="Destination Areas"
+                  placeholder="e.g. Chintalapudi"
+                  value={editRouteForm.destination_areas}
+                  onChange={(e) => setEditRouteForm({ ...editRouteForm, destination_areas: e.target.value })}
+                />
+              </div>
+
+              {/* Notes */}
+              <Input
+                label="Remarks / Notes (Optional)"
+                placeholder="Special delivery instructions or remarks"
+                value={editRouteForm.notes}
+                onChange={(e) => setEditRouteForm({ ...editRouteForm, notes: e.target.value })}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '1rem' }}>
+              <Button variant="outline" onClick={() => setShowEditRouteModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                disabled={savingEditRoute || !editRouteForm.route_id}
+                onClick={handleEditRouteSubmit}
+              >
+                {savingEditRoute ? 'Saving Changes...' : 'Save Route Changes'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
           MODAL 5: ADD / EDIT DRIVER MODAL
           ========================================================================= */}
       {showDriverModal && (
@@ -1963,8 +2427,8 @@ export default function DriversAndRoutesPage() {
               />
 
               <Input
-                label="Vehicle Registration Number"
-                placeholder="e.g. AP 16 AB 1234"
+                label="Vehicle Registration Number (Optional)"
+                placeholder="Optional - e.g. AP 16 CD 5678"
                 value={driverForm.vehicle_number}
                 onChange={(e) => setDriverForm({ ...driverForm, vehicle_number: e.target.value })}
               />

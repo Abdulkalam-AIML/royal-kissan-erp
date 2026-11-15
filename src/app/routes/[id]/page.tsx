@@ -26,7 +26,8 @@ import {
   CreditCard,
   Percent,
   X,
-  Phone
+  Phone,
+  Edit
 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -38,10 +39,15 @@ import {
   recordRouteCustomerSale,
   recordRouteExpense,
   finalizeRouteAndGenerateBills,
+  getSavedRoutes,
+  getAvailableVehicles,
+  updateDriverRoute,
   RouteCompleteDetails,
   RouteLoadItem,
   RouteCustomerSale,
-  RouteExpenseRecord
+  RouteExpenseRecord,
+  SavedRoute,
+  VehicleOption
 } from '@/lib/services/driver-service'
 
 export default function RouteDetailsPage() {
@@ -59,7 +65,24 @@ export default function RouteDetailsPage() {
   const [showSaleModal, setShowSaleModal] = useState(false)
   const [showExpenseModal, setShowExpenseModal] = useState(false)
   const [showReconcileModal, setShowReconcileModal] = useState(false)
+  const [showEditRouteModal, setShowEditRouteModal] = useState(false)
   const [selectedBillForWhatsApp, setSelectedBillForWhatsApp] = useState<any | null>(null)
+
+  // Edit Route State
+  const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>([])
+  const [vehiclesList, setVehiclesList] = useState<VehicleOption[]>([])
+  const [editRouteForm, setEditRouteForm] = useState({
+    route_id: '',
+    route_name: '',
+    vehicle_id: '',
+    vehicle_number: '',
+    dispatch_date: '',
+    start_time: '',
+    start_location: '',
+    destination_areas: '',
+    notes: ''
+  })
+  const [savingEditRoute, setSavingEditRoute] = useState(false)
 
   // Spot Sale form
   const [saleForm, setSaleForm] = useState({
@@ -109,8 +132,14 @@ export default function RouteDetailsPage() {
   async function loadRouteData() {
     setLoading(true)
     try {
-      const res = await getRouteCompleteDetails(routeId)
+      const [res, sRoutes, vList] = await Promise.all([
+        getRouteCompleteDetails(routeId),
+        getSavedRoutes(),
+        getAvailableVehicles()
+      ])
       setData(res)
+      setSavedRoutes(sRoutes)
+      setVehiclesList(vList)
 
       if (res && res.items) {
         // Initialize reconciliation items based on loaded items and existing sales
@@ -152,6 +181,73 @@ export default function RouteDetailsPage() {
       console.error('Failed to load route details:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Edit Route actions
+  function openEditRouteModal() {
+    if (!data?.dispatch) return
+    const d = data.dispatch
+    const matchedVehicle = vehiclesList.find(v => 
+      (d.vehicle_id && v.id === d.vehicle_id) || 
+      (d.vehicle_number && v.registration_number.toLowerCase() === d.vehicle_number.toLowerCase())
+    )
+
+    setEditRouteForm({
+      route_id: d.route_id || '',
+      route_name: d.route_name || '',
+      vehicle_id: matchedVehicle?.id || d.vehicle_id || '',
+      vehicle_number: d.vehicle_number || '',
+      dispatch_date: d.dispatch_date || '',
+      start_time: d.start_time || '08:30 AM',
+      start_location: d.start_location || 'Main Factory Warehouse',
+      destination_areas: d.destination_areas || '',
+      notes: d.notes || ''
+    })
+    setShowEditRouteModal(true)
+  }
+
+  async function handleEditRouteSubmit() {
+    if (!data?.dispatch) return
+    if (!editRouteForm.route_id) {
+      alert('Route Name is mandatory. Please select a route from the saved routes database list.')
+      return
+    }
+
+    setSavingEditRoute(true)
+    try {
+      const vId = editRouteForm.vehicle_id || null
+      let vNum = editRouteForm.vehicle_number?.trim() || null
+      if (vNum === 'Not Assigned' || vNum === '') {
+        vNum = null
+      }
+
+      const res = await updateDriverRoute({
+        dispatch_id: data.dispatch.id,
+        route_id: editRouteForm.route_id,
+        route_name: editRouteForm.route_name,
+        driver_id: data.dispatch.driver_id,
+        vehicle_id: vId,
+        vehicle_number: vNum,
+        dispatch_date: editRouteForm.dispatch_date,
+        start_time: editRouteForm.start_time,
+        start_location: editRouteForm.start_location,
+        destination_areas: editRouteForm.destination_areas,
+        notes: editRouteForm.notes
+      })
+
+      if (!res.success) {
+        alert(res.message || 'Failed to update route details')
+        return
+      }
+
+      setShowEditRouteModal(false)
+      await loadRouteData()
+      alert('Route details updated successfully!')
+    } catch (err: any) {
+      alert('Error updating route: ' + (err?.message || err))
+    } finally {
+      setSavingEditRoute(false)
     }
   }
 
@@ -361,7 +457,7 @@ export default function RouteDetailsPage() {
     const msg = `*ROYAL KISSAN — ROUTE SUMMARY*\n` +
       `Route: ${d.route_name || d.dispatch_number}\n` +
       `Driver: ${data.driver.name}\n` +
-      `Vehicle: ${d.vehicle_number || 'N/A'}\n` +
+      `Vehicle: ${d.vehicle_number || 'Not Assigned'}\n` +
       `Date: ${d.dispatch_date}\n\n` +
       `*Physical Breakdown:*\n` +
       `• Loaded: ${d.total_loaded_qty} units\n` +
@@ -511,6 +607,14 @@ export default function RouteDetailsPage() {
               <Button
                 variant="outline"
                 size="sm"
+                onClick={openEditRouteModal}
+              >
+                <Edit className="w-4 h-4 mr-1.5 text-blue-500" />
+                Edit Route
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowExpenseModal(true)}
               >
                 <DollarSign className="w-4 h-4 mr-1.5 text-amber-600" />
@@ -576,17 +680,26 @@ export default function RouteDetailsPage() {
           <div className="p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
             <span className="text-xs text-gray-500 font-medium">Assigned Vehicle</span>
             <div className="mt-1 flex items-center justify-between">
-              <Link
-                href="/vehicles"
-                className="font-semibold text-gray-900 dark:text-white hover:text-emerald-600 flex items-center gap-1.5"
-              >
-                <Truck className="w-4 h-4 text-emerald-600" />
-                {dispatch.vehicle_number || 'Unassigned'}
-                <ExternalLink className="w-3 h-3 text-gray-400" />
-              </Link>
+              {dispatch.vehicle_number && dispatch.vehicle_number !== 'Not Assigned' ? (
+                <Link
+                  href="/vehicles"
+                  className="font-semibold text-gray-900 dark:text-white hover:text-emerald-600 flex items-center gap-1.5"
+                >
+                  <Truck className="w-4 h-4 text-emerald-600" />
+                  {dispatch.vehicle_number}
+                  <ExternalLink className="w-3 h-3 text-gray-400" />
+                </Link>
+              ) : (
+                <span className="font-semibold text-gray-400 flex items-center gap-1.5">
+                  <Truck className="w-4 h-4 text-gray-400" />
+                  Not Assigned
+                </span>
+              )}
             </div>
             <span className="text-xs text-gray-500 mt-0.5 block">
-              {vehicle?.vehicle_type || 'Commercial Fleet'} • Cap: {vehicle?.capacity || 'N/A'}
+              {dispatch.vehicle_number && dispatch.vehicle_number !== 'Not Assigned'
+                ? `${vehicle?.vehicle_type || 'Commercial Fleet'} • Cap: ${vehicle?.capacity || 'N/A'}`
+                : 'No vehicle allocated for this route'}
             </span>
           </div>
 
@@ -1564,6 +1677,199 @@ export default function RouteDetailsPage() {
                 className="bg-emerald-600 hover:bg-emerald-700 text-white"
               >
                 Confirm Settlement & Generate Bills
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Edit Route Assignment Modal */}
+      {showEditRouteModal && data?.dispatch && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto bg-white dark:bg-gray-900 border border-amber-500/30">
+            <div className="flex items-center justify-between border-b pb-3 dark:border-gray-800">
+              <div>
+                <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2 text-base">
+                  <Edit className="w-5 h-5 text-amber-500" />
+                  Edit Route Assignment
+                </h3>
+                <p className="text-xs text-gray-500">
+                  Update route name, assigned vehicle, schedule, or destination
+                </p>
+              </div>
+              <button onClick={() => setShowEditRouteModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-sm">
+              {/* Mandatory Route Name Dropdown */}
+              <div>
+                <label className="block text-xs font-semibold text-amber-600 dark:text-amber-400 mb-1 uppercase tracking-wider">
+                  Route Name * (Mandatory - Select from Saved Routes)
+                </label>
+                <select
+                  value={editRouteForm.route_id}
+                  onChange={(e) => {
+                    const rId = e.target.value
+                    const found = savedRoutes.find(r => r.id === rId)
+                    if (found) {
+                      setEditRouteForm(prev => ({
+                        ...prev,
+                        route_id: found.id,
+                        route_name: found.name,
+                        destination_areas: prev.destination_areas || found.area || found.name
+                      }))
+                    } else {
+                      setEditRouteForm(prev => ({
+                        ...prev,
+                        route_id: '',
+                        route_name: ''
+                      }))
+                    }
+                  }}
+                  className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 text-sm font-medium ${
+                    !editRouteForm.route_id ? 'border-red-500' : 'border-gray-300 dark:border-gray-700'
+                  }`}
+                >
+                  <option value="">-- Select Saved Route (Required) --</option>
+                  {savedRoutes.map(r => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} {r.area ? `(Area: ${r.area})` : ''}
+                    </option>
+                  ))}
+                </select>
+                {!editRouteForm.route_id ? (
+                  <span className="text-xs text-red-500 mt-1 block">
+                    * Required: Route Name must be selected from the database list.
+                  </span>
+                ) : (
+                  <span className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 block">
+                    ✓ Canonical Route: {editRouteForm.route_name}
+                  </span>
+                )}
+              </div>
+
+              {/* Assigned Vehicle (Optional Dropdown) */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 uppercase tracking-wider">
+                  Assigned Vehicle <span className="text-gray-400 font-normal lowercase">(optional)</span>
+                </label>
+                <select
+                  value={editRouteForm.vehicle_id}
+                  onChange={(e) => {
+                    const vId = e.target.value
+                    if (!vId) {
+                      setEditRouteForm(prev => ({
+                        ...prev,
+                        vehicle_id: '',
+                        vehicle_number: ''
+                      }))
+                    } else {
+                      const found = vehiclesList.find(v => v.id === vId)
+                      setEditRouteForm(prev => ({
+                        ...prev,
+                        vehicle_id: vId,
+                        vehicle_number: found?.registration_number || ''
+                      }))
+                    }
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-sm font-medium"
+                >
+                  <option value="">-- None (Not Assigned) --</option>
+                  {vehiclesList.map(v => (
+                    <option key={v.id} value={v.id}>
+                      {v.registration_number} ({v.vehicle_type || 'Fleet'}) - [{v.status}]
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs text-gray-400 mt-1 block">
+                  Select a vehicle or choose "-- None (Not Assigned) --" to dispatch without a vehicle.
+                </span>
+              </div>
+
+              {/* Date & Time */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 uppercase tracking-wider">
+                    Route Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={editRouteForm.dispatch_date}
+                    onChange={(e) => setEditRouteForm({ ...editRouteForm, dispatch_date: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-sm font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 uppercase tracking-wider">
+                    Starting Time
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 08:30 AM"
+                    value={editRouteForm.start_time}
+                    onChange={(e) => setEditRouteForm({ ...editRouteForm, start_time: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-sm font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Start Location & Destination */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 uppercase tracking-wider">
+                    Start Location
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Main Plant"
+                    value={editRouteForm.start_location}
+                    onChange={(e) => setEditRouteForm({ ...editRouteForm, start_location: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-sm font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 uppercase tracking-wider">
+                    Destination Areas
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Chintalapudi"
+                    value={editRouteForm.destination_areas}
+                    onChange={(e) => setEditRouteForm({ ...editRouteForm, destination_areas: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-sm font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 uppercase tracking-wider">
+                  Remarks / Notes
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Special instructions or notes"
+                  value={editRouteForm.notes}
+                  onChange={(e) => setEditRouteForm({ ...editRouteForm, notes: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-sm font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t dark:border-gray-800">
+              <Button variant="ghost" onClick={() => setShowEditRouteModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleEditRouteSubmit}
+                loading={savingEditRoute}
+                disabled={!editRouteForm.route_id || savingEditRoute}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+              >
+                Save Route Changes
               </Button>
             </div>
           </Card>
